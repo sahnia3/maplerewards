@@ -1,0 +1,60 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev: Go API",
+      "type": "shell",
+      "command": "make dev",
+      "group": "build",
+      "problemMatcher": ["$go"],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "dev: Next.js",
+      "type": "shell",
+      "command": "make web-dev",
+      "group": "build",
+      "problemMatcher": ["$eslint-stylish"],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "migrate: up",
+      "type": "shell",
+      "command": "make migrate-up",
+      "group": "none",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "docker: up",
+      "type": "shell",
+      "command": "make docker-up",
+      "group": "none",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "test: Go",
+      "type": "shell",
+      "command": "make test",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Go API",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/api",
+      "env": {
+        "DATABASE_URL": "${env:DATABASE_URL}",
+        "REDIS_ADDR": "${env:REDIS_ADDR}",
+        "PORT": "${env:PORT}"
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "args": []
+    },
+    {
+      "name": "Debug Next.js",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/web/node_modules/next/dist/bin/next",
+      "args": ["dev"],
+      "cwd": "${workspaceFolder}/web",
+      "env": {
+        "NODE_OPTIONS": "--inspect"
+      },
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "started server on .+, url: (https?://.+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    }
+  ]
+}

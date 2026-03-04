@@ -1,0 +1,20 @@
+{
+  "recommendations": [
+    // Go
+    "golang.go",
+    // Frontend formatting & linting
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    // Tailwind v4
+    "bradlc.vscode-tailwindcss",
+    // TypeScript
+    "ms-vscode.vscode-typescript-next",
+    // Utilities
+    "mikestead.dotenv",
+    "eamodio.gitlens",
+    "christian-kohler.path-intellisense",
+    // Infrastructure
+    "ms-azuretools.vscode-docker",
+    "cweijan.vscode-postgresql-client2"
+  ]
+}

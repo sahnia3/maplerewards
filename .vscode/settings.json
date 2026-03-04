@@ -1,0 +1,63 @@
+{
+  // ── Editor defaults ──────────────────────────────────────────────────
+  "editor.formatOnSave": true,
+  "editor.rulers": [100],
+
+  // ── Go ───────────────────────────────────────────────────────────────
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.insertSpaces": false,
+    "editor.formatOnSave": true
+  },
+  "go.formatTool": "goimports",
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "package",
+  "go.testFlags": ["-v", "-race"],
+  "gopls": {
+    "ui.semanticTokens": true,
+    "ui.completion.usePlaceholders": true
+  },
+
+  // ── TypeScript / JavaScript / JSON ───────────────────────────────────
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // ── Tailwind v4 (CSS-first — point at globals.css) ───────────────────
+  "tailwindCSS.experimental.configFile": "web/app/globals.css",
+  "tailwindCSS.includeLanguages": {
+    "typescript": "html",
+    "typescriptreact": "html"
+  },
+
+  // ── ESLint (flat config lives in web/) ───────────────────────────────
+  "eslint.workingDirectories": ["web"],
+  "eslint.useFlatConfig": true,
+
+  // ── File explorer / search exclusions ────────────────────────────────
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/bin": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/bin": true
+  }
+}
