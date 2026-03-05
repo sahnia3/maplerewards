@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_LINKS = [
-  { href: "/",         label: "Optimizer" },
-  { href: "/compare",  label: "Compare"   },
-  { href: "/insights", label: "Insights"  },
-  { href: "/wallet",   label: "Wallet"    },
+  { href: "/",           label: "Optimizer"  },
+  { href: "/compare",    label: "Compare"    },
+  { href: "/milestones", label: "Milestones" },
+  { href: "/insights",   label: "Insights"   },
+  { href: "/wallet",     label: "Wallet"     },
 ];
 
 export function Nav() {
@@ -20,11 +21,10 @@ export function Nav() {
       />
       <div className="relative max-w-5xl mx-auto px-6 h-[60px] flex items-center justify-between">
         {/* Wordmark */}
-        <Link href="/" className="flex items-center gap-3 group select-none">
+        <Link href="/" className="flex items-center gap-2.5 group select-none shrink-0">
           <div className="relative w-7 h-7 flex items-center justify-center">
             <div className="absolute inset-0 rounded-lg maple-bg opacity-90 group-hover:opacity-100 transition-opacity"
-              style={{ boxShadow: "0 2px 12px rgba(200,16,46,0.4)" }}
-            />
+              style={{ boxShadow: "0 2px 12px rgba(200,16,46,0.4)" }} />
             <span className="relative text-white text-[13px] leading-none">🍁</span>
           </div>
           <span className="text-[15px] font-semibold tracking-tight text-white/90 group-hover:text-white transition-colors">
@@ -33,14 +33,14 @@ export function Nav() {
         </Link>
 
         {/* Nav pills */}
-        <nav className="flex items-center gap-0.5 p-1 rounded-xl"
+        <nav className="flex items-center gap-0.5 p-1 rounded-xl overflow-x-auto"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
         >
           {NAV_LINKS.map(({ href, label }) => {
             const active = pathname === href;
             return (
               <Link key={href} href={href}
-                className={`relative px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150 ${
+                className={`relative px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150 whitespace-nowrap ${
                   active ? "text-white" : "text-white/40 hover:text-white/75"
                 }`}
               >

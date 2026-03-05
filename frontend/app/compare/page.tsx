@@ -4,96 +4,95 @@ import { useState, useEffect } from "react";
 import { listCategories, compareCards, ensureSession } from "@/lib/api";
 import type { Category, CardRecommendation } from "@/lib/types";
 
-const CATEGORY_ICONS: Record<string, string> = {
+const CAT_ICONS: Record<string, string> = {
   groceries: "🛒", dining: "🍽️", travel: "✈️", gas: "⛽", transit: "🚇",
   entertainment: "🎬", streaming: "📺", pharmacy: "💊", "foreign-currency": "💱",
-  "everything-else": "💳", default: "💳",
+  "everything-else": "💳",
 };
 
-const SPEND_PRESETS = [50, 100, 250, 500, 1000];
-
-type CategoryResult = { category: Category; recs: CardRecommendation[] };
+function fmtPct(v: number) { return `${v.toFixed(2)}%`; }
+function fmtCAD(v: number) { return `$${v.toFixed(2)}`; }
 
 export default function ComparePage() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [spendAmount, setSpendAmount] = useState("100");
-  const [results, setResults] = useState<CategoryResult[]>([]);
+  const [spendAmount, setSpendAmount] = useState("500");
+  const [results, setResults] = useState<Record<string, CardRecommendation[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ran, setRan] = useState(false);
+  const [catLoading, setCatLoading] = useState(true);
 
-  useEffect(() => { listCategories().then(setCategories).catch(() => {}); }, []);
+  useEffect(() => {
+    listCategories().then(setCategories).catch(() => setError("Could not load categories")).finally(() => setCatLoading(false));
+  }, []);
 
-  async function runComparison() {
-    setLoading(true); setError(null);
+  async function handleCompare() {
+    setError(null); setLoading(true); setResults({});
     try {
       const sessionId = await ensureSession();
       const amount = parseFloat(spendAmount);
       if (isNaN(amount) || amount <= 0) throw new Error("Enter a valid amount");
-
-      const settled = await Promise.allSettled(
-        categories.map(cat => compareCards(sessionId, cat.slug, amount).then(recs => ({ category: cat, recs })))
+      const entries = await Promise.all(
+        categories.map(async cat => {
+          try {
+            const recs = await compareCards(sessionId, cat.slug, amount);
+            return [cat.slug, recs] as [string, CardRecommendation[]];
+          } catch { return [cat.slug, []] as [string, CardRecommendation[]]; }
+        })
       );
-      const out: CategoryResult[] = [];
-      for (const s of settled) {
-        if (s.status === "fulfilled" && s.value.recs.length > 0) out.push(s.value);
-      }
-      setResults(out);
-      setRan(true);
+      setResults(Object.fromEntries(entries));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally { setLoading(false); }
   }
 
+  const hasResults = Object.keys(results).length > 0;
+
+  // Collect all unique card names across results for column headers
+  const allCards = hasResults
+    ? [...new Set(Object.values(results).flatMap(recs => recs.map(r => r.card_name)))]
+    : [];
+
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <div className="orb w-[500px] h-[300px] top-[-60px] left-1/2 -translate-x-1/2"
-        style={{ background: "radial-gradient(ellipse, rgba(59,130,246,0.07) 0%, transparent 70%)" }}
-      />
+      <div className="orb w-[500px] h-[300px] top-[-80px] right-[-100px]"
+        style={{ background: "radial-gradient(ellipse, rgba(139,92,246,0.07) 0%, transparent 70%)" }} />
 
       <div className="relative max-w-5xl mx-auto px-6 pt-28 pb-24">
         {/* Header */}
-        <div className="mb-10 fade-up">
-          <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>Your wallet</p>
+        <div className="mb-8 fade-up">
+          <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>Side-by-side</p>
           <h1 className="title text-white mb-2">Card Comparison</h1>
           <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
-            See which card wins across every spend category at once.
+            See how every card in your wallet stacks up across all spend categories at once.
           </p>
         </div>
 
         {/* Controls */}
-        <div className="rounded-2xl p-5 mb-8 fade-up-1"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-mid)" }}
+        <div className="rounded-2xl p-5 mb-6 fade-up-1"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-mid)", boxShadow: "var(--shadow-card)" }}
         >
           <div className="absolute top-0 left-0 right-0 h-px rounded-t-2xl"
-            style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)" }}
-          />
+            style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)" }} />
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="label-xs mb-2 block" style={{ color: "var(--text-tertiary)" }}>Spend per category</label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {SPEND_PRESETS.map(p => (
-                  <button key={p} onClick={() => setSpendAmount(String(p))}
-                    className="h-8 px-3 rounded-lg text-[13px] font-medium transition-all"
-                    style={spendAmount === String(p)
-                      ? { background: "rgba(200,16,46,0.15)", color: "#E8173A", border: "1px solid rgba(200,16,46,0.3)" }
-                      : { background: "rgba(255,255,255,0.05)", color: "var(--text-secondary)", border: "1px solid var(--border-dim)" }
-                    }
-                  >
-                    ${p}
-                  </button>
-                ))}
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] pointer-events-none" style={{ color: "var(--text-tertiary)" }}>$</span>
-                  <input type="number" value={spendAmount} onChange={e => setSpendAmount(e.target.value)} placeholder="custom"
-                    className="w-24 h-8 pl-6 pr-2 rounded-lg text-[13px] outline-none"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-dim)", color: "var(--text-primary)" }}
-                  />
-                </div>
+              <label className="label-xs mb-2 block" style={{ color: "var(--text-tertiary)" }}>Spend amount per category</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] pointer-events-none" style={{ color: "var(--text-tertiary)" }}>$</span>
+                <input
+                  type="number" min="1" step="1" value={spendAmount}
+                  onChange={e => setSpendAmount(e.target.value)}
+                  className="h-10 pl-7 pr-14 rounded-xl text-[14px] font-medium outline-none w-40 transition-all"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-mid)", color: "var(--text-primary)" }}
+                  onFocus={e => { e.currentTarget.style.borderColor = "rgba(200,16,46,0.5)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(200,16,46,0.12)"; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = "var(--border-mid)"; e.currentTarget.style.boxShadow = "none"; }}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 label-xs pointer-events-none" style={{ color: "var(--text-tertiary)" }}>CAD</span>
               </div>
             </div>
-            <button onClick={runComparison} disabled={loading || categories.length === 0}
-              className="h-10 px-6 rounded-xl font-semibold text-[14px] text-white maple-bg maple-glow transition-all disabled:opacity-30"
+            <button
+              onClick={handleCompare}
+              disabled={loading || catLoading}
+              className="h-10 px-6 rounded-xl font-semibold text-[14px] text-white maple-bg maple-glow disabled:opacity-30 transition-all"
             >
               {loading ? (
                 <span className="flex items-center gap-2">
@@ -103,84 +102,93 @@ export default function ComparePage() {
                   </svg>
                   Comparing…
                 </span>
-              ) : ran ? "Refresh" : "Compare All Categories"}
+              ) : "Compare all categories"}
             </button>
+            {error && <p className="text-[13px]" style={{ color: "#E8173A" }}>{error}</p>}
           </div>
-          {error && <p className="mt-3 text-[13px]" style={{ color: "#E8173A" }}>{error}</p>}
         </div>
 
-        {/* Results grid */}
-        {!ran && !loading && (
+        {/* Empty / loading state */}
+        {!hasResults && !loading && (
           <div className="rounded-2xl p-12 text-center fade-up-2"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
           >
-            <div className="text-5xl mb-4">⚡</div>
-            <h2 className="text-[18px] font-semibold text-white mb-2">See every category at once</h2>
-            <p className="text-[14px] max-w-sm mx-auto" style={{ color: "var(--text-secondary)" }}>
-              Hit &ldquo;Compare All Categories&rdquo; to see which card in your wallet wins for groceries, travel, dining, and more — all side by side.
+            <div className="text-4xl mb-4">⚖️</div>
+            <p className="text-[15px] font-semibold text-white mb-2">Compare across every category</p>
+            <p className="text-[13px] max-w-sm mx-auto" style={{ color: "var(--text-secondary)" }}>
+              Enter a spend amount and hit Compare — we&apos;ll show you the best card for groceries, dining, travel, and more in one view.
             </p>
           </div>
         )}
 
-        {ran && results.length === 0 && (
-          <div className="rounded-2xl p-10 text-center" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}>
-            <p style={{ color: "var(--text-secondary)" }}>No results. Make sure you have cards in your <a href="/wallet" className="text-[#C8102E] hover:underline">wallet</a>.</p>
-          </div>
-        )}
-
-        {results.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {results.map(({ category, recs }, i) => {
-              const top = recs[0];
-              const icon = CATEGORY_ICONS[category.slug] ?? CATEGORY_ICONS.default;
-              return (
-                <div key={category.id} className="rounded-2xl p-4 fade-up lift" style={{ animationDelay: `${i * 0.04}s`, background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}>
-                  {/* Category header */}
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center text-base"
-                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-dim)" }}
-                    >
-                      {icon}
-                    </div>
-                    <div>
-                      <div className="text-[13px] font-semibold text-white">{category.name}</div>
-                      <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{recs.length} card{recs.length !== 1 ? "s" : ""}</div>
-                    </div>
-                    <div className="ml-auto text-right">
-                      <div className="text-[16px] font-bold text-[#E8173A]">{top.effective_return.toFixed(2)}%</div>
-                      <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>best return</div>
-                    </div>
-                  </div>
-
-                  {/* Winner */}
-                  <div className="rounded-xl p-3" style={{ background: "rgba(200,16,46,0.06)", border: "1px solid rgba(200,16,46,0.15)" }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-[12px] font-semibold text-white truncate">{top.card_name}</div>
-                        <div className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>{top.program_name}</div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-[13px] font-bold text-[#4ADE80]">${top.dollar_value.toFixed(2)}</div>
-                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>value</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Runner-ups */}
-                  {recs.slice(1, 3).map((rec, j) => (
-                    <div key={rec.card_id} className="flex items-center justify-between gap-2 mt-2 px-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[11px] w-4 shrink-0" style={{ color: "var(--text-tertiary)" }}>#{j + 2}</span>
-                        <span className="text-[12px] truncate" style={{ color: "var(--text-secondary)" }}>{rec.card_name}</span>
-                      </div>
-                      <span className="text-[12px] font-medium shrink-0" style={{ color: "var(--text-secondary)" }}>
-                        {rec.effective_return.toFixed(1)}%
-                      </span>
-                    </div>
+        {/* Results table */}
+        {hasResults && (
+          <div className="fade-up-2 overflow-x-auto rounded-2xl"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+          >
+            <table className="w-full text-left border-collapse" style={{ minWidth: "600px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-dim)" }}>
+                  <th className="px-5 py-3.5 text-[12px] font-semibold" style={{ color: "var(--text-tertiary)", width: "180px" }}>
+                    Category
+                  </th>
+                  {allCards.map(name => (
+                    <th key={name} className="px-4 py-3.5 text-[12px] font-semibold text-center" style={{ color: "var(--text-tertiary)" }}>
+                      {name.length > 22 ? name.slice(0, 20) + "…" : name}
+                    </th>
                   ))}
-                </div>
-              );
-            })}
+                </tr>
+              </thead>
+              <tbody>
+                {categories.filter(cat => results[cat.slug]?.length > 0).map((cat, rowIdx) => {
+                  const recs = results[cat.slug] ?? [];
+                  const topReturn = recs[0]?.effective_return ?? 0;
+                  return (
+                    <tr key={cat.slug}
+                      style={{ borderBottom: rowIdx < categories.length - 1 ? "1px solid var(--border-dim)" : "none" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{CAT_ICONS[cat.slug] ?? "💳"}</span>
+                          <span className="text-[13px] font-medium text-white">{cat.name}</span>
+                        </div>
+                      </td>
+                      {allCards.map(cardName => {
+                        const rec = recs.find(r => r.card_name === cardName);
+                        const isBest = rec && rec.effective_return === topReturn && topReturn > 0;
+                        return (
+                          <td key={cardName} className="px-4 py-4 text-center">
+                            {rec ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className="text-[14px] font-bold"
+                                  style={{ color: isBest ? "#E8173A" : "var(--text-primary)" }}
+                                >
+                                  {fmtPct(rec.effective_return)}
+                                </span>
+                                <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                  {fmtCAD(rec.dollar_value)}
+                                </span>
+                                {isBest && (
+                                  <span className="label-xs px-1.5 py-0.5 rounded mt-0.5"
+                                    style={{ background: "rgba(200,16,46,0.12)", color: "#E8173A" }}>
+                                    best
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
