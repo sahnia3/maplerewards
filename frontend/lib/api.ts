@@ -87,3 +87,45 @@ export async function optimize(req: OptimizeRequest): Promise<CardRecommendation
     body: JSON.stringify(req),
   });
 }
+
+// ── Compare — run optimizer across multiple categories for N cards ────────────
+
+export async function compareCards(
+  sessionId: string,
+  categorySlug: string,
+  spendAmount: number
+): Promise<CardRecommendation[]> {
+  return optimize({ session_id: sessionId, category_slug: categorySlug, spend_amount: spendAmount });
+}
+
+// ── Spending log (localStorage-backed, no backend needed yet) ────────────────
+
+export interface SpendEntry {
+  id: string;
+  date: string; // ISO
+  category_slug: string;
+  category_name: string;
+  amount: number;
+  card_id: string;
+  card_name: string;
+  points_earned: number;
+  dollar_value: number;
+}
+
+const SPEND_KEY = "maple_spend_log";
+
+export function getSpendLog(): SpendEntry[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(SPEND_KEY) ?? "[]"); }
+  catch { return []; }
+}
+
+export function addSpendEntry(entry: SpendEntry): void {
+  const log = getSpendLog();
+  log.unshift(entry);
+  localStorage.setItem(SPEND_KEY, JSON.stringify(log.slice(0, 500)));
+}
+
+export function clearSpendLog(): void {
+  localStorage.removeItem(SPEND_KEY);
+}
