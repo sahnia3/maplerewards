@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS aeroplan_status_thresholds;
+DROP TABLE IF EXISTS point_valuations;
+DROP TABLE IF EXISTS transfer_partners;
+DROP TABLE IF EXISTS user_cards;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS card_multipliers;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS cards;
+DROP TABLE IF EXISTS loyalty_programs;
+DROP EXTENSION IF EXISTS pgcrypto;
