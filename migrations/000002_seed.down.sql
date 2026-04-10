@@ -1,0 +1,9 @@
+DELETE FROM aeroplan_status_thresholds;
+DELETE FROM transfer_partners;
+DELETE FROM point_valuations;
+DELETE FROM card_multipliers;
+DELETE FROM user_cards;
+DELETE FROM users;
+DELETE FROM categories;
+DELETE FROM cards;
+DELETE FROM loyalty_programs;

@@ -1,0 +1,368 @@
+import type {
+  Card,
+  Category,
+  UserCard,
+  UpdateCardDetailsRequest,
+  OptimizeRequest,
+  CardRecommendation,
+  SpendEntry,
+  SpendLogRequest,
+  SpendStats,
+  WalletSummary,
+  CardDetail,
+  LoyaltyProgram,
+  ProgramDetailResponse,
+  CardScore,
+  RecommendRequest,
+} from "./types";
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
+
+// ── Auth token accessor ──────────────────────────────────────────────────────
+// This is set by the AuthProvider so API calls automatically include the JWT.
+let _getAccessToken: (() => string | null) | null = null;
+
+export function setAuthTokenAccessor(fn: () => string | null) {
+  _getAccessToken = fn;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+
+  // Inject auth token if available
+  const token = _getAccessToken?.();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// ── Session ──────────────────────────────────────────────────────────────────
+
+export function getSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("maple_session_id");
+}
+
+export function setSessionId(id: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("maple_session_id", id);
+}
+
+export async function ensureSession(): Promise<string> {
+  const existing = getSessionId();
+  if (existing) return existing;
+  const data = await request<{ session_id: string }>("/wallet", { method: "POST" });
+  setSessionId(data.session_id);
+  return data.session_id;
+}
+
+// ── Cards ────────────────────────────────────────────────────────────────────
+
+export async function listCards(): Promise<Card[]> {
+  return request<Card[]>("/cards");
+}
+
+export async function getCard(id: string): Promise<Card> {
+  return request<Card>(`/cards/${id}`);
+}
+
+// ── Categories ───────────────────────────────────────────────────────────────
+
+export async function listCategories(): Promise<Category[]> {
+  return request<Category[]>("/categories");
+}
+
+// ── Wallet ───────────────────────────────────────────────────────────────────
+
+export async function getWallet(sessionId: string): Promise<UserCard[]> {
+  return request<UserCard[]>(`/wallet/${sessionId}`);
+}
+
+export async function addCardToWallet(sessionId: string, cardId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/cards`, {
+    method: "POST",
+    body: JSON.stringify({ card_id: cardId }),
+  });
+}
+
+export async function removeCardFromWallet(sessionId: string, cardId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/cards/${cardId}`, { method: "DELETE" });
+}
+
+export async function updateCardBalance(
+  sessionId: string,
+  cardId: string,
+  balance: number
+): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/cards/${cardId}/balance`, {
+    method: "PUT",
+    body: JSON.stringify({ balance }),
+  });
+}
+
+export async function updateCardDetails(
+  sessionId: string,
+  cardId: string,
+  details: UpdateCardDetailsRequest
+): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/cards/${cardId}/details`, {
+    method: "PUT",
+    body: JSON.stringify(details),
+  });
+}
+
+// ── Optimizer ────────────────────────────────────────────────────────────────
+
+export async function optimize(req: OptimizeRequest): Promise<CardRecommendation[]> {
+  return request<CardRecommendation[]>("/optimize", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Compare — run optimizer across multiple categories for N cards ────────────
+
+export async function compareCards(
+  sessionId: string,
+  categorySlug: string,
+  spendAmount: number
+): Promise<CardRecommendation[]> {
+  return optimize({ session_id: sessionId, category_slug: categorySlug, spend_amount: spendAmount });
+}
+
+// ── Spend Tracking (server-backed) ───────────────────────────────────────────
+
+export async function logSpend(sessionId: string, entry: SpendLogRequest): Promise<SpendEntry> {
+  return request<SpendEntry>(`/wallet/${sessionId}/spend`, {
+    method: "POST",
+    body: JSON.stringify(entry),
+  });
+}
+
+export async function getSpendHistory(
+  sessionId: string,
+  limit = 50,
+  offset = 0
+): Promise<SpendEntry[]> {
+  return request<SpendEntry[]>(`/wallet/${sessionId}/spend?limit=${limit}&offset=${offset}`);
+}
+
+export async function getSpendStats(sessionId: string): Promise<SpendStats> {
+  return request<SpendStats>(`/wallet/${sessionId}/spend/stats`);
+}
+
+// ── Wallet Summary ────────────────────────────────────────────────────────────
+
+export async function getWalletSummary(sessionId: string): Promise<WalletSummary> {
+  return request<WalletSummary>(`/wallet/${sessionId}/summary`);
+}
+
+// ── Card Detail ───────────────────────────────────────────────────────────────
+
+export async function getCardDetail(cardId: string): Promise<CardDetail> {
+  return request<CardDetail>(`/cards/${cardId}/detail`);
+}
+
+// ── Loyalty Programs ──────────────────────────────────────────────────────────
+
+export async function listPrograms(): Promise<LoyaltyProgram[]> {
+  return request<LoyaltyProgram[]>("/programs");
+}
+
+export async function getProgramDetail(slug: string): Promise<ProgramDetailResponse> {
+  return request<ProgramDetailResponse>(`/programs/${slug}/detail`);
+}
+
+// ── Recommender ───────────────────────────────────────────────────────────────
+
+export async function getRecommendations(req: RecommendRequest): Promise<CardScore[]> {
+  return request<CardScore[]>("/recommend", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── AI Chat ──────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatRequest {
+  session_id: string;
+  message: string;
+  history?: ChatMessage[];
+  research_mode?: boolean;
+}
+
+export interface ChatResponse {
+  reply: string;
+  history: ChatMessage[];
+}
+
+export async function chat(req: ChatRequest): Promise<ChatResponse> {
+  return request<ChatResponse>("/chat", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Trip Planner ────────────────────────────────────────────────────────────
+
+export interface TripRequest {
+  session_id: string;
+  origin?: string;         // flights only
+  destination: string;
+  cabin: "economy" | "business" | "first" | "standard" | "deluxe" | "suite";
+  trip_type: "flight" | "hotel";
+  date?: string;           // YYYY-MM-DD
+  checkout_date?: string;  // hotels only
+  passengers?: number;     // default 1
+  nights?: number;         // hotels only
+}
+
+export interface CardContribution {
+  card_name: string;
+  card_id: string;
+  program_name: string;
+  points_held: number;
+  transfer_ratio: number;
+  points_after_transfer: number;
+}
+
+export interface RedemptionOption {
+  program_name: string;
+  program_slug: string;
+  points_available: number;
+  estimated_cpp: number;
+  estimated_value: number;
+  transfer_path: string;
+  transfer_ratio: number;
+  booking_url: string;
+  notes: string;
+  // Core fields
+  points_required: number;
+  can_afford: boolean;
+  savings_rating: "good" | "fair" | "bad" | "";
+  value_per_point: number;
+  properties_count: number;
+  card_breakdowns: CardContribution[];
+  // Real pricing fields
+  cash_price_cad: number;
+  data_source: "live_search" | "knowledge_base" | "estimated" | "";
+  property_name: string;
+  hotel_category: number;
+  airline_name: string;
+}
+
+export async function evaluateTrip(req: TripRequest): Promise<RedemptionOption[]> {
+  return request<RedemptionOption[]>("/trip/evaluate", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Award Search ─────────────────────────────────────────────────────────────
+
+export interface AwardSearchRequest {
+  session_id: string;
+  origin: string;
+  destination: string;
+  date: string;           // YYYY-MM-DD
+  flex_days?: number;     // ±days around date (default 0)
+  cabin: "economy" | "business" | "first";
+  passengers?: number;    // default 1
+}
+
+export interface AwardSegmentInfo {
+  origin: string;
+  destination: string;
+  airline: string;
+  flight_number: string;
+  departure_time: string;
+  arrival_time: string;
+  aircraft: string;
+}
+
+export interface AwardSearchResult {
+  date: string;
+  program: string;           // issuer slug (e.g. "aeroplan")
+  program_name: string;
+  points_cost: number;
+  taxes_cash: number;
+  cash_price_cad: number;
+  cpp: number;               // cents per point
+  value_rating: "excellent" | "good" | "poor";
+  seats_available: number;
+  source: "live" | "estimated";
+  booking_url: string;
+  points_available: number;
+  can_afford: boolean;
+  card_breakdowns: CardContribution[];
+  segments: AwardSegmentInfo[];
+}
+
+export async function searchAwards(req: AwardSearchRequest): Promise<AwardSearchResult[]> {
+  return request<AwardSearchResult[]>("/trip/award-search", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Portfolio Analysis ────────────────────────────────────────────────────────
+
+import type { PortfolioAnalysis, WelcomeBonus } from "./types";
+
+export async function getPortfolioAnalysis(sessionId: string): Promise<PortfolioAnalysis> {
+  return request<PortfolioAnalysis>(`/wallet/${sessionId}/portfolio/analysis`);
+}
+
+// ── Bonus Tracking (Milestones) ──────────────────────────────────────────────
+
+export async function getUserBonuses(sessionId: string): Promise<WelcomeBonus[]> {
+  return request<WelcomeBonus[]>(`/wallet/${sessionId}/bonuses`);
+}
+
+export async function activateBonus(sessionId: string, cardId: string): Promise<WelcomeBonus> {
+  return request<WelcomeBonus>(`/wallet/${sessionId}/bonuses/${cardId}/activate`, {
+    method: "POST",
+  });
+}
+
+// ── Billing (Stripe) ─────────────────────────────────────────────────────────
+
+export interface CheckoutSessionResponse {
+  session_id: string;
+  url: string;
+}
+
+export async function createCheckoutSession(
+  interval: "monthly" | "annual"
+): Promise<CheckoutSessionResponse> {
+  return request<CheckoutSessionResponse>("/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ interval }),
+  });
+}
+
+// ── Account Deletion ────────────────────────────────────────────────────────
+
+export async function deleteAccount(): Promise<void> {
+  return request<void>("/auth/me", { method: "DELETE" });
+}
+

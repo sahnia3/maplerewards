@@ -1,0 +1,773 @@
+# MapleRewards Proprietary Knowledge Base
+# Canadian credit card loyalty program award data
+# All points costs are per person (flights: one-way unless noted; hotels: per night)
+
+# ── FLIGHT PROGRAMS ──────────────────────────────────────────────────────────
+
+aeroplan:
+  name: "Aeroplan"
+  description: "Air Canada's loyalty program, Star Alliance partner awards"
+  cpp_range:
+    low: 1.5
+    high: 2.2
+    sweet_spot: "3–6¢ on partner Business/First class"
+  award_chart:
+    north_america:
+      economy: 12500
+      business: 30000
+      first: 45000
+    atlantic:
+      economy: 30000
+      business: 55000
+      first: 75000
+    pacific:
+      economy: 40000
+      business: 65000
+      first: 90000
+    middle_east_africa:
+      economy: 35000
+      business: 60000
+      first: 85000
+  sweet_spots:
+    - "YYZ→LHR business 55k Aeroplan — best transatlantic CDN value"
+    - "Star Alliance partners (Lufthansa, Swiss, ANA) often have better availability than AC metal"
+    - "ANA Business class: ~65k pts, lie-flat, world-class service"
+    - "Short-haul North America under 500mi: 6,000 pts one-way economy"
+    - "Add stopovers to round-trips for 5,000 pts — massive value"
+    - "Mini Round-the-World: up to 2 stopovers + 1 open jaw on long-haul RT"
+  booking_url: "https://www.aircanada.com/aeroplan"
+
+avios:
+  name: "British Airways Avios"
+  description: "Iberia + British Airways partner, zone-based short-haul sweet spots"
+  cpp_range:
+    low: 1.3
+    high: 2.8
+    sweet_spot: "European short-haul, AA partner awards"
+  award_chart:
+    north_america_transatlantic:
+      economy: 50000
+      business: 80000
+      first: 130000
+    europe_short_haul:
+      economy: 9000
+      business: 18000
+    north_america_short:
+      economy: 7500
+      business: 15000
+  sweet_spots:
+    - "YYZ→LHR business 80k Avios on BA Club Suite — lie-flat"
+    - "AA short-haul domestic under 1150mi: 7,500 pts one-way — great value for US connections"
+    - "Zone-based pricing rewards short routes — NYC→Chicago just 7,500 pts"
+  booking_url: "https://www.britishairways.com/avios"
+
+flying_blue:
+  name: "Flying Blue (Air France / KLM)"
+  description: "Air France and KLM loyalty program, SkyTeam alliance"
+  cpp_range:
+    low: 1.2
+    high: 2.5
+  award_chart:
+    atlantic:
+      economy: 35000
+      business: 70000
+      first: 120000
+    pacific:
+      economy: 45000
+      business: 80000
+  sweet_spots:
+    - "Monthly Promo Awards: 25–50% discount on select routes"
+    - "YYZ→CDG business 70k Flying Blue — direct Air France service"
+  booking_url: "https://www.flyingblue.com"
+
+united:
+  name: "United MileagePlus"
+  description: "United Airlines loyalty program, Star Alliance partner awards"
+  cpp_range:
+    low: 1.2
+    high: 2.0
+    sweet_spot: "2–4¢ on partner business class via Excursionist Perk"
+  award_chart:
+    north_america:
+      economy: 12500
+      business: 30000
+      first: 45000
+    atlantic:
+      economy: 30000
+      business: 55000
+      first: 80000
+    pacific:
+      economy: 40000
+      business: 65000
+      first: 90000
+    middle_east_africa:
+      economy: 35000
+      business: 60000
+      first: 85000
+  sweet_spots:
+    - "Excursionist Perk: free stopover on round-trip awards"
+    - "Partner availability on ANA, Lufthansa, Swiss often better than UA metal"
+    - "Short-haul NA economy: 12,500 pts one-way"
+  booking_url: "https://www.united.com/ual/en/us/flight-search/book-a-flight/results/awd"
+
+delta:
+  name: "Delta SkyMiles"
+  description: "Delta Air Lines loyalty program, SkyTeam alliance — dynamic pricing"
+  cpp_range:
+    low: 1.0
+    high: 1.8
+    sweet_spot: "1.5–2¢ on premium cabin flash sales"
+  award_chart:
+    north_america:
+      economy: 15000
+      business: 50000
+      first: 75000
+    atlantic:
+      economy: 39000
+      business: 85000
+      first: 120000
+    pacific:
+      economy: 40000
+      business: 85000
+      first: 120000
+    middle_east_africa:
+      economy: 42500
+      business: 90000
+      first: 130000
+  sweet_spots:
+    - "Flash sales: transatlantic business as low as 50k SkyMiles"
+    - "Delta One Suites (A350/A330-900) — excellent lie-flat product"
+    - "SkyMiles don't expire — good for infrequent flyers"
+  booking_url: "https://www.delta.com/flight-search/book-a-flight"
+
+american:
+  name: "American AAdvantage"
+  description: "American Airlines loyalty program, oneworld alliance"
+  cpp_range:
+    low: 1.2
+    high: 2.2
+    sweet_spot: "2–4¢ on Cathay Pacific/JAL business via oneworld"
+  award_chart:
+    north_america:
+      economy: 12500
+      business: 30000
+      first: 45000
+    atlantic:
+      economy: 30000
+      business: 57500
+      first: 85000
+    pacific:
+      economy: 35000
+      business: 65000
+      first: 100000
+    middle_east_africa:
+      economy: 35000
+      business: 60000
+      first: 85000
+  sweet_spots:
+    - "JAL First Class: 80k miles one-way to Japan — world-class product"
+    - "Cathay Pacific Business: 65k to Hong Kong — excellent value"
+    - "oneworld partner availability generally good"
+  booking_url: "https://www.aa.com/booking/find-flights"
+
+alaska:
+  name: "Alaska Mileage Plan"
+  description: "Alaska Airlines loyalty program — excellent partner award chart"
+  cpp_range:
+    low: 1.5
+    high: 2.8
+    sweet_spot: "3–5¢ on partner business/first class awards"
+  award_chart:
+    north_america:
+      economy: 7500
+      business: 20000
+      first: 35000
+    atlantic:
+      economy: 27500
+      business: 57500
+      first: 85000
+    pacific:
+      economy: 30000
+      business: 50000
+      first: 70000
+    middle_east_africa:
+      economy: 30000
+      business: 55000
+      first: 80000
+  sweet_spots:
+    - "Cathay Pacific First: 70k miles one-way — the best deal in the sky"
+    - "JAL Business: 50k to Japan — unbeatable value"
+    - "Emirates First: 100k miles — A380 suite experience"
+    - "Miles don't expire — buy on sale for incredible value"
+  booking_url: "https://www.alaskaair.com/shopping/flights"
+
+eurobonus:
+  name: "SAS EuroBonus"
+  description: "Scandinavian Airlines loyalty program, Star Alliance"
+  cpp_range:
+    low: 1.0
+    high: 2.0
+    sweet_spot: "2–3¢ on Star Alliance partner business class"
+  award_chart:
+    north_america:
+      economy: 15000
+      business: 35000
+    atlantic:
+      economy: 30000
+      business: 60000
+      first: 80000
+    pacific:
+      economy: 40000
+      business: 70000
+      first: 90000
+  sweet_spots:
+    - "SAS Plus (premium economy) for price of economy awards on some routes"
+    - "Star Alliance partner availability — good on Lufthansa, Swiss"
+  booking_url: "https://www.flysas.com/en/"
+
+virginatlantic:
+  name: "Virgin Atlantic Flying Club"
+  description: "Virgin Atlantic loyalty program — great ANA and Delta partner awards"
+  cpp_range:
+    low: 1.2
+    high: 2.5
+    sweet_spot: "3–5¢ on ANA business/first via Flying Club"
+  award_chart:
+    atlantic:
+      economy: 20000
+      business: 50000
+      first: 75000
+    pacific:
+      economy: 30000
+      business: 60000
+      first: 90000
+  sweet_spots:
+    - "ANA Business to Japan: 55k–60k points — superb value"
+    - "ANA First to Japan: 90k points — possibly the best first class redemption"
+    - "Virgin Upper Class: lie-flat with great service"
+  booking_url: "https://www.virginatlantic.com/flight-search"
+
+lufthansa:
+  name: "Lufthansa Miles & More"
+  description: "Lufthansa group loyalty program — Lufthansa, Swiss, Austrian, Brussels"
+  cpp_range:
+    low: 1.0
+    high: 2.0
+    sweet_spot: "2–3¢ on Lufthansa First Class"
+  award_chart:
+    north_america:
+      economy: 15000
+      business: 40000
+      first: 55000
+    atlantic:
+      economy: 23000
+      business: 55000
+      first: 75000
+    pacific:
+      economy: 34000
+      business: 70000
+      first: 105000
+    middle_east_africa:
+      economy: 25000
+      business: 55000
+      first: 80000
+  sweet_spots:
+    - "Lufthansa First Class (747-8/A340): 85k miles RT from EU — flagship experience"
+    - "Swiss Business: excellent lie-flat, good availability"
+    - "Austrian Business to Vienna: affordable gateway to Europe"
+  booking_url: "https://www.miles-and-more.com"
+
+singapore:
+  name: "Singapore KrisFlyer"
+  description: "Singapore Airlines loyalty program — premium cabin sweet spots"
+  cpp_range:
+    low: 1.3
+    high: 2.5
+    sweet_spot: "3–5¢ on Singapore Suites/Business Class"
+  award_chart:
+    north_america:
+      economy: 17500
+      business: 37500
+      first: 55000
+    atlantic:
+      economy: 30000
+      business: 60000
+      first: 85000
+    pacific:
+      economy: 25000
+      business: 65000
+      first: 90000
+    middle_east_africa:
+      economy: 20000
+      business: 45000
+      first: 65000
+  sweet_spots:
+    - "Singapore Suites (A380): 85k–95k points — the ultimate first class"
+    - "Singapore Business (A350/77W): 65k — outstanding product"
+    - "Star Alliance partners accessible via KrisFlyer"
+  booking_url: "https://www.singaporeair.com/en_UK/ppsclub-krisflyer/use-miles/"
+
+emirates:
+  name: "Emirates Skywards"
+  description: "Emirates loyalty program — A380 first class, global network"
+  cpp_range:
+    low: 0.8
+    high: 1.8
+    sweet_spot: "2–3¢ on Emirates First Class A380"
+  award_chart:
+    atlantic:
+      economy: 30000
+      business: 60000
+      first: 90000
+    pacific:
+      economy: 50000
+      business: 100000
+      first: 150000
+    middle_east_africa:
+      economy: 20000
+      business: 40000
+      first: 60000
+  sweet_spots:
+    - "Emirates First Class A380 Suites: shower spa, onboard bar"
+    - "Business on newer 777-300ER: fully flat, great IFE"
+    - "Dubai as stopover: free visa on Emirates tickets"
+  booking_url: "https://www.emirates.com/us/english/book/"
+
+turkish:
+  name: "Turkish Miles&Smiles"
+  description: "Turkish Airlines loyalty program, Star Alliance — undervalued sweet spots"
+  cpp_range:
+    low: 1.5
+    high: 3.0
+    sweet_spot: "3–5¢ on partner business class, especially to Europe"
+  award_chart:
+    atlantic:
+      economy: 15000
+      business: 45000
+      first: 65000
+    pacific:
+      economy: 20000
+      business: 55000
+      first: 80000
+    middle_east_africa:
+      economy: 12500
+      business: 35000
+      first: 50000
+  sweet_spots:
+    - "Europe business class: 45k miles one-way — among the cheapest"
+    - "Star Alliance partner awards often cheaper than competitors"
+    - "Turkish lounge in IST is world-class even in economy"
+  booking_url: "https://www.turkishairlines.com/en-us/"
+
+qatar:
+  name: "Qatar Privilege Club"
+  description: "Qatar Airways loyalty program, oneworld — Qsuites business class"
+  cpp_range:
+    low: 1.0
+    high: 2.2
+    sweet_spot: "2–3¢ on Qsuites business class"
+  award_chart:
+    atlantic:
+      economy: 30000
+      business: 60000
+      first: 85000
+    pacific:
+      economy: 42500
+      business: 72500
+      first: 105000
+    middle_east_africa:
+      economy: 15000
+      business: 30000
+      first: 45000
+  sweet_spots:
+    - "Qsuites (business): arguably the world's best business class — door, bed, dining"
+    - "Qatar First on A380: exclusive and rare"
+    - "Doha as connecting hub: massive global network"
+  booking_url: "https://www.qatarairways.com/en/Privilege-Club/use-qmiles.html"
+
+etihad:
+  name: "Etihad Guest"
+  description: "Etihad Airways loyalty program — premium cabin value via Abu Dhabi"
+  cpp_range:
+    low: 1.0
+    high: 2.0
+    sweet_spot: "2–3¢ on Etihad Business Studios"
+  award_chart:
+    atlantic:
+      economy: 30000
+      business: 54000
+      first: 80000
+    pacific:
+      economy: 40000
+      business: 70000
+      first: 100000
+    middle_east_africa:
+      economy: 15000
+      business: 30000
+      first: 45000
+  sweet_spots:
+    - "Etihad Business Studios (787): excellent lie-flat with direct aisle access"
+    - "Abu Dhabi as a hub: good connections to Asia, Africa, Europe"
+    - "Transfer from Amex MR (where available) for good value"
+  booking_url: "https://www.etihad.com/en-us/manage/book-with-miles"
+
+amex_mr:
+  name: "Amex Membership Rewards"
+  description: "Flexible points transferable to multiple airline and hotel programs"
+  cpp_range:
+    low: 1.0
+    high: 2.0
+  transfers_to:
+    - { program: aeroplan, ratio: "1:1", note: "Best use for Canadian travellers" }
+    - { program: avios, ratio: "1:1", note: "Good for short-haul and BA flights" }
+    - { program: flying_blue, ratio: "1:1", note: "Good for Air France/KLM" }
+    - { program: asia_miles, ratio: "1:1", note: "Cathay Pacific premium awards" }
+    - { program: marriott_bonvoy, ratio: "1:1.2", note: "Points inflation on transfer" }
+    - { program: hilton_honors, ratio: "1:2", note: "Good if no other option" }
+  sweet_spots:
+    - "Transfer to Aeroplan (1:1) for Air Canada/Star Alliance Business Class"
+    - "Transfer to Avios for short-haul sweet spots"
+    - "Never redeem directly through Amex Travel — terrible value"
+
+rbc_avion:
+  name: "RBC Avion"
+  description: "RBC's flexible travel rewards — transfer to airlines or use as fixed-value travel"
+  cpp_range:
+    low: 1.0
+    high: 2.0
+    sweet_spot: "2–3¢ via BA Avios short-haul transfers"
+  transfers_to:
+    - { program: "British Airways Avios", ratio: "1:1", note: "Best use — short-haul sweet spots" }
+    - { program: "Cathay Pacific Asia Miles", ratio: "1:1", note: "Premium cabin Asia awards" }
+    - { program: "WestJet dollars", ratio: "100:1", note: "100 Avion pts = $1 WestJet" }
+  sweet_spots:
+    - "Transfer to BA Avios (1:1) for North America short-haul at 7,500 pts each way"
+    - "Asia Miles for Cathay Pacific premium cabin awards"
+    - "RBC Travel portal: ~1.0¢/pt fixed value — decent floor"
+
+td_rewards:
+  name: "TD Rewards"
+  description: "TD Bank points — best value via Expedia for TD"
+  cpp_range:
+    low: 0.4
+    high: 1.0
+    sweet_spot: "0.8–1.0¢ via Expedia for TD hotel bookings"
+  sweet_spots:
+    - "Expedia for TD hotel bookings: 0.8–1.0¢/pt — always use this over other redemptions"
+    - "Avoid non-travel redemptions (gift cards = 0.4¢/pt)"
+    - "TD Aeroplan cards earn Aeroplan directly — much better value than TD Rewards"
+
+scene_plus:
+  name: "Scene+"
+  description: "Scotiabank loyalty program — movies, dining, travel via Expedia"
+  cpp_range:
+    low: 0.8
+    high: 1.2
+    sweet_spot: "Movies + dining at 1.0–1.2¢/pt"
+  sweet_spots:
+    - "Expedia for Scotia travel bookings: ~1.0¢/pt"
+    - "Cineplex movies: 1.0–1.2¢/pt — most accessible redemption"
+    - "Scene+ dining partners: 1.0¢/pt at select restaurants"
+  booking_url: "https://www.scene.ca"
+
+pc_optimum:
+  name: "PC Optimum"
+  description: "Loblaw/Shoppers Drug Mart loyalty program"
+  cpp_range:
+    low: 0.7
+    high: 1.0
+    sweet_spot: "1.0¢ during Shoppers 20x events"
+  sweet_spots:
+    - "Shoppers Drug Mart 20x points events: effectively 30% return on cosmetics/electronics"
+    - "PC Financial Mastercard: earn at all merchants, redeem at Loblaw stores"
+    - "Stack personal offers with in-store promotions for massive multipliers"
+    - "Redemption minimum: 10,000 pts = $10 at any Loblaw banner store"
+
+cibc_aventura:
+  name: "CIBC Aventura"
+  description: "CIBC's travel rewards — fixed-value or transfer to Aeroplan"
+  cpp_range:
+    low: 1.0
+    high: 1.5
+    sweet_spot: "1.5¢ via fixed-value travel redemptions"
+  transfers_to:
+    - { program: "Aeroplan", ratio: "1:1", note: "Only on CIBC Aeroplan card variants" }
+  sweet_spots:
+    - "Fixed-value travel redemptions: ~1.0¢/pt through CIBC travel portal"
+    - "CIBC Aeroplan cards transfer directly to Aeroplan at 1:1 — better value"
+
+bmo_rewards:
+  name: "BMO Rewards"
+  description: "BMO's points program — travel portal or Air Miles transfer"
+  cpp_range:
+    low: 0.7
+    high: 1.5
+    sweet_spot: "1.5¢ via Air Miles Dream transfer for flights"
+  transfers_to:
+    - { program: "Air Miles", ratio: "varies", note: "Check current promotion rates" }
+  sweet_spots:
+    - "Transfer to Air Miles Dream Miles for flights: best CPP"
+    - "BMO Travel portal: ~0.7¢/pt — use as last resort"
+    - "Air Miles Cash Miles: lower value but more flexible"
+
+air_miles:
+  name: "Air Miles"
+  description: "Canadian coalition program — Dream Miles (flights/hotels) vs Cash Miles (in-store)"
+  cpp_range:
+    low: 10.0
+    high: 15.0
+    sweet_spot: "15¢+ per Dream Mile on domestic flights"
+  sweet_spots:
+    - "Dream Miles for flights: 12–15¢ per mile — always better than Cash"
+    - "Cash Miles at in-store partners: ~10¢ per mile — more convenient"
+    - "Onyx status: 25% bonus + free lounge access"
+    - "Gold status: 25% bonus + priority check-in"
+  note: "Air Miles are worth ~10-15x more per unit than Aeroplan points — different scale"
+
+# ── HOTEL PROGRAMS ───────────────────────────────────────────────────────────
+
+marriott_bonvoy:
+  name: "Marriott Bonvoy"
+  description: "Marriott, Sheraton, Westin, St. Regis, Ritz-Carlton + 30 other brands"
+  cpp_range:
+    low: 0.8
+    high: 1.6
+    sweet_spot: "1.5¢+ at mid-tier; 5th night free adds ~20% value"
+  category_chart:
+    cat1: 7500
+    cat2: 12500
+    cat3: 17500
+    cat4: 25000
+    cat5: 35000
+    cat6: 50000
+    cat7: 85000
+    cat8: 100000
+  perks:
+    - "5th night free on award stays — book 5 nights, pay 4"
+    - "Airline transfer partners: many airlines at 3:1 ratio + 5k bonus per 60k"
+    - "Category 1–5 certificates from credit card often available"
+  properties:
+    toronto:
+      - { name: "Courtyard Toronto Airport", category: 3, pts_per_night: 17500, cash_cad_per_night: 200, brand: "Courtyard" }
+      - { name: "Sheraton Centre Toronto", category: 5, pts_per_night: 35000, cash_cad_per_night: 330, brand: "Sheraton" }
+      - { name: "Westin Harbour Castle Toronto", category: 5, pts_per_night: 40000, cash_cad_per_night: 360, brand: "Westin" }
+      - { name: "Ritz-Carlton Toronto", category: 7, pts_per_night: 85000, cash_cad_per_night: 750, brand: "Ritz-Carlton" }
+    vancouver:
+      - { name: "Delta Hotels Vancouver Downtown Suites", category: 5, pts_per_night: 35000, cash_cad_per_night: 310, brand: "Delta" }
+      - { name: "Marriott Vancouver Pinnacle", category: 5, pts_per_night: 40000, cash_cad_per_night: 350, brand: "Marriott" }
+    montreal:
+      - { name: "Delta Hotels Montreal", category: 4, pts_per_night: 25000, cash_cad_per_night: 260, brand: "Delta" }
+      - { name: "Marriott Montreal Château Champlain", category: 5, pts_per_night: 35000, cash_cad_per_night: 320, brand: "Marriott" }
+    paris:
+      - { name: "Marriott Paris Opera", category: 6, pts_per_night: 50000, cash_cad_per_night: 480, brand: "Marriott" }
+      - { name: "Paris Marriott Champs Élysées", category: 7, pts_per_night: 70000, cash_cad_per_night: 560, brand: "Marriott" }
+      - { name: "Le Méridien Étoile", category: 6, pts_per_night: 55000, cash_cad_per_night: 490, brand: "Le Meridien" }
+    london:
+      - { name: "Sheraton Grand London Park Lane", category: 7, pts_per_night: 60000, cash_cad_per_night: 520, brand: "Sheraton" }
+      - { name: "London Marriott Hotel Park Lane", category: 7, pts_per_night: 60000, cash_cad_per_night: 510, brand: "Marriott" }
+    dubai:
+      - { name: "Sheraton Grand Hotel Dubai", category: 5, pts_per_night: 40000, cash_cad_per_night: 380, brand: "Sheraton" }
+      - { name: "W Dubai – The Palm", category: 7, pts_per_night: 85000, cash_cad_per_night: 700, brand: "W Hotels" }
+    tokyo:
+      - { name: "Sheraton Grande Tokyo Bay", category: 4, pts_per_night: 25000, cash_cad_per_night: 260, brand: "Sheraton" }
+      - { name: "Westin Tokyo", category: 5, pts_per_night: 35000, cash_cad_per_night: 340, brand: "Westin" }
+    new_york:
+      - { name: "New York Marriott Downtown", category: 6, pts_per_night: 50000, cash_cad_per_night: 450, brand: "Marriott" }
+      - { name: "Westin New York Times Square", category: 6, pts_per_night: 55000, cash_cad_per_night: 470, brand: "Westin" }
+  booking_url: "https://www.marriott.com/loyalty"
+
+world_of_hyatt:
+  name: "World of Hyatt"
+  description: "Best hotel program for CPP — Hyatt, Andaz, Park Hyatt, Alila, Thompson"
+  cpp_range:
+    low: 1.2
+    high: 2.5
+    sweet_spot: "Best CPP of all hotel programs — prioritise when available"
+  category_chart:
+    cat1: 3500
+    cat2: 8000
+    cat3: 12000
+    cat4: 15000
+    cat5: 20000
+    cat6: 25000
+    cat7: 30000
+  perks:
+    - "Globalist status: 4 suite upgrades/year, late checkout, club lounge"
+    - "Guest of Honor: share Globalist benefits with one guest"
+    - "Complimentary night after 60 qualifying nights"
+  properties:
+    toronto:
+      - { name: "Hyatt Regency Toronto", category: 3, pts_per_night: 12000, cash_cad_per_night: 310, brand: "Hyatt Regency" }
+      - { name: "Andaz Ottawa ByWard Market", category: 4, pts_per_night: 15000, cash_cad_per_night: 340, brand: "Andaz" }
+    vancouver:
+      - { name: "Hyatt Regency Vancouver", category: 3, pts_per_night: 12000, cash_cad_per_night: 290, brand: "Hyatt Regency" }
+    paris:
+      - { name: "Park Hyatt Paris-Vendôme", category: 7, pts_per_night: 30000, cash_cad_per_night: 650, brand: "Park Hyatt" }
+      - { name: "Hyatt Regency Paris Étoile", category: 4, pts_per_night: 15000, cash_cad_per_night: 380, brand: "Hyatt Regency" }
+    london:
+      - { name: "Hyatt Regency London – The Churchill", category: 5, pts_per_night: 20000, cash_cad_per_night: 450, brand: "Hyatt Regency" }
+    new_york:
+      - { name: "Andaz 5th Avenue", category: 5, pts_per_night: 20000, cash_cad_per_night: 500, brand: "Andaz" }
+      - { name: "Park Hyatt New York", category: 7, pts_per_night: 30000, cash_cad_per_night: 700, brand: "Park Hyatt" }
+    maldives:
+      - { name: "Park Hyatt Maldives Hadahaa", category: 6, pts_per_night: 25000, cash_cad_per_night: 900, brand: "Park Hyatt" }
+  booking_url: "https://world.hyatt.com"
+
+hilton_honors:
+  name: "Hilton Honors"
+  description: "Hilton, Conrad, Waldorf Astoria, DoubleTree + more"
+  cpp_range:
+    low: 0.4
+    high: 0.7
+    note: "Points often devalued — use primarily when 5th night free applies"
+  award_tiers:
+    budget: 20000
+    mid: 50000
+    luxury: 95000
+    ultra_luxury: 150000
+  perks:
+    - "5th night free on standard awards"
+    - "Diamond: 48h upgrade, free breakfast at most properties"
+  properties:
+    toronto:
+      - { name: "Hilton Toronto", pts_per_night: 60000, cash_cad_per_night: 350, brand: "Hilton" }
+      - { name: "DoubleTree by Hilton Toronto Downtown", pts_per_night: 40000, cash_cad_per_night: 260, brand: "DoubleTree" }
+    paris:
+      - { name: "Waldorf Astoria Paris", pts_per_night: 150000, cash_cad_per_night: 900, brand: "Waldorf Astoria" }
+      - { name: "Conrad Paris", pts_per_night: 95000, cash_cad_per_night: 620, brand: "Conrad" }
+    london:
+      - { name: "Waldorf Hilton London", pts_per_night: 95000, cash_cad_per_night: 560, brand: "Hilton" }
+    dubai:
+      - { name: "Waldorf Astoria Dubai Palm Jumeirah", pts_per_night: 150000, cash_cad_per_night: 800, brand: "Waldorf Astoria" }
+      - { name: "Conrad Dubai", pts_per_night: 80000, cash_cad_per_night: 520, brand: "Conrad" }
+  booking_url: "https://www.hilton.com/en/hilton-honors"
+
+ihg_one_rewards:
+  name: "IHG One Rewards"
+  description: "InterContinental, Kimpton, voco, Holiday Inn + more"
+  cpp_range:
+    low: 0.5
+    high: 0.8
+  award_tiers:
+    budget: 10000
+    mid: 25000
+    luxury: 60000
+  perks:
+    - "4th night free on point stays"
+    - "Milestone rewards at 40k / 70k status nights"
+  properties:
+    toronto:
+      - { name: "InterContinental Toronto Centre", pts_per_night: 40000, cash_cad_per_night: 360, brand: "InterContinental" }
+      - { name: "Kimpton Saint George Toronto", pts_per_night: 35000, cash_cad_per_night: 330, brand: "Kimpton" }
+    london:
+      - { name: "InterContinental London Park Lane", pts_per_night: 60000, cash_cad_per_night: 500, brand: "InterContinental" }
+    paris:
+      - { name: "InterContinental Paris – Le Grand", pts_per_night: 55000, cash_cad_per_night: 480, brand: "InterContinental" }
+    dubai:
+      - { name: "InterContinental Dubai Festival City", pts_per_night: 40000, cash_cad_per_night: 380, brand: "InterContinental" }
+  booking_url: "https://www.ihg.com/rewards"
+
+# ── POPULAR FLIGHTS FROM CANADA ──────────────────────────────────────────────
+
+flights:
+  - from: YYZ
+    to: LHR
+    airline: "Air Canada"
+    program: aeroplan
+    economy_pts: 30000
+    business_pts: 55000
+    first_pts: 75000
+    duration: "7.5h direct"
+    amenities: "Signature lie-flat (business), lounge access, direct YYZ–LHR"
+    notes: "Best transatlantic value from Toronto"
+
+  - from: YYZ
+    to: LHR
+    airline: "British Airways"
+    program: avios
+    economy_pts: 50000
+    business_pts: 80000
+    duration: "7.5h direct"
+    amenities: "Club Suite (business, fully flat), Heathrow lounge"
+    notes: "Better seat product than Air Canada on some aircraft"
+
+  - from: YYZ
+    to: NRT
+    airline: "Air Canada"
+    program: aeroplan
+    economy_pts: 40000
+    business_pts: 65000
+    first_pts: 90000
+    duration: "14h direct"
+    amenities: "Signature lie-flat, top-tier service, direct YYZ–NRT"
+    notes: "Excellent long-haul value for Japan travel"
+
+  - from: YYZ
+    to: NRT
+    airline: "ANA"
+    program: aeroplan
+    economy_pts: 45000
+    business_pts: 65000
+    first_pts: 90000
+    duration: "13h via connection"
+    amenities: "The Room (best business class seat), 5-star service"
+    notes: "ANA via Aeroplan is one of the best premium awards from Canada"
+
+  - from: YYZ
+    to: CDG
+    airline: "Air Canada"
+    program: aeroplan
+    economy_pts: 30000
+    business_pts: 55000
+    duration: "8h direct"
+    amenities: "Signature lie-flat, direct YYZ–CDG"
+
+  - from: YYZ
+    to: CDG
+    airline: "Air France"
+    program: flying_blue
+    economy_pts: 35000
+    business_pts: 70000
+    duration: "8h direct"
+    amenities: "Business class, CDG lounge"
+    notes: "Flying Blue Promo Awards can cut cost 25–50%"
+
+  - from: YYZ
+    to: DXB
+    airline: "Emirates"
+    program: "skywards"
+    economy_pts: 60000
+    business_pts: 90000
+    duration: "13h direct"
+    amenities: "Fully flat bed, mini bar, A380 available"
+    notes: "Emirates Skywards — requires Emirates credit card"
+
+  - from: YVR
+    to: HNL
+    airline: "Air Canada"
+    program: aeroplan
+    economy_pts: 12500
+    business_pts: 30000
+    duration: "5.5h direct"
+    amenities: "Economy or Latitude, short haul"
+    notes: "Short-haul North America rate applies"
+
+  - from: YUL
+    to: CDG
+    airline: "Air Canada"
+    program: aeroplan
+    economy_pts: 30000
+    business_pts: 55000
+    duration: "7h direct"
+    amenities: "Direct Montreal–Paris route"
+
+  - from: YYZ
+    to: SIN
+    airline: "Singapore Airlines"
+    program: aeroplan
+    economy_pts: 45000
+    business_pts: 67500
+    first_pts: 90000
+    duration: "18h via 1 stop"
+    amenities: "Suites (First class), world's best airline"
+    notes: "Singapore Airlines via Aeroplan — exceptional value"

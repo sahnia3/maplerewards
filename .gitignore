@@ -1,0 +1,30 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Go
+bin/
+api
+api_bin
+*.exe
+*.test
+*.out
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes
+pgdata/

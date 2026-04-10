@@ -1,0 +1,27 @@
+{
+  "name": "MapleRewards",
+  "short_name": "MapleRewards",
+  "description": "Optimize your Canadian credit card rewards",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090E",
+  "theme_color": "#6366F1",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "utilities"],
+  "screenshots": [],
+  "lang": "en-CA"
+}

@@ -1,0 +1,5 @@
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS points_expiry_date DATE;
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS date_opened DATE;
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS has_annual_fee BOOLEAN DEFAULT false;
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS custom_annual_fee NUMERIC(8,2);

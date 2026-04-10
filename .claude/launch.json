@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "go-api",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "cd /Users/adityasahni/Desktop/Claudecode/maplerewards/maplerewards-main && set -a && . ./.env && set +a && /usr/local/go/bin/go run ./cmd/api"],
+      "port": 8080,
+      "autoPort": false
+    },
+    {
+      "name": "next-frontend",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "cd /Users/adityasahni/Desktop/Claudecode/maplerewards/maplerewards-main/frontend && /opt/homebrew/bin/npx next dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

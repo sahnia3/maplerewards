@@ -1,0 +1,203 @@
+package repo
+
+import (
+	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"maplerewards/internal/model"
+)
+
+type SpendRepo struct {
+	db *pgxpool.Pool
+}
+
+func NewSpendRepo(db *pgxpool.Pool) *SpendRepo {
+	return &SpendRepo{db: db}
+}
+
+// GetMonthlySpend returns total spend by category for a user+card in a given month.
+func (r *SpendRepo) GetMonthlySpend(ctx context.Context, userID, cardID string, month time.Time) (map[string]float64, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT category_id, total_spend
+		FROM user_monthly_spend
+		WHERE user_id = $1 AND card_id = $2 AND month = $3
+	`, userID, cardID, month)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]float64)
+	for rows.Next() {
+		var catID string
+		var spend float64
+		if err := rows.Scan(&catID, &spend); err != nil {
+			return nil, err
+		}
+		result[catID] = spend
+	}
+	return result, rows.Err()
+}
+
+// UpsertMonthlySpend adds an amount to the monthly spend total for a user+card+category.
+func (r *SpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, categoryID string, month time.Time, amount float64) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO user_monthly_spend (user_id, card_id, category_id, month, total_spend, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (user_id, card_id, category_id, month)
+		DO UPDATE SET total_spend = user_monthly_spend.total_spend + $5, updated_at = NOW()
+	`, userID, cardID, categoryID, month, amount)
+	return err
+}
+
+// GetCapGroupForCard returns the cap group that contains the given category for a card, if any.
+func (r *SpendRepo) GetCapGroupForCard(ctx context.Context, cardID, categoryID string) (*model.CapGroup, error) {
+	var cg model.CapGroup
+	err := r.db.QueryRow(ctx, `
+		SELECT cg.id, cg.card_id, cg.name, cg.cap_amount, cg.cap_period
+		FROM cap_groups cg
+		JOIN cap_group_categories cgc ON cgc.cap_group_id = cg.id
+		WHERE cg.card_id = $1 AND cgc.category_id = $2
+	`, cardID, categoryID).Scan(&cg.ID, &cg.CardID, &cg.Name, &cg.CapAmount, &cg.CapPeriod)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load all category IDs in this cap group
+	rows, err := r.db.Query(ctx, `
+		SELECT category_id FROM cap_group_categories WHERE cap_group_id = $1
+	`, cg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var catID string
+		if err := rows.Scan(&catID); err != nil {
+			return nil, err
+		}
+		cg.CategoryIDs = append(cg.CategoryIDs, catID)
+	}
+	return &cg, rows.Err()
+}
+
+// CreateSpendEntry inserts a new spend entry record.
+func (r *SpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry) (*model.SpendEntry, error) {
+	var createdAt time.Time
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, created_at
+	`, entry.UserID, entry.CardID, entry.CategoryID, entry.Amount,
+		entry.PointsEarned, entry.DollarValue, entry.SpentAt, entry.Note,
+	).Scan(&entry.ID, &createdAt)
+	if err == nil {
+		entry.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	return &entry, err
+}
+
+// ListSpendEntries returns spend entries for a user, ordered by most recent.
+func (r *SpendRepo) ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			se.id, se.user_id, se.card_id, c.name,
+			se.category_id, cat.slug, cat.name,
+			se.amount, se.points_earned, se.dollar_value,
+			se.spent_at, se.created_at, COALESCE(se.note, '')
+		FROM spend_entries se
+		JOIN cards c ON c.id = se.card_id
+		JOIN categories cat ON cat.id = se.category_id
+		WHERE se.user_id = $1
+		ORDER BY se.spent_at DESC, se.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []model.SpendEntry
+	for rows.Next() {
+		var e model.SpendEntry
+		var spentAt time.Time
+		var createdAt time.Time
+		if err := rows.Scan(
+			&e.ID, &e.UserID, &e.CardID, &e.CardName,
+			&e.CategoryID, &e.CategorySlug, &e.CategoryName,
+			&e.Amount, &e.PointsEarned, &e.DollarValue,
+			&spentAt, &createdAt, &e.Note,
+		); err != nil {
+			return nil, err
+		}
+		e.SpentAt = spentAt.Format("2006-01-02")
+		e.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// GetSpendStats returns aggregated spend statistics for a user.
+func (r *SpendRepo) GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error) {
+	stats := &model.SpendStats{}
+
+	// Overall totals
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount), 0), COALESCE(SUM(dollar_value), 0),
+		       COALESCE(SUM(points_earned), 0), COUNT(*)
+		FROM spend_entries WHERE user_id = $1
+	`, userID).Scan(&stats.TotalSpend, &stats.TotalValue, &stats.TotalPoints, &stats.EntryCount)
+	if err != nil {
+		return nil, err
+	}
+	if stats.TotalSpend > 0 {
+		stats.AvgReturn = (stats.TotalValue / stats.TotalSpend) * 100
+	}
+
+	// By category
+	catRows, err := r.db.Query(ctx, `
+		SELECT cat.name, COALESCE(SUM(se.amount), 0), COALESCE(SUM(se.dollar_value), 0), COUNT(*)
+		FROM spend_entries se
+		JOIN categories cat ON cat.id = se.category_id
+		WHERE se.user_id = $1
+		GROUP BY cat.name ORDER BY SUM(se.amount) DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer catRows.Close()
+
+	for catRows.Next() {
+		var cs model.CategoryStat
+		if err := catRows.Scan(&cs.CategoryName, &cs.TotalSpend, &cs.TotalValue, &cs.EntryCount); err != nil {
+			return nil, err
+		}
+		stats.ByCategory = append(stats.ByCategory, cs)
+	}
+
+	// By card
+	cardRows, err := r.db.Query(ctx, `
+		SELECT c.name, COALESCE(SUM(se.amount), 0), COALESCE(SUM(se.dollar_value), 0),
+		       CASE WHEN SUM(se.amount) > 0 THEN (SUM(se.dollar_value) / SUM(se.amount)) * 100 ELSE 0 END
+		FROM spend_entries se
+		JOIN cards c ON c.id = se.card_id
+		WHERE se.user_id = $1
+		GROUP BY c.name ORDER BY SUM(se.dollar_value) DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer cardRows.Close()
+
+	for cardRows.Next() {
+		var cs model.CardStat
+		if err := cardRows.Scan(&cs.CardName, &cs.TotalSpend, &cs.TotalValue, &cs.AvgReturn); err != nil {
+			return nil, err
+		}
+		stats.ByCard = append(stats.ByCard, cs)
+	}
+
+	return stats, nil
+}

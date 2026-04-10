@@ -1,0 +1,607 @@
+# ── CANADIAN CREDIT CARD STRATEGIES (from @spicysundayfinance) ─────────────
+# Structured data extracted from 26 TikTok transcripts about Canadian credit
+# card strategy, earning rates, combos, and redemption tips.
+# Append this content to rewards.yaml or load as a separate knowledge source.
+
+# ── CREDIT CARD EARNING RATES ─────────────────────────────────────────────
+
+card_earning_rates:
+
+  amex_cobalt:
+    name: "Amex Cobalt Card"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 191.88
+    annual_fee_note: "Billed $15.99/mo; increased from $155.88"
+    currency: "Amex Membership Rewards (MR)"
+    earning_rates:
+      food_and_dining: { multiplier: 5, unit: "MR pts per $1" }
+      groceries: { multiplier: 5, unit: "MR pts per $1" }
+      streaming: { multiplier: 3, unit: "MR pts per $1" }
+      transit_and_gas: { multiplier: 2, unit: "MR pts per $1" }
+      travel: { multiplier: 2, unit: "MR pts per $1" }
+      everything_else: { multiplier: 1, unit: "MR pts per $1" }
+    perks: []
+    best_for: "Main driver card for food/dining spend; points transfer 1:1 to Aeroplan"
+    notes:
+      - "Best earn rate in Canada for food and dining category"
+      - "MR points transfer 1:1 to Aeroplan, Avios, Flying Blue, Asia Miles"
+      - "No travel insurance or lounge access — pair with a benefits card"
+
+  amex_gold:
+    name: "Amex Gold Rewards Card"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 250.00
+    annual_fee_credits:
+      travel_credit: 100.00
+      instacart_credits: 120.00
+      nexus_rebate: 50.00
+    effective_annual_fee_cad: 150.00
+    effective_fee_note: "$250 - $100 travel credit = $150 effective (before Instacart/Nexus)"
+    currency: "Amex Membership Rewards (MR)"
+    earning_rates:
+      food_and_dining: { multiplier: 5, unit: "MR pts per $1" }
+      groceries: { multiplier: 5, unit: "MR pts per $1" }
+      travel: { multiplier: 3, unit: "MR pts per $1" }
+      everything_else: { multiplier: 1, unit: "MR pts per $1" }
+    perks:
+      - "4 lounge passes per year"
+      - "$100 annual travel credit"
+      - "$120 annual Instacart credits ($10/mo)"
+      - "$50 Nexus application rebate"
+    best_for: "Upgraded Cobalt with travel perks; good if you use Instacart"
+
+  scotia_gold_amex:
+    name: "Scotiabank Gold American Express Card"
+    issuer: "Scotiabank"
+    network: "Amex"
+    annual_fee_cad: 120.00
+    currency: "Scene+"
+    earning_rates:
+      sobeys_safeway_freshco_foodland: { multiplier: 6, unit: "Scene+ pts per $1" }
+      food_dining_entertainment: { multiplier: 5, unit: "Scene+ pts per $1" }
+      rideshare_gas_transit_streaming: { multiplier: 3, unit: "Scene+ pts per $1" }
+      everything_else: { multiplier: 1, unit: "Scene+ pts per $1" }
+    perks: []
+    best_for: "Grocery-heavy spenders at Sobeys/Safeway/Freshco/Foodland banner stores"
+    notes:
+      - "6x at specific Sobeys-family grocery stores is highest grocery earn rate"
+      - "Scene+ redeemable via Expedia for Scotia for hotel bookings"
+
+  scotia_passport_vi:
+    name: "Scotiabank Passport Visa Infinite"
+    issuer: "Scotiabank"
+    network: "Visa"
+    annual_fee_cad: 150.00
+    currency: "Scene+"
+    earning_rates:
+      no_fx_purchases: { multiplier: 2, unit: "Scene+ pts per $1", note: "No foreign exchange fee" }
+      dining_entertainment: { multiplier: 2, unit: "Scene+ pts per $1" }
+      recurring_bills: { multiplier: 2, unit: "Scene+ pts per $1" }
+      everything_else: { multiplier: 1, unit: "Scene+ pts per $1" }
+    perks:
+      - "No foreign exchange fee on purchases in any currency"
+      - "6 lounge passes per year"
+      - "25 days travel medical insurance (under age 65)"
+    best_for: "Travel abroad (no FX fee), Visa network coverage, lounge access"
+    notes:
+      - "Essential pairing when Amex not accepted internationally"
+      - "Use Expedia for Scotia to redeem Scene+ points for hotels"
+
+  rbc_ion_plus_visa:
+    name: "RBC ION+ Visa"
+    issuer: "RBC"
+    network: "Visa"
+    annual_fee_cad: 48.00
+    currency: "Avion Premium Points"
+    earning_rates:
+      everyday_expenses: { multiplier: 3, unit: "Avion pts per $1", note: "Low annual fee for 3x" }
+      everything_else: { multiplier: 1, unit: "Avion pts per $1" }
+    perks: []
+    best_for: "Main driver card in RBC ecosystem; low fee, high earn rate"
+    notes:
+      - "Earns Avion Premium Points — upgrade to Elite tier via Avion VI card"
+      - "3x on everyday expenses is strong for a $48/yr card"
+      - "Pairs with RBC Avion VI for insurance and point upgrades"
+
+  rbc_avion_vi:
+    name: "RBC Avion Visa Infinite"
+    issuer: "RBC"
+    network: "Visa"
+    annual_fee_cad: 120.00
+    currency: "Avion Points"
+    earning_rates:
+      everything: { multiplier: 1, unit: "Avion pts per $1" }
+    perks:
+      - "4 lounge passes per year"
+      - "Travel medical insurance"
+      - "$100 annual travel credit"
+    best_for: "Benefits/insurance card in RBC combo; upgrades ION+ Premium points to Elite"
+    notes:
+      - "Do NOT use as main spending card (1x earn is weak)"
+      - "Value is in upgrading Avion Premium to Avion Elite points"
+      - "Avion Elite points redeem up to 2.3 cpp via air travel redemption schedule"
+      - "Transfer partners: BA Avios 1:1, Asia Miles 1:1, WestJet 100:1"
+
+  td_aeroplan_vi:
+    name: "TD Aeroplan Visa Infinite"
+    issuer: "TD"
+    network: "Visa"
+    annual_fee_cad: 139.00
+    currency: "Aeroplan"
+    earning_rates:
+      gas_ev_groceries_air_canada: { multiplier: 1.5, unit: "Aeroplan pts per $1" }
+      everything_else: { multiplier: 1, unit: "Aeroplan pts per $1" }
+    perks:
+      - "Preferred Aeroplan pricing (lower award costs)"
+      - "First checked bag free on Air Canada"
+      - "Nexus application rebate"
+      - "21 days out-of-province travel medical insurance"
+    best_for: "Aeroplan loyalists who fly Air Canada frequently"
+    notes:
+      - "Preferred pricing means lower Aeroplan redemption costs on AC flights"
+      - "Pairs perfectly with Amex Cobalt: earn MR at 5x, transfer to Aeroplan, book via TD preferred pricing"
+      - "Checked bag benefit saves $30-60+ per round trip"
+
+  td_first_class_travel_vi:
+    name: "TD First Class Travel Visa Infinite"
+    issuer: "TD"
+    network: "Visa"
+    annual_fee_cad: 139.00
+    currency: "TD Rewards"
+    earning_rates:
+      grocery_dining_transit: { multiplier: 6, unit: "TD pts per $1" }
+      recurring_and_streaming: { multiplier: 4, unit: "TD pts per $1" }
+      everything_else: { multiplier: 2, unit: "TD pts per $1" }
+      expedia_for_td: { multiplier: 8, unit: "TD pts per $1" }
+    perks:
+      - "$100 annual travel credit"
+      - "4 lounge passes per year"
+      - "21 days out-of-province travel medical insurance"
+    best_for: "Non-Aeroplan travellers; strong earn across all categories"
+    notes:
+      - "6x on grocery/dining/transit is top tier for a Visa card"
+      - "8x via Expedia for TD is excellent for hotel bookings"
+      - "TD Rewards best redeemed via Expedia for TD at 0.5-1.0 cpp"
+      - "Avoid gift card redemptions (0.4 cpp)"
+
+  rogers_red_we_mc:
+    name: "Rogers World Elite Mastercard"
+    issuer: "Rogers Bank"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      us_dollar_purchases: { multiplier: 3.0, unit: "% cashback" }
+      all_purchases: { multiplier: 2.0, unit: "% cashback" }
+      rogers_shaw_fido_bill: { multiplier: 1.5, unit: "x cashback boost", note: "Applied to telecom bill" }
+    perks:
+      - "No annual fee"
+      - "10 days out-of-province travel medical insurance"
+      - "5 days Roam Like Home data included"
+    eligibility: "Must have Rogers, Shaw, or Fido telecom service"
+    best_for: "No-fee Mastercard with strong flat-rate cashback and US spending"
+    notes:
+      - "3% on US purchases effectively negates FX fee and adds cashback"
+      - "2% flat cashback is best no-fee rate in Canada for a MC"
+      - "Cashback redeemed as credit against Rogers/Shaw/Fido bill"
+
+  wealthsimple_vi:
+    name: "Wealthsimple Visa Infinite"
+    issuer: "Wealthsimple"
+    network: "Visa"
+    annual_fee_cad: 120.00
+    annual_fee_note: "$10/mo; waived for Premium/Generation clients or $4k+/mo direct deposit"
+    currency: "Cashback"
+    earning_rates:
+      all_purchases: { multiplier: 2.0, unit: "% cashback" }
+    perks:
+      - "No foreign exchange fee"
+    best_for: "Flat 2% cashback with no FX fee; great if fee is waived"
+    notes:
+      - "Fee waived if you have Wealthsimple Premium, Generation, or $4k+/mo direct deposit"
+      - "No FX fee makes it excellent for international travel"
+
+  wealthsimple_prepaid_mc:
+    name: "Wealthsimple Prepaid Mastercard"
+    issuer: "Wealthsimple"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "None (prepaid)"
+    earning_rates: {}
+    perks:
+      - "No foreign exchange fee"
+      - "ATM fees reimbursed worldwide"
+      - "No annual fee"
+      - "No credit inquiry required"
+    best_for: "International travel ATM withdrawals and purchases where MC needed"
+
+  pc_financial_we_mc:
+    name: "PC Financial World Elite Mastercard"
+    issuer: "PC Financial"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "PC Optimum"
+    earning_rates:
+      shoppers_drug_mart: { multiplier: 45, unit: "PC Optimum pts per $1" }
+      loblaws_banner_stores: { multiplier: 30, unit: "PC Optimum pts per $1" }
+      everything_else: { multiplier: 10, unit: "PC Optimum pts per $1" }
+    redemption_value: "10,000 pts = $10 at any Loblaw banner store"
+    perks:
+      - "No annual fee"
+    eligibility: "Must have PC Optimum card linked"
+    best_for: "Loblaw/Shoppers shoppers; no-fee with strong grocery earn"
+    notes:
+      - "45 pts/$1 at Shoppers = 4.5% return at redemption"
+      - "Stack with 20x Shoppers events for effectively 30% return"
+      - "Save PC Optimum points for bonus redemption events at Shoppers"
+
+  tangerine_world_mc:
+    name: "Tangerine World Mastercard"
+    issuer: "Tangerine"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      selected_categories_1_and_2: { multiplier: 2.0, unit: "% cashback", note: "Choose 2 categories" }
+      selected_category_3: { multiplier: 2.0, unit: "% cashback", note: "3rd category requires Tangerine savings account" }
+      everything_else: { multiplier: 0.5, unit: "% cashback" }
+    category_note: "Categories are switchable anytime; includes groceries, dining, gas, transit, etc."
+    perks:
+      - "No annual fee"
+      - "Dragon Pass lounge access"
+    best_for: "Targeted 2% cashback on 3 chosen categories with no fee"
+    notes:
+      - "Open a Tangerine savings account to unlock the 3rd 2% category"
+      - "Dragon Pass lounge access is unusual for a no-fee card"
+
+  bmo_cashback_we_mc:
+    name: "BMO CashBack World Elite Mastercard"
+    issuer: "BMO"
+    network: "Mastercard"
+    annual_fee_cad: 120.00
+    currency: "Cashback"
+    earning_rates:
+      groceries: { multiplier: 5.0, unit: "% cashback", note: "Subject to per-billing-cycle spending cap" }
+      transit_and_gas: { multiplier: 4.0, unit: "% cashback", note: "Subject to per-billing-cycle spending cap" }
+      recurring_bills: { multiplier: 3.0, unit: "% cashback", note: "Subject to per-billing-cycle spending cap" }
+      everything_else: { multiplier: 1.0, unit: "% cashback" }
+    perks:
+      - "4 lounge passes per year"
+    best_for: "High cashback on groceries/gas but watch the spending caps"
+    notes:
+      - "Spending caps per category per billing cycle limit the high earn rates"
+      - "Once caps hit, earn rate drops — pair with another card for overflow"
+      - "Strategy: use BMO until caps hit, then switch to TD FCT for remainder"
+
+  eq_bank_prepaid_mc:
+    name: "EQ Bank Prepaid Mastercard"
+    issuer: "EQ Bank"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "None (prepaid)"
+    earning_rates: {}
+    perks:
+      - "No foreign exchange fee"
+      - "Linked to EQ Bank high-interest savings account"
+      - "Unlimited transactions"
+    best_for: "No-FX-fee Mastercard for international use; no credit needed"
+
+# ── RECOMMENDED CREDIT CARD COMBOS ───────────────────────────────────────
+
+recommended_combos:
+
+  combo_1:
+    name: "The Ultimate Aeroplan Combo"
+    rating: "10/10"
+    tier: "Best"
+    cards:
+      - "Amex Cobalt"
+      - "TD Aeroplan Visa Infinite"
+      - "Scotia Passport Visa Infinite"
+      - "EQ Bank Prepaid Mastercard"
+    networks_covered: ["Amex", "Visa", "Mastercard"]
+    strategy:
+      main_driver: "Amex Cobalt — 5x MR on all food/dining spend"
+      points_flow: "Transfer Amex MR to Aeroplan 1:1 — book flights via TD Aeroplan preferred pricing with free checked bags"
+      travel_benefits: "Scotia Passport for no-FX-fee spending abroad, 6 lounge passes, 25-day travel medical, hotel bookings via Expedia for Scotia (Scene+)"
+      backup_network: "EQ Bank Prepaid MC for Mastercard coverage internationally, no FX fee"
+    why_best:
+      - "Maximizes food/dining earn rate (5x Cobalt) into Aeroplan at 1:1"
+      - "TD Aeroplan provides preferred pricing, bags, and Nexus rebate"
+      - "Scotia Passport covers Visa network, no FX, lounge passes, insurance"
+      - "All three major networks covered (Amex + Visa + MC)"
+      - "Total annual fees justified by insurance, lounges, and earn rate"
+
+  combo_2:
+    name: "Simplified Aeroplan Combo"
+    rating: "9.2/10"
+    cards:
+      - "Amex Cobalt"
+      - "Scotia Passport Visa Infinite"
+      - "Rogers World Elite Mastercard"
+    networks_covered: ["Amex", "Visa", "Mastercard"]
+    strategy:
+      main_driver: "Amex Cobalt — 5x MR on food/dining"
+      travel_card: "Scotia Passport — no FX fee, lounge passes, travel insurance"
+      backup_network: "Rogers Red WE MC — 2% flat cashback, no annual fee, 3% US purchases"
+    why_good:
+      - "Fewer cards than Combo 1, still strong"
+      - "Rogers adds no-fee MC with 2% cashback and 3% US spending"
+      - "No TD card means no preferred Aeroplan pricing, but simpler setup"
+
+  combo_3:
+    name: "Non-Frequent-Flyer Combo"
+    rating: "8.8/10"
+    cards:
+      - "Scotia Gold Amex"
+      - "TD First Class Travel Visa Infinite"
+      - "Rogers World Elite Mastercard"
+    networks_covered: ["Amex", "Visa", "Mastercard"]
+    strategy:
+      main_driver: "Scotia Gold Amex — 6x at Sobeys family stores, 5x food/dining"
+      travel_card: "TD First Class Travel VI — 6x grocery/dining/transit, book hotels via Expedia for TD at 8x earn"
+      backup_network: "Rogers Red WE MC — 2% cashback, no fee, Mastercard coverage"
+    why_good:
+      - "Best for people who do not fly often"
+      - "Use Expedia for TD for hotel bookings (8x earn rate)"
+      - "High grocery/dining multipliers on both Amex and Visa sides"
+      - "No Aeroplan dependency"
+
+  combo_4:
+    name: "RBC Dual Card Combo"
+    rating: "8.7/10"
+    cards:
+      - "RBC ION+ Visa"
+      - "RBC Avion Visa Infinite"
+      - "BMO CashBack World Elite Mastercard"
+    networks_covered: ["Visa", "Mastercard"]
+    strategy:
+      main_driver: "RBC ION+ — 3x everyday expenses at $48/yr (earns Avion Premium points)"
+      benefits_card: "RBC Avion VI — insurance, lounge passes, $100 travel credit; upgrades Premium to Elite points"
+      backup_network: "BMO CashBack WE MC for Mastercard coverage and high cashback categories"
+    point_upgrade_strategy:
+      step_1: "Earn Avion Premium points via ION+ (3x everyday)"
+      step_2: "Having the Avion VI card upgrades all Avion Premium points to Avion Elite tier"
+      step_3: "Avion Elite points redeem at up to 2.3 cpp via air travel redemption schedule"
+    why_good:
+      - "RBC ION+ is a low-fee high-earn daily driver"
+      - "Avion VI acts purely as upgrade card and insurance provider"
+      - "Avion Elite at 2.3 cpp is competitive with Aeroplan for value"
+      - "Missing Amex network — consider adding a no-fee Amex if needed"
+
+  combo_5:
+    name: "Cashback + Travel Hybrid"
+    rating: "8.5/10"
+    cards:
+      - "BMO CashBack World Elite Mastercard"
+      - "TD First Class Travel Visa Infinite"
+    networks_covered: ["Mastercard", "Visa"]
+    strategy:
+      main_driver: "BMO CashBack WE MC — 5% groceries, 4% gas/transit until spending caps hit"
+      overflow_card: "TD First Class Travel VI — 6x grocery/dining/transit, $100 travel credit, Expedia for TD"
+    spending_cap_strategy: "Use BMO first each billing cycle for high cashback; once per-category caps are reached, switch all spending to TD FCT for the rest of the cycle"
+    why_good:
+      - "Maximizes cashback through BMO spending caps"
+      - "TD FCT provides strong backup earn rate and travel benefits"
+      - "Simple two-card setup"
+      - "Missing Amex network — only Visa and MC covered"
+
+# ── STRATEGY PRINCIPLES ───────────────────────────────────────────────────
+
+strategy_principles:
+
+  card_count:
+    rule: "Max 3-4 cards, no more"
+    reasoning: "More cards means diluted spend, harder to track, and more fees"
+
+  network_coverage:
+    rule: "One card from each major network (Visa, Mastercard, Amex)"
+    reasoning: "Amex not accepted everywhere; Visa/MC provide backup coverage especially internationally"
+
+  card_roles:
+    main_driver:
+      description: "Highest multiplier card where most spend goes"
+      purpose: "Accumulate the most points/cashback per dollar"
+      examples: ["Amex Cobalt (5x food)", "RBC ION+ (3x everyday)", "Scotia Gold Amex (6x Sobeys)"]
+    benefits_card:
+      description: "Card that provides travel insurance, lounge passes, credits"
+      purpose: "Justify annual fee through insurance value and perks, not earning rate"
+      examples: ["RBC Avion VI", "Scotia Passport VI", "TD Aeroplan VI"]
+    backup_card:
+      description: "Card for network coverage or specific bonus categories"
+      purpose: "Fill gaps where main driver is not accepted or does not earn well"
+      examples: ["Rogers Red WE MC", "EQ Bank Prepaid MC"]
+
+  annual_fee_justification:
+    rule: "Do not pay annual fees you cannot justify"
+    tips:
+      - "Calculate value of lounge passes, insurance, travel credits, and earn rate"
+      - "If total perk value exceeds the annual fee, the card is worth keeping"
+      - "Conduct annual credit card audit to check if benefits are exhausted"
+      - "Cancel or product-switch cards whose benefits you no longer use"
+
+  product_switching:
+    rule: "Product switch free student cards to premium cards once credit limit hits $5k"
+    tips:
+      - "Keep existing credit history by switching rather than opening new accounts"
+      - "Most banks allow product switch without a new credit inquiry"
+      - "Student cards often convert to premium tier at same bank once eligible"
+
+  partner_strategy:
+    rule: "Split cards between partners — do not duplicate the same card"
+    tips:
+      - "Each partner holds different cards to maximize network and earn coverage"
+      - "One partner can hold Amex cards, other holds Visa/MC"
+      - "Pool points via shared loyalty accounts where possible"
+
+  credit_score_optimization:
+    pay_statement_balance: "Pay the statement balance (not current balance) by the due date"
+    utilization_target: "Keep credit utilization between 1-5% for the best credit score impact"
+    utilization_note: "Utilization is calculated at statement date — pay down before statement closes if needed"
+
+  student_strategy:
+    step_1: "Start with 1 credit card at your existing bank"
+    step_2: "Build credit history for 6-12 months before applying for additional cards"
+    step_3: "Once credit limit reaches $5k, product switch to a premium card"
+    step_4: "Do not apply for multiple cards at once — space applications 3-6 months apart"
+
+# ── TRANSFER STRATEGIES ───────────────────────────────────────────────────
+
+transfer_strategies:
+
+  amex_mr_transfers:
+    source: "Amex Membership Rewards"
+    earning_cards: ["Amex Cobalt", "Amex Gold"]
+    partners:
+      - program: "Aeroplan"
+        ratio: "1:1"
+        best_use: "Air Canada and Star Alliance flights; best for Canadian travellers"
+        priority: 1
+      - program: "British Airways Avios"
+        ratio: "1:1"
+        best_use: "Short-haul sweet spots under 1150 miles; AA partner awards"
+        priority: 2
+      - program: "Flying Blue (Air France/KLM)"
+        ratio: "1:1"
+        best_use: "Monthly Promo Awards for 25-50% discount; transatlantic on AF/KLM"
+        priority: 3
+      - program: "Cathay Pacific Asia Miles"
+        ratio: "1:1"
+        best_use: "Premium cabin awards on Cathay Pacific to Asia"
+        priority: 4
+    critical_rule: "NEVER redeem MR directly through Amex Travel portal — terrible value. Always transfer to airline partners."
+
+  rbc_avion_transfers:
+    source: "RBC Avion Points"
+    earning_cards: ["RBC ION+ Visa (Avion Premium)", "RBC Avion VI"]
+    point_tier_upgrade:
+      from: "Avion Premium (earned via ION+)"
+      to: "Avion Elite (unlocked by holding Avion VI card)"
+      value_increase: "Up to 2.3 cpp via air travel redemption schedule"
+      critical_rule: "Do NOT redeem at Premium tier — always upgrade to Elite via Avion VI card"
+    partners:
+      - program: "British Airways Avios"
+        ratio: "1:1"
+        best_use: "Short-haul sweet spots"
+      - program: "Cathay Pacific Asia Miles"
+        ratio: "1:1"
+        best_use: "Premium cabin Asia awards"
+      - program: "WestJet Dollars"
+        ratio: "100:1"
+        best_use: "100 Avion pts = $1 WestJet; straightforward domestic redemption"
+
+  scene_plus_transfers:
+    source: "Scene+"
+    earning_cards: ["Scotia Gold Amex", "Scotia Passport VI"]
+    best_redemption:
+      method: "Expedia for Scotia"
+      use_case: "Hotel bookings and vacation packages"
+      value: "~1.0 cpp"
+    notes:
+      - "Cineplex movies: 1.0-1.2 cpp"
+      - "Scene+ dining partners: 1.0 cpp at select restaurants"
+
+  td_rewards_redemption:
+    source: "TD Rewards"
+    earning_cards: ["TD First Class Travel VI"]
+    best_redemption:
+      method: "Expedia for TD"
+      use_case: "Hotel bookings"
+      value_range: "0.5-1.0 cpp"
+    avoid:
+      method: "Gift card redemptions"
+      value: "0.4 cpp"
+      reason: "Terrible value — always redeem via Expedia for TD instead"
+
+  pc_optimum_strategy:
+    source: "PC Optimum"
+    earning_cards: ["PC Financial World Elite Mastercard"]
+    best_redemption:
+      method: "Save for 20x bonus events at Shoppers Drug Mart"
+      value: "Effectively 30% return on cosmetics and electronics during events"
+    standard_value: "10,000 pts = $10 at any Loblaw banner store"
+    tips:
+      - "Do not redeem at base rate if a 20x event is coming soon"
+      - "Stack personal offers with in-store promotions for massive multipliers"
+      - "Shoppers Drug Mart has the highest earn rate and best redemption events"
+
+  air_miles_strategy:
+    source: "Air Miles"
+    best_redemption:
+      method: "Dream Miles for flights"
+      reason: "Always better value than Cash Miles"
+    avoid:
+      method: "Cash Miles for in-store redemptions"
+      reason: "Lower value per mile compared to Dream Miles flight bookings"
+
+# ── KEY REDEMPTION TIPS ───────────────────────────────────────────────────
+
+redemption_tips:
+
+  amex_mr:
+    do:
+      - "Always transfer to airline partners (Aeroplan, Avios, Flying Blue, Asia Miles) at 1:1"
+      - "Aeroplan is the top transfer for Canadian travellers"
+      - "Check Flying Blue Promo Awards monthly for 25-50% discounts"
+    do_not:
+      - "NEVER redeem directly through Amex Travel portal — terrible cents-per-point value"
+      - "Avoid hotel transfers unless no better option exists"
+
+  td_rewards:
+    do:
+      - "Redeem via Expedia for TD for hotel bookings at 0.8-1.0 cpp"
+      - "Use TD First Class Travel VI for 8x earn rate on Expedia for TD"
+    do_not:
+      - "Never redeem for gift cards (0.4 cpp)"
+      - "Avoid non-travel TD redemptions"
+
+  rbc_avion:
+    do:
+      - "Hold an Avion VI card to upgrade Avion Premium to Avion Elite tier"
+      - "Redeem Avion Elite via air travel schedule at up to 2.3 cpp"
+      - "Transfer to BA Avios 1:1 for short-haul sweet spots"
+    do_not:
+      - "Do NOT redeem at Avion Premium tier — massive value lost"
+      - "Avoid RBC Travel portal if airline transfers are available"
+
+  pc_optimum:
+    do:
+      - "Save points for 20x events at Shoppers Drug Mart (effectively 30% return)"
+      - "Stack personal offers with in-store promos"
+      - "Use PC Financial WE MC at Shoppers for 45 pts/$1"
+    do_not:
+      - "Do not redeem at base rate if a bonus event is approaching"
+
+  scene_plus:
+    do:
+      - "Use Expedia for Scotia for hotel and vacation package bookings"
+      - "Redeem at Cineplex for movies at 1.0-1.2 cpp"
+    do_not:
+      - "Avoid low-value merchandise redemptions"
+
+  scotia_passport:
+    do:
+      - "Use abroad for no-FX-fee purchases — great when Amex not accepted"
+      - "Use lounge passes (6 per year) before they expire"
+      - "Leverage 25-day travel medical insurance for trips"
+    do_not:
+      - "Do not use domestically when Amex Cobalt earns more per dollar"
+
+  air_miles:
+    do:
+      - "Dream Miles for flights — always better than Cash Miles"
+    do_not:
+      - "Avoid Cash Miles unless you have no travel plans"
+
+  general:
+    do:
+      - "Conduct an annual credit card audit — check if benefits are exhausted"
+      - "Justify every annual fee with actual perk usage"
+      - "Pay statement balance by due date — not the current balance"
+      - "Keep utilization between 1-5% for best credit score"
+    do_not:
+      - "Never carry more than 3-4 active credit cards"
+      - "Never duplicate the same card between partners"
+      - "Do not apply for multiple cards simultaneously"
