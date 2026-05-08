@@ -16,6 +16,16 @@ import (
 	"maplerewards/internal/model"
 )
 
+// ProServices bundles the Pro-tier service handles the AI exposes as gated tools.
+// Kept as a struct (rather than 4 separate AIService fields) because they're
+// always passed together and the registry iterates them as a unit.
+type ProServices struct {
+	BuyPoints     *BuyPointsService
+	Stack         *StackService
+	MissedRewards *MissedRewardsService
+	SQC           *SQCService
+}
+
 // AIService provides AI-powered credit card rewards advice using Claude.
 type AIService struct {
 	apiKey         string
@@ -30,6 +40,7 @@ type AIService struct {
 	serpSvc        *SerpAPIService
 	knowledgeBase  *knowledge.KnowledgeBase
 	awardSearchSvc *AwardSearchService
+	pro            ProServices
 	tools          *toolRegistry
 }
 
@@ -44,6 +55,7 @@ func NewAIService(
 	kb *knowledge.KnowledgeBase,
 	awardSearchSvc *AwardSearchService,
 	serpSvc *SerpAPIService,
+	pro ProServices,
 ) *AIService {
 	modelID := "claude-sonnet-4-5"
 	s := &AIService{
@@ -61,6 +73,7 @@ func NewAIService(
 		serpSvc:        serpSvc,
 		knowledgeBase:  kb,
 		awardSearchSvc: awardSearchSvc,
+		pro:            pro,
 	}
 	s.registerTools()
 	return s

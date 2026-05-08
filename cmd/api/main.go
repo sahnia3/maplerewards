@@ -132,7 +132,17 @@ func main() {
 	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, kb)
 	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb)
 
-	aiSvc := service.NewAIService(getEnv("ANTHROPIC_API_KEY", ""), walletRepo, cardRepo, transferRepo, valuationRepo, optimizerSvc, tavilySvc, kb, awardSearchSvc, serpSvc)
+	aiSvc := service.NewAIService(
+		getEnv("ANTHROPIC_API_KEY", ""),
+		walletRepo, cardRepo, transferRepo, valuationRepo,
+		optimizerSvc, tavilySvc, kb, awardSearchSvc, serpSvc,
+		service.ProServices{
+			BuyPoints:     buyPointsSvc,
+			Stack:         stackSvc,
+			MissedRewards: missedRewardsSvc,
+			SQC:           sqcSvc,
+		},
+	)
 
 	// ── Handlers ──────────────────────────────────────────────────────────
 	cardH := handler.NewCardHandler(cardRepo)

@@ -391,6 +391,145 @@ func (s *AIService) registerTools() {
 			return json.Marshal(map[string]any{"query": args.Query, "results": results})
 		},
 	})
+
+	// ═══ PRO-ONLY TOOLS — visible only when isPro=true ═════════════════════════
+	// These mirror the /pro-tools page but make the same logic chat-callable.
+	// The user's stated requirement: "I want it to be able to give the
+	// information to power users like Pro Tools currently does. For example,
+	// if I want to buy points, should I buy or just spend cash?"
+
+	// 6. evaluate_buy_points — wraps BuyPointsService.
+	s.tools.register(toolDef{
+		Name:    "evaluate_buy_points",
+		ProOnly: true,
+		Description: "PRO ONLY. Evaluate whether buying points from a loyalty program is a good deal " +
+			"vs paying cash. Returns a verdict (BUY / EARN / NEUTRAL), break-even CPP, and rationale. " +
+			"USE THIS when the user asks 'should I buy X points?' or compares buy-points pricing to a " +
+			"cash alternative. Always prefer this over your own math.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"program_slug":         map[string]any{"type": "string", "description": "e.g. aeroplan, marriott, hilton, hyatt, flying-blue"},
+				"points_needed":        map[string]any{"type": "integer", "description": "How many points the user wants to buy"},
+				"cash_alternative_cad": map[string]any{"type": "number", "description": "What the user would otherwise pay in CAD for the redemption (flight, hotel, etc.)"},
+			},
+			"required": []string{"program_slug", "points_needed", "cash_alternative_cad"},
+		},
+		Handler: func(ctx context.Context, _ string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.pro.BuyPoints == nil {
+				return errResultJSON("service_unavailable", "Buy-points evaluator not configured."), nil
+			}
+			var args model.BuyPointsRequest
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return errResultJSON("invalid_args", err.Error()), nil
+			}
+			verdict, err := s.pro.BuyPoints.Evaluate(ctx, args)
+			if err != nil {
+				return errResultJSON("eval_failed", err.Error()), nil
+			}
+			return json.Marshal(verdict)
+		},
+	})
+
+	// 7. recommend_stack — triple-stack (portal × card × offer).
+	s.tools.register(toolDef{
+		Name:    "recommend_stack",
+		ProOnly: true,
+		Description: "PRO ONLY. Recommend the optimal portal × card × offer stack for a given merchant " +
+			"and spend amount. Returns ranked stack components with effective return %. USE THIS when " +
+			"the user asks 'best way to spend $X at [merchant]' or 'what's the optimal cashback stack for...'",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"merchant_slug": map[string]any{"type": "string", "description": "Merchant identifier from /merchants list, e.g. amazon-ca, best-buy, costco-ca"},
+				"spend_amount":  map[string]any{"type": "number", "description": "Spend amount in CAD"},
+			},
+			"required": []string{"merchant_slug", "spend_amount"},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.pro.Stack == nil {
+				return errResultJSON("service_unavailable", "Stack recommender not configured."), nil
+			}
+			var args struct {
+				MerchantSlug string  `json:"merchant_slug"`
+				SpendAmount  float64 `json:"spend_amount"`
+			}
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return errResultJSON("invalid_args", err.Error()), nil
+			}
+			rec, err := s.pro.Stack.Recommend(ctx, model.StackRecommendRequest{
+				SessionID:    sessionID,
+				MerchantSlug: args.MerchantSlug,
+				SpendAmount:  args.SpendAmount,
+			})
+			if err != nil {
+				return errResultJSON("recommend_failed", err.Error()), nil
+			}
+			return json.Marshal(rec)
+		},
+	})
+
+	// 8. evaluate_missed_rewards — re-rank historical spend.
+	s.tools.register(toolDef{
+		Name:    "evaluate_missed_rewards",
+		ProOnly: true,
+		Description: "PRO ONLY. Re-rank the user's historical spend against their current wallet to " +
+			"compute total dollars left on the table. Returns gap by category, top-N worst-offender " +
+			"transactions, and total recoverable amount. USE THIS when the user asks 'how much am I " +
+			"losing?' or 'what's my missed-rewards gap?'",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"since_days": map[string]any{"type": "integer", "description": "Look back window in days (default 90). Use 365 for full year."},
+				"top_n":      map[string]any{"type": "integer", "description": "Top-N missed-reward purchases to return (default 5)"},
+			},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.pro.MissedRewards == nil {
+				return errResultJSON("service_unavailable", "Missed-rewards service not configured."), nil
+			}
+			var args struct {
+				SinceDays int `json:"since_days"`
+				TopN      int `json:"top_n"`
+			}
+			_ = json.Unmarshal(raw, &args) // both fields optional
+			if args.SinceDays == 0 {
+				args.SinceDays = 90
+			}
+			if args.TopN == 0 {
+				args.TopN = 5
+			}
+			report, err := s.pro.MissedRewards.ComputeMissedRewards(ctx, sessionID, args.SinceDays, args.TopN)
+			if err != nil {
+				return errResultJSON("compute_failed", err.Error()), nil
+			}
+			return json.Marshal(report)
+		},
+	})
+
+	// 9. project_sqc — Aeroplan 2026 Status Qualifying Credits.
+	s.tools.register(toolDef{
+		Name:    "project_sqc",
+		ProOnly: true,
+		Description: "PRO ONLY. Project the user's Aeroplan 2026 SQC tier — current tier, gap to next, " +
+			"spend needed at best card rate to close the gap. The Aeroplan 2026 framework is brand-new " +
+			"and unique to MapleRewards; no other tool projects this. USE THIS when the user asks " +
+			"about Aeroplan elite status, SQC, or 'how do I make 35K status this year?'",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
+			if s.pro.SQC == nil {
+				return errResultJSON("service_unavailable", "SQC projector not configured."), nil
+			}
+			proj, err := s.pro.SQC.Project(ctx, sessionID)
+			if err != nil {
+				return errResultJSON("project_failed", err.Error()), nil
+			}
+			return json.Marshal(proj)
+		},
+	})
 }
 
 // ── Tool-use system prompt ───────────────────────────────────────────────────
@@ -399,7 +538,7 @@ func (s *AIService) registerTools() {
 // The fat travel-data-injection-on-keyword approach is gone — the model now
 // gets context via tools and only the stable layers (instructions + wallet +
 // catalog) live here.
-func (s *AIService) buildToolUseSystemPrompt(walletContext, catalogContext string) string {
+func (s *AIService) buildToolUseSystemPrompt(walletContext, catalogContext string, isPro bool) string {
 	var b strings.Builder
 	b.WriteString(`You are the MapleRewards AI Assistant — an expert Canadian credit card rewards advisor.
 
@@ -429,6 +568,22 @@ For award queries, structure your final answer as:
 3. Action recommendation (which card to use, transfer to do, when to book)
 `)
 
+	if isPro {
+		b.WriteString(`
+PRO TIER ROUTING (this user has MapleRewards Pro)
+- "Should I buy these points or pay cash?" → evaluate_buy_points
+- "Best card stack for [merchant]?" → recommend_stack
+- "How much have I been losing?" / "missed rewards" → evaluate_missed_rewards
+- "Aeroplan status" / "SQC" / "elite tier" → project_sqc
+Pro tools return deterministic verdicts; cite their output verbatim rather than computing parallel math.
+`)
+	} else {
+		b.WriteString(`
+FREE TIER NOTE
+- This user is on the free plan. Buy-points evaluation, stack recommendations, missed-rewards forensics, and SQC projection are MapleRewards Pro features and not available as tools to you. If the user asks about any of these, give a directional answer based on your knowledge and gently surface that the precise calculation lives in Pro at /pricing — do not promise to "run" the analysis.
+`)
+	}
+
 	b.WriteString("\n--- USER WALLET ---\n")
 	b.WriteString(walletContext)
 	b.WriteString("\n--- CARD CATALOG (reference) ---\n")
@@ -453,7 +608,7 @@ func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bo
 	// Build static system layers.
 	walletCtx := s.buildWalletContext(ctx, req.SessionID)
 	catalogCtx := s.buildCardCatalogContext(ctx)
-	system := s.buildToolUseSystemPrompt(walletCtx, catalogCtx)
+	system := s.buildToolUseSystemPrompt(walletCtx, catalogCtx, isPro)
 	tools := s.tools.schemas(isPro)
 
 	// Convert prior history into block messages. History is plain text only —
