@@ -458,13 +458,13 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .mr-hero-art {
   position: absolute;
-  top: 50%; right: clamp(0px, 4vw, 60px);
+  /* Pinned to the right rail. Width capped so the fan doesn't bleed left
+   * into the copy column where the stats and best-move panels live. */
+  top: 50%; right: 0;
   transform: translateY(-50%);
-  width: min(50%, 600px);
+  width: min(46%, 580px);
   height: 100%;
   z-index: 1;
-  /* CardFan must receive mouse events. Earlier `pointer-events: none` here was killing
-   * hover + click on the post-login dashboard. */
   pointer-events: auto;
   --fan-scale: 1.0;
 }
@@ -506,9 +506,10 @@ input[type="number"]::-webkit-inner-spin-button {
   border: 1px solid var(--rule);
   border-radius: 12px;
   overflow: hidden;
-  background: var(--card-fill-strong);
+  /* Transparent — panel reads on the page substrate, no warm-cream tint. */
+  background: transparent;
   max-width: 560px;
-  box-shadow: var(--shadow-1);
+  box-shadow: none;
 }
 .mr-hero-stat { padding: 16px 18px; min-width: 0; }
 .mr-hero-stat + .mr-hero-stat { border-left: 1px solid var(--rule); }
@@ -519,8 +520,9 @@ input[type="number"]::-webkit-inner-spin-button {
   max-width: 560px;
   border: 1px solid var(--rule);
   border-radius: 14px;
-  background: var(--card-fill-strong);
-  box-shadow: var(--shadow-1);
+  /* Transparent — same substrate as the masthead, no card fill. */
+  background: transparent;
+  box-shadow: none;
   padding: 16px 18px;
 }
 /* dark-mode override removed — panel no longer uses backdrop-filter */
