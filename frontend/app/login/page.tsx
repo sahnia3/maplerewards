@@ -3,9 +3,11 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { MapleWordmark } from "@/components/brand/maple-mark";
+import { Button } from "@/components/ui/button";
 
 function LoginForm() {
   const router = useRouter();
@@ -35,30 +37,64 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-[420px]">
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-3 mb-10">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center maple-bg"
-            style={{ boxShadow: "0 2px 16px var(--info-border)" }}
-          >
-            <span className="text-lg leading-none">🍁</span>
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white">
-            maple<span style={{ color: "var(--teal)" }}>rewards</span>
-          </span>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "32px clamp(20px, 4vw, 60px)",
+        background: "var(--paper)",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 440 }}>
+        {/* Wordmark */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 32 }}>
+          <Link href="/" aria-label="MapleRewards home" style={{ textDecoration: "none" }}>
+            <MapleWordmark size="md" />
+          </Link>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl p-8" style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-          boxShadow: "var(--shadow-card)",
-        }}>
-          <h1 className="text-[22px] font-bold text-white text-center mb-1.5">Welcome back</h1>
-          <p className="text-[14px] text-center mb-8" style={{ color: "var(--text-secondary)" }}>
-            Sign in to your account
-          </p>
+        <div
+          style={{
+            background: "var(--card-fill-strong)",
+            border: "1px solid var(--rule)",
+            borderRadius: 16,
+            padding: "32px clamp(20px, 4vw, 36px)",
+            boxShadow: "var(--shadow-card)",
+          }}
+        >
+          {/* Eyebrow + display title */}
+          <header style={{ marginBottom: 28, textAlign: "center" }}>
+            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 10 }}>
+              Sign in
+            </div>
+            <h1
+              className="display"
+              style={{
+                fontSize: 28,
+                lineHeight: 1.1,
+                color: "var(--ink)",
+                margin: 0,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              Welcome <span style={{ fontStyle: "italic" }}>back</span>.
+            </h1>
+            <p
+              className="serif"
+              style={{
+                fontStyle: "italic",
+                fontSize: 14,
+                color: "var(--ink-2)",
+                marginTop: 8,
+                lineHeight: 1.5,
+              }}
+            >
+              Pick up where you left off.
+            </p>
+          </header>
 
           {/* Google */}
           <GoogleSignInButton
@@ -68,76 +104,194 @@ function LoginForm() {
           />
 
           {/* Divider */}
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px" style={{ background: "var(--border-dim)" }} />
-            <span className="text-[12px] font-medium" style={{ color: "var(--text-tertiary)" }}>or</span>
-            <div className="flex-1 h-px" style={{ background: "var(--border-dim)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
+            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                color: "var(--ink-3)",
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+              }}
+            >
+              or with email
+            </span>
+            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
           </div>
 
-          {/* Email form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
+          {/* Email + password */}
+          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
+            <Field icon={<Mail size={15} />} kind="default">
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
                 required
-                className="w-full h-11 pl-10 pr-4 rounded-xl text-[14px] input-maple focus-ring"
+                autoComplete="email"
+                style={fieldInputStyle}
               />
-            </div>
+            </Field>
 
-            <div className="relative">
-              <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
+            <Field
+              icon={<Lock size={15} />}
+              trailing={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((p) => !p)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--ink-3)",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    display: "inline-flex",
+                  }}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              }
+              kind="default"
+            >
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
                 required
-                className="w-full h-11 pl-10 pr-11 rounded-xl text-[14px] input-maple focus-ring"
+                autoComplete="current-password"
+                style={fieldInputStyle}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-tertiary)" }}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
+            </Field>
 
             {error && (
-              <div className="text-[13px] text-center py-2 rounded-lg" style={{
-                color: "#f87171",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid rgba(239,68,68,0.15)",
-              }}>
+              <div
+                role="alert"
+                className="serif"
+                style={{
+                  fontSize: 13,
+                  fontStyle: "italic",
+                  color: "var(--loss)",
+                  background: "var(--accent-soft)",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  textAlign: "center",
+                }}
+              >
                 {error}
               </div>
             )}
 
-            <button
+            <Button
               type="submit"
-              disabled={loading || !email || !password}
-              className="w-full h-11 rounded-xl text-[14px] font-semibold text-white transition-all accent-bg accent-glow disabled:opacity-50"
-              style={{ cursor: loading ? "wait" : "pointer" }}
+              variant="primary"
+              size="md"
+              disabled={!email || !password}
+              loading={loading}
+              style={{ width: "100%" }}
             >
-              {loading ? <Loader2 size={18} className="animate-spin mx-auto" /> : "Sign In"}
-            </button>
+              {loading ? "Signing in" : "Sign in"}
+            </Button>
           </form>
+
+          <p
+            className="mono"
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              textAlign: "center",
+              marginTop: 18,
+            }}
+          >
+            <Link href="/forgot-password" style={{ color: "inherit", textDecoration: "underline" }}>
+              Forgot password?
+            </Link>
+          </p>
         </div>
 
         {/* Footer */}
-        <p className="text-center mt-6 text-[14px]" style={{ color: "var(--text-secondary)" }}>
+        <p
+          className="serif"
+          style={{
+            textAlign: "center",
+            marginTop: 20,
+            fontSize: 14,
+            color: "var(--ink-2)",
+            fontStyle: "italic",
+          }}
+        >
           Don&apos;t have an account?{" "}
-          <Link href="/signup" className="font-medium transition-colors" style={{ color: "var(--teal-light)" }}>
+          <Link
+            href="/signup"
+            style={{
+              color: "var(--accent)",
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+              fontStyle: "normal",
+              fontWeight: 500,
+            }}
+          >
             Create one
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+/* ─── Editorial form primitives ─────────────────────────────────────────── */
+
+const fieldInputStyle: React.CSSProperties = {
+  flex: 1,
+  height: 44,
+  padding: "0 12px",
+  background: "transparent",
+  border: "none",
+  outline: "none",
+  fontFamily: "var(--font-mono)",
+  fontSize: 14,
+  color: "var(--ink)",
+  width: "100%",
+};
+
+function Field({
+  icon,
+  trailing,
+  children,
+}: {
+  icon?: React.ReactNode;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+  kind?: "default";
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        background: "var(--surface)",
+        border: "1px solid var(--rule)",
+        borderRadius: 10,
+        padding: "0 12px",
+        transition: "border-color 160ms",
+      }}
+      onFocus={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+      }}
+      onBlur={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = "var(--rule)";
+      }}
+    >
+      {icon && <span style={{ color: "var(--ink-3)", display: "inline-flex" }}>{icon}</span>}
+      {children}
+      {trailing}
+    </label>
   );
 }
 

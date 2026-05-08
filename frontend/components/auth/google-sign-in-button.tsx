@@ -107,11 +107,23 @@ export function GoogleSignInButton({ onSuccess, onError, disabled }: GoogleSignI
       <button
         disabled
         type="button"
-        className="w-full flex items-center justify-center gap-3 h-11 rounded-xl text-[14px] font-medium cursor-not-allowed"
         style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          color: "var(--text-tertiary)",
+          width: "100%",
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          padding: "0 16px",
+          borderRadius: 10,
+          background: "var(--surface)",
+          border: "1px solid var(--rule)",
+          color: "var(--ink-3)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          cursor: "not-allowed",
         }}
         title="Set NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env.local to enable Google Sign-In"
       >
@@ -122,17 +134,33 @@ export function GoogleSignInButton({ onSuccess, onError, disabled }: GoogleSignI
           <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
         </svg>
         Continue with Google
-        <span className="text-[11px] ml-auto opacity-50">(not configured)</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, opacity: 0.6 }}>NOT CONFIGURED</span>
       </button>
     );
   }
 
   if (loading) {
     return (
-      <div className="w-full flex items-center justify-center gap-3 h-11 rounded-xl"
-        style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
-        <Loader2 size={16} className="animate-spin" style={{ color: "var(--text-tertiary)" }} />
-        <span className="text-[14px]" style={{ color: "var(--text-tertiary)" }}>Signing in…</span>
+      <div
+        style={{
+          width: "100%",
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          borderRadius: 10,
+          background: "var(--surface)",
+          border: "1px solid var(--rule)",
+          color: "var(--ink-3)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
+        <Loader2 size={16} className="animate-spin" />
+        <span>Signing in…</span>
       </div>
     );
   }
