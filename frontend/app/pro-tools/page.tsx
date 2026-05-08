@@ -9,6 +9,10 @@ import {
   listMerchants, recommendStack,
   getIndiaArbitrage,
   listAwardWatches, createAwardWatch, deleteAwardWatch,
+  getMissedRewards,
+  getSQCProjection,
+  getCardCredits, recordCreditRedemption,
+  getCardValueSummary,
 } from "@/lib/api";
 import type {
   BuyPromo, BuyPointsVerdict,
@@ -16,6 +20,10 @@ import type {
   Merchant, StackRecommendation,
   IndiaArbitrageProperty,
   AwardWatch,
+  MissedRewardsReport,
+  SQCProjection,
+  CardCreditStatus,
+  CardValueSummary,
 } from "@/lib/types";
 import { Trash2, Plus } from "lucide-react";
 import { PageMasthead } from "@/components/editorial/page-masthead";
@@ -58,9 +66,17 @@ export default function ProToolsPage() {
           eyebrow="Pro tools"
           eyebrowEnd="Canada-first · CAD"
           title={<>The <span style={{ fontStyle: "italic", color: "var(--accent)" }}>power-user</span> toolkit.</>}
-          lede="Buy-points break-even, triple-stack calculator, devaluation alarms, award watcher, India-outbound arbitrage — built on your wallet data."
+          lede="Aeroplan SQC projection, missed-rewards forensics, credit-window calendar, card-value scorecard, buy-points break-even, triple-stack, devaluation alarms, award watcher — built on your wallet data."
         />
 
+        <SQCTile sessionId={sessionId} isReady={isReady} />
+        <LeafDivider />
+        <MissedRewardsTile sessionId={sessionId} isReady={isReady} />
+        <LeafDivider />
+        <CreditsTile sessionId={sessionId} isReady={isReady} />
+        <LeafDivider />
+        <CardValueTile sessionId={sessionId} isReady={isReady} />
+        <LeafDivider />
         <BuyPointsTile />
         <LeafDivider />
         <StackTile sessionId={sessionId} ensureSession={ensureSession} />
@@ -776,6 +792,415 @@ function IndiaArbTile({ sessionId, isReady }: { sessionId: string | null; isRead
           Cash rates sampled at booking time. Set point balances at{" "}
           <Link href="/wallet" style={{ color: "var(--accent)", textDecoration: "underline" }}>/wallet</Link> for personalised savings math.
         </p>
+      </PaperTile>
+    </section>
+  );
+}
+
+/* ─── 2026 Aeroplan SQC projector ───────────────────────────────────────── */
+function SQCTile({ sessionId, isReady }: { sessionId: string | null; isReady: boolean }) {
+  const [proj, setProj] = useState<SQCProjection | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isReady || !sessionId) return;
+    setLoading(true);
+    getSQCProjection(sessionId)
+      .then(setProj)
+      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load SQC projection"))
+      .finally(() => setLoading(false));
+  }, [sessionId, isReady]);
+
+  const tierProgress = proj && proj.tiers.length > 0
+    ? Math.min(100, (proj.total_sqc_earned / proj.tiers[proj.tiers.length - 1].sqc_required) * 100)
+    : 0;
+
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <ToolHeader
+        motif="gauge"
+        kicker="2026 Aeroplan SQC"
+        title={<>Status <span style={{ fontStyle: "italic" }}>qualifying credits</span>, projected.</>}
+        lede="The 2026 SQC framework collapsed three legacy metrics into one. Maple projects your year-end tier from current spend rate — the only Canadian tracker that does."
+      />
+      <PaperTile accent>
+        {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Projecting…</p>}
+        {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}
+        {!loading && !err && proj && proj.wallet_has_no_aeroplan_cards && (
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 15 }}>
+            No Aeroplan-earning cards in your wallet yet. Add one at{" "}
+            <Link href="/wallet" style={{ color: "var(--accent)", textDecoration: "underline" }}>/wallet</Link> to unlock SQC projection.
+          </p>
+        )}
+        {!loading && !err && proj && !proj.wallet_has_no_aeroplan_cards && (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+              <div>
+                <span className="eyebrow">{proj.year} year-to-date</span>
+                <div className="display" style={{ fontSize: 36, color: "var(--accent)", lineHeight: 1, marginTop: 4 }}>
+                  {proj.total_sqc_earned.toLocaleString("en-CA")} SQC
+                </div>
+              </div>
+              {proj.current_tier && (
+                <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
+                  Current tier: <strong style={{ color: "var(--ink)" }}>{proj.current_tier}</strong>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: 6, background: "var(--rule)", borderRadius: 999, overflow: "hidden", marginBottom: 14 }}>
+              <div style={{ width: `${tierProgress}%`, height: "100%", background: "var(--accent)", transition: "width 280ms" }} />
+            </div>
+
+            {proj.next_tier && proj.sqc_to_next_tier != null && (
+              <div className="protool-stat-row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--rule)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)" }}>
+                <Stat label="Next tier" value={proj.next_tier} />
+                <Stat label="SQC to go" value={proj.sqc_to_next_tier.toLocaleString("en-CA")} />
+                <Stat label="Spend to go" value={proj.spend_to_next_tier != null ? fmtCAD(proj.spend_to_next_tier) : "—"} last />
+              </div>
+            )}
+
+            {proj.best_card_for_gap && (
+              <p className="serif" style={{ marginTop: 14, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)" }}>
+                Best card to close the gap: <strong style={{ color: "var(--ink)", fontStyle: "normal" }}>{proj.best_card_for_gap}</strong>
+              </p>
+            )}
+
+            {proj.cards.length > 0 && (
+              <div style={{ marginTop: 18, borderTop: "1px solid var(--rule)", paddingTop: 14 }}>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>Card contributions</div>
+                {proj.cards.map((c) => (
+                  <div key={c.card_id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--rule)", alignItems: "baseline" }}>
+                    <div className="display" style={{ fontSize: 15, color: "var(--ink)" }}>{c.card_name}</div>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{fmtCAD(c.ytd_spend)} spend</div>
+                    <div className="mono" style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>{c.sqc_earned.toLocaleString("en-CA")} SQC</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </PaperTile>
+    </section>
+  );
+}
+
+/* ─── Missed-rewards forensics ──────────────────────────────────────────── */
+function MissedRewardsTile({ sessionId, isReady }: { sessionId: string | null; isReady: boolean }) {
+  const [report, setReport] = useState<MissedRewardsReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [sinceDays, setSinceDays] = useState(30);
+
+  const load = useCallback(() => {
+    if (!isReady || !sessionId) return;
+    setLoading(true);
+    setErr(null);
+    getMissedRewards(sessionId, { sinceDays, top: 5 })
+      .then(setReport)
+      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load report"))
+      .finally(() => setLoading(false));
+  }, [sessionId, isReady, sinceDays]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <ToolHeader
+        motif="alarm"
+        kicker="Missed-rewards forensics"
+        title={<>What you <span style={{ fontStyle: "italic" }}>left</span> on the table.</>}
+        lede="Maple re-ranks every spend in your history against your current wallet — the gap is exactly the dollars you'd have earned with the optimal card."
+      />
+      <PaperTile>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          {[7, 30, 90, 365].map((d) => (
+            <button
+              key={d}
+              onClick={() => setSinceDays(d)}
+              className="mono"
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                fontSize: 11,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                background: sinceDays === d ? "var(--accent-soft)" : "transparent",
+                color: sinceDays === d ? "var(--accent)" : "var(--ink-3)",
+                border: `1px solid ${sinceDays === d ? "var(--accent)" : "var(--rule)"}`,
+                cursor: "pointer",
+              }}
+            >
+              {d === 365 ? "1 yr" : `${d} d`}
+            </button>
+          ))}
+        </div>
+        {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Re-ranking your spend…</p>}
+        {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}
+        {!loading && !err && report && report.entry_count === 0 && (
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 15 }}>
+            No spend logged in the last {sinceDays} days. Log transactions at{" "}
+            <Link href="/wallet" style={{ color: "var(--accent)", textDecoration: "underline" }}>/wallet</Link> to see your missed-rewards report.
+          </p>
+        )}
+        {!loading && !err && report && report.entry_count > 0 && (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+              <div>
+                <span className="eyebrow">Lost in last {sinceDays} days</span>
+                <div className="display" style={{ fontSize: 40, color: report.total_gap > 0 ? "var(--loss)" : "var(--gain)", lineHeight: 1, marginTop: 4 }}>
+                  {fmtCAD(report.total_gap)}
+                </div>
+              </div>
+              <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+                {report.missed_count} of {report.entry_count} purchases sub-optimal
+              </div>
+            </div>
+
+            <div className="protool-stat-row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--rule)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)" }}>
+              <Stat label="Total spend" value={fmtCAD(report.total_spend)} />
+              <Stat label="Earned" value={fmtCAD(report.total_actual_value)} />
+              <Stat label="Optimal" value={fmtCAD(report.total_optimal_value)} last />
+            </div>
+
+            {report.top_missed.length > 0 && (
+              <div style={{ marginTop: 18, borderTop: "1px solid var(--rule)", paddingTop: 14 }}>
+                <div className="eyebrow" style={{ marginBottom: 10 }}>Worst offenders</div>
+                {report.top_missed.map((m, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--rule)", alignItems: "baseline" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="display" style={{ fontSize: 15, color: "var(--ink)" }}>{m.optimal_card_name || "Optimal card"}</div>
+                      <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                        actual {fmtCAD(m.actual_value)} · optimal {fmtCAD(m.optimal_value)}
+                      </div>
+                    </div>
+                    <div className="mono" style={{ fontSize: 14, color: "var(--loss)", fontWeight: 600 }}>−{fmtCAD(m.gap)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="mono" style={{ fontSize: 10, marginTop: 14, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
+              Snapshot: {report.wallet_snapshot}. Re-rank uses your current wallet against historical spend.
+            </p>
+          </>
+        )}
+      </PaperTile>
+    </section>
+  );
+}
+
+/* ─── Credits & renewals calendar ───────────────────────────────────────── */
+function CreditsTile({ sessionId, isReady }: { sessionId: string | null; isReady: boolean }) {
+  const [credits, setCredits] = useState<CardCreditStatus[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    if (!isReady || !sessionId) return;
+    setLoading(true);
+    setErr(null);
+    getCardCredits(sessionId)
+      .then(setCredits)
+      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load credits"))
+      .finally(() => setLoading(false));
+  }, [sessionId, isReady]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function markRedeemed(c: CardCreditStatus) {
+    if (!sessionId) return;
+    try {
+      await recordCreditRedemption(sessionId, c.credit_def_id, { redeemed_amount: c.value_cad });
+      load();
+    } catch {
+      /* swallow — could surface a toast if you have one */
+    }
+  }
+
+  const totalUnused = credits.reduce((s, c) => s + (c.status === "unused" ? c.value_cad : c.remaining), 0);
+  const upcoming = credits.filter((c) => c.days_to_renewal != null && c.days_to_renewal <= 60);
+
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <ToolHeader
+        motif="alarm"
+        kicker="Credits & renewals"
+        title={<>The <span style={{ fontStyle: "italic" }}>loss-prevention</span> calendar.</>}
+        lede="Annual credits expire silently. Renewals drop without warning. Maple lists every credit window and fee date with one tap to mark redeemed."
+      />
+      <PaperTile>
+        {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Loading credit calendar…</p>}
+        {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}
+        {!loading && !err && credits.length === 0 && (
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 15 }}>
+            No tracked credits. Add cards with annual credits at{" "}
+            <Link href="/wallet" style={{ color: "var(--accent)", textDecoration: "underline" }}>/wallet</Link>.
+          </p>
+        )}
+        {!loading && !err && credits.length > 0 && (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+              <div>
+                <span className="eyebrow">Unused credit value</span>
+                <div className="display" style={{ fontSize: 36, color: "var(--gain)", lineHeight: 1, marginTop: 4 }}>
+                  {fmtCAD(totalUnused)}
+                </div>
+              </div>
+              {upcoming.length > 0 && (
+                <div className="mono" style={{ fontSize: 12, color: "var(--accent)", letterSpacing: "0.04em" }}>
+                  {upcoming.length} renewal{upcoming.length === 1 ? "" : "s"} in next 60 days
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--rule)" }}>
+              {credits.map((c) => {
+                const tone = c.status === "redeemed" ? "var(--ink-3)" : c.status === "partial" ? "var(--accent)" : "var(--gain)";
+                return (
+                  <div
+                    key={c.credit_def_id + ":" + c.anniversary_year}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto",
+                      gap: 16,
+                      padding: "12px 4px",
+                      borderBottom: "1px solid var(--rule)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div className="display" style={{ fontSize: 15, color: "var(--ink)" }}>{c.name}</div>
+                      <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                        {c.card_name}
+                        {c.fee_renewal_date && c.days_to_renewal != null && (
+                          <> · renews in {c.days_to_renewal}d</>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div className="mono" style={{ fontSize: 13, color: tone, fontWeight: 600 }}>
+                        {c.status === "redeemed" ? "✓" : ""} {fmtCAD(c.remaining)} of {fmtCAD(c.value_cad)}
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 2 }}>
+                        {c.status}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => markRedeemed(c)}
+                      disabled={c.status === "redeemed"}
+                      className="mono"
+                      style={{
+                        padding: "6px 10px",
+                        fontSize: 10,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        background: c.status === "redeemed" ? "transparent" : "var(--accent)",
+                        color: c.status === "redeemed" ? "var(--ink-3)" : "#fff",
+                        border: c.status === "redeemed" ? "1px solid var(--rule)" : "none",
+                        borderRadius: 6,
+                        cursor: c.status === "redeemed" ? "default" : "pointer",
+                        opacity: c.status === "redeemed" ? 0.6 : 1,
+                      }}
+                    >
+                      {c.status === "redeemed" ? "Done" : "Mark used"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </PaperTile>
+    </section>
+  );
+}
+
+/* ─── Annual card-value scorecard ───────────────────────────────────────── */
+function CardValueTile({ sessionId, isReady }: { sessionId: string | null; isReady: boolean }) {
+  const [rows, setRows] = useState<CardValueSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isReady || !sessionId) return;
+    setLoading(true);
+    getCardValueSummary(sessionId)
+      .then(setRows)
+      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load card-value summary"))
+      .finally(() => setLoading(false));
+  }, [sessionId, isReady]);
+
+  const totalNet = rows.reduce((s, r) => s + r.net_ev_cad, 0);
+  const sorted = [...rows].sort((a, b) => b.net_ev_cad - a.net_ev_cad);
+
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <ToolHeader
+        motif="mountain"
+        kicker="Card-value scorecard"
+        title={<>Every card's <span style={{ fontStyle: "italic" }}>net</span> annual value.</>}
+        lede="Insurance, lounge, concierge, FX savings, multipliers, credit bundles — all priced and netted against the annual fee. The honest answer to which cards earn their keep."
+      />
+      <PaperTile>
+        {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Scoring your cards…</p>}
+        {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}
+        {!loading && !err && rows.length === 0 && (
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 15 }}>
+            No cards in your wallet to score. Add cards at{" "}
+            <Link href="/wallet" style={{ color: "var(--accent)", textDecoration: "underline" }}>/wallet</Link>.
+          </p>
+        )}
+        {!loading && !err && rows.length > 0 && (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+              <div>
+                <span className="eyebrow">Wallet net value (annual)</span>
+                <div className="display" style={{ fontSize: 36, color: totalNet >= 0 ? "var(--gain)" : "var(--loss)", lineHeight: 1, marginTop: 4 }}>
+                  {fmtCAD(totalNet)}
+                </div>
+              </div>
+              <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+                {rows.filter((r) => r.is_positive).length} of {rows.length} cards earn their fee
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--rule)" }}>
+              {sorted.map((r) => (
+                <div
+                  key={r.card_id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 16,
+                    padding: "12px 4px",
+                    borderBottom: "1px solid var(--rule)",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div className="display" style={{ fontSize: 15, color: "var(--ink)" }}>{r.card_name}</div>
+                    <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                      {fmtCAD(r.total_ev_cad)} value − {fmtCAD(r.annual_fee)} fee
+                      {r.components.length > 0 && (
+                        <> · {r.components.length} component{r.components.length === 1 ? "" : "s"}</>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="mono" style={{ fontSize: 14, color: r.is_positive ? "var(--gain)" : "var(--loss)", fontWeight: 600 }}>
+                      {r.net_ev_cad >= 0 ? "+" : ""}{fmtCAD(r.net_ev_cad)}
+                    </div>
+                    <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 2 }}>
+                      net annual
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </PaperTile>
     </section>
   );
