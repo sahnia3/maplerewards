@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -148,10 +149,13 @@ func (m *mockSpendRepo) GetSpendStats(ctx context.Context, userID string) (*mode
 }
 
 type mockCache struct {
+	mu         sync.Mutex
 	valuations map[string]float64
 }
 
 func (m *mockCache) GetValuation(ctx context.Context, programSlug, segment string) (float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	key := programSlug + ":" + segment
 	if v, ok := m.valuations[key]; ok {
 		return v, nil
@@ -160,6 +164,8 @@ func (m *mockCache) GetValuation(ctx context.Context, programSlug, segment strin
 }
 
 func (m *mockCache) SetValuation(ctx context.Context, programSlug, segment string, cpp float64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.valuations == nil {
 		m.valuations = make(map[string]float64)
 	}
