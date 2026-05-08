@@ -17,6 +17,9 @@ import {
   MessageCircle,
   User,
   Settings,
+  Wrench,
+  Wallet,
+  Gem,
   X,
 } from "lucide-react";
 
@@ -30,6 +33,9 @@ const TABS = [
 ] as const;
 
 const MORE_ITEMS = [
+  { href: "/pro-tools",     label: "Pro Tools",    icon: Wrench          },
+  { href: "/wallet",        label: "Wallet",       icon: Wallet          },
+  { href: "/loyalty",       label: "Loyalty",      icon: Gem             },
   { href: "/insights",      label: "Insights",     icon: BarChart2       },
   { href: "/portfolio",     label: "Portfolio",    icon: PieChart        },
   { href: "/feed",          label: "Feed",         icon: Rss             },

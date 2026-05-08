@@ -1,64 +1,143 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
+"use client";
 
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { Slot } from "radix-ui";
+
+import { cn } from "@/lib/utils";
+
+/**
+ * Editorial Button — the canonical interactive surface.
+ *
+ * Variants mirror the inline-styled buttons that the editorial pages were
+ * already using (mono · uppercase · 0.10em letter-spacing · maple-red CTA).
+ * Hover / focus-visible / disabled / loading are properly handled — fixing
+ * the keyboard-nav and accessibility gaps flagged in the May 8 audit.
+ *
+ * Usage:
+ *   <Button>Evaluate</Button>                // primary, md
+ *   <Button variant="secondary" size="sm">…</Button>
+ *   <Button variant="ghost">Skip</Button>
+ *   <Button variant="danger">Delete watch</Button>
+ *   <Button asChild><Link href="/wallet">Open wallet</Link></Button>
+ *   <Button loading>Saving…</Button>
+ */
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // Common: mono uppercase letter-spaced; flex-center; outline-none; transitions; disabled state.
+  [
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap select-none",
+    "font-mono font-semibold tracking-[0.10em] uppercase",
+    "transition-[background-color,color,border-color,transform,opacity] duration-150",
+    "outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]",
+    "disabled:cursor-not-allowed disabled:opacity-60",
+    "active:translate-y-px",
+    "[&_svg]:shrink-0",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
-        outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+        // Maple-red CTA — the primary action across the app.
+        primary: [
+          "bg-[var(--accent)] text-white border border-[var(--accent)]",
+          "hover:bg-[var(--accent-2)] hover:border-[var(--accent-2)]",
+          "disabled:hover:bg-[var(--accent)] disabled:hover:border-[var(--accent)]",
+        ].join(" "),
+        // Outlined ink-on-paper — for secondary CTAs.
+        secondary: [
+          "bg-[var(--surface)] text-[var(--ink)] border border-[var(--rule-strong)]",
+          "hover:bg-[var(--surface-2)] hover:border-[var(--ink)]",
+          "disabled:hover:bg-[var(--surface)] disabled:hover:border-[var(--rule-strong)]",
+        ].join(" "),
+        // Text-only — for tertiary actions in dense rows.
+        ghost: [
+          "bg-transparent text-[var(--ink-2)] border border-transparent",
+          "hover:bg-[var(--surface-2)] hover:text-[var(--ink)]",
+          "disabled:hover:bg-transparent",
+        ].join(" "),
+        // Destructive confirm — used sparingly.
+        danger: [
+          "bg-[var(--loss)] text-white border border-[var(--loss)]",
+          "hover:opacity-90",
+        ].join(" "),
+        // Inline link-style — sentence-flow actions.
+        link: [
+          "bg-transparent border-0 px-0 py-0 h-auto",
+          "text-[var(--accent)] underline underline-offset-2 decoration-1",
+          "hover:text-[var(--accent-2)] hover:decoration-2",
+          "uppercase-none tracking-normal normal-case font-sans",
+        ].join(" "),
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        sm: "h-8 px-3 text-[10px] rounded-md [&_svg]:size-3",
+        md: "h-[42px] px-[22px] text-[12px] rounded-lg [&_svg]:size-4",
+        lg: "h-[52px] px-8 text-[13px] rounded-lg [&_svg]:size-5",
+        icon: "h-[42px] w-[42px] rounded-lg [&_svg]:size-4",
       },
     },
+    compoundVariants: [
+      // Link variant ignores size padding/height.
+      { variant: "link", className: "h-auto px-0" },
+    ],
     defaultVariants: {
-      variant: "default",
-      size: "default",
+      variant: "primary",
+      size: "md",
     },
   }
-)
+);
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot.Root : "button"
+    asChild?: boolean;
+    loading?: boolean;
+  };
+
+function Spinner({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      aria-hidden
+      className={cn("animate-spin", className)}
+    >
+      <path d="M21 12a9 9 0 1 1-6.2-8.55" />
+    </svg>
+  );
+}
+
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant, size, asChild = false, loading = false, disabled, children, ...props },
+  ref
+) {
+  const Comp = asChild ? Slot.Root : "button";
+  const isDisabled = disabled || loading;
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      data-variant={variant ?? "primary"}
+      data-size={size ?? "md"}
+      data-loading={loading || undefined}
+      aria-busy={loading || undefined}
+      disabled={isDisabled}
+      className={cn(buttonVariants({ variant, size }), className)}
       {...props}
-    />
-  )
-}
+    >
+      {loading ? (
+        <>
+          <Spinner className="size-4" />
+          <span>{children}</span>
+        </>
+      ) : (
+        children
+      )}
+    </Comp>
+  );
+});
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };
+export type { ButtonProps };
