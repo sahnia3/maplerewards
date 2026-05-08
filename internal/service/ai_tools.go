@@ -666,8 +666,14 @@ func (s *AIService) registerTools() {
 //   1. Instructions + tier routing + card catalog — stable across all users at
 //      this tier; high cache hit rate (~90%+ after warmup).
 //   2. Per-user wallet context — cached separately at default 5-min TTL.
+//
+// Today's date is in block 1 — Anthropic's training cutoff is months stale,
+// so without an injected date the model picks past dates and APIs reject them.
+// Block 1's TTL is 5 min so the date stays fresh throughout the day naturally.
 func (s *AIService) buildToolUseSystemPrompt(walletContext, catalogContext string, isPro bool) []systemBlock {
 	var b strings.Builder
+	today := time.Now().UTC().Format("2006-01-02 (Monday)")
+	fmt.Fprintf(&b, "Today's date is %s. When the user says 'next month' or 'in 60 days' compute from this date. NEVER use a past date in tool calls (search APIs reject them).\n\n", today)
 	b.WriteString(`You are the MapleRewards AI Assistant — an expert Canadian credit card rewards advisor.
 
 You have access to live tools that fetch award space, cash prices, transfer partners, CPP valuations, and web search. Use them aggressively rather than relying on training data, which is often stale.
@@ -861,13 +867,17 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		}
 
 		// Dispatch tool calls in parallel with a per-call deadline.
+		// 110s budget — Apify actor runs occasionally need 90s+ to complete.
+		// The Apify polling loop itself caps at 150s; this is the outer
+		// dispatcher cap. Faster tools (postgres, SerpAPI) finish in <2s and
+		// release their goroutine, so the wait is bounded by the slowest tool.
 		results := make([]claudeBlock, len(toolCalls))
 		var wg sync.WaitGroup
 		for i, tc := range toolCalls {
 			wg.Add(1)
 			go func(i int, tc claudeBlock) {
 				defer wg.Done()
-				tctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				tctx, cancel := context.WithTimeout(ctx, 110*time.Second)
 				defer cancel()
 				out := s.tools.call(tctx, req.SessionID, isPro, tc.Name, tc.Input)
 				results[i] = claudeBlock{

@@ -44,22 +44,25 @@ func NewAwardSearchService(
 
 // seatsAeroSources are the loyalty program IDs supported by Seats.aero.
 // These are passed to the Seats.aero `sources` parameter.
+//
+// Trimmed to the 6 programs that matter for ~95% of Canadian award queries.
+// Apify actor runtime scales linearly with issuer count — 14 issuers took
+// 110+ seconds and timed out the chat dispatcher. Six finishes in 25-40s,
+// covering: Aeroplan (Canadian flag program), Avios (RBC Avion 1:1 partner),
+// Flying Blue (Amex MR 1:1), United (Aeroplan Star partner), Virgin Atlantic
+// (Amex MR sweet spot), Lufthansa (Star Alliance backup).
+//
+// Programs dropped: Delta/American/Alaska/Singapore/Emirates/Turkish/Qatar/
+// Etihad/EuroBonus — viable for niche routes but marginal for Canadian Toronto-
+// out flights. The LLM still sees them in CANONICAL PROGRAM SLUGS and can
+// answer with YAML data; they just don't get live-scraped.
 var seatsAeroSources = []string{
 	"aeroplan",
 	"flyingblue",
-	"eurobonus",
+	"avios",
 	"united",
-	"delta",
-	"american",
-	"alaska",
-	"avios", // Seats.aero supports Avios (was NOT supported by old Apify actor)
 	"virginatlantic",
 	"lufthansa",
-	"singapore",
-	"emirates",
-	"turkish",
-	"qatar",
-	"etihad",
 }
 
 // issuerProgramName maps Seats.aero source slugs to user-friendly names.

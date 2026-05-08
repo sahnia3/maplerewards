@@ -89,18 +89,21 @@ type apifyAirline struct {
 }
 
 type apifyItinerary struct {
-	Origin        string              `json:"origin"`
-	Destination   string              `json:"destination"`
-	Departure     string              `json:"departure"`
-	Arrival       string              `json:"arrival"`
-	TotalDuration string              `json:"totalDuration"` // ISO 8601 e.g. "PT7H30M"
-	Stops         int                 `json:"stops"`
-	Connections   []string            `json:"connections"`
-	Airlines      []apifyAirline      `json:"airlines"`
-	Aircrafts     []string            `json:"aircrafts"`
-	FlightNumbers []string            `json:"flightNumbers"`
-	Cabins        []apifyItinCabin    `json:"cabins"`
-	Segments      []apifySegment      `json:"segments"`
+	Origin      string `json:"origin"`
+	Destination string `json:"destination"`
+	Departure   string `json:"departure"`
+	Arrival     string `json:"arrival"`
+	// Apify started returning totalDuration as either a JSON string ("PT7H30M")
+	// OR a JSON number (minutes). Use json.RawMessage so neither shape errors
+	// out — we don't currently consume this field anyway.
+	TotalDuration json.RawMessage  `json:"totalDuration,omitempty"`
+	Stops         int              `json:"stops"`
+	Connections   []string         `json:"connections"`
+	Airlines      []apifyAirline   `json:"airlines"`
+	Aircrafts     []string         `json:"aircrafts"`
+	FlightNumbers []string         `json:"flightNumbers"`
+	Cabins        []apifyItinCabin `json:"cabins"`
+	Segments      []apifySegment   `json:"segments"`
 }
 
 type apifyItinCabin struct {
@@ -111,14 +114,16 @@ type apifyItinCabin struct {
 }
 
 type apifySegment struct {
-	FlightNumber    string `json:"flightNumber"`
-	Duration        string `json:"duration"`
-	AircraftName    string `json:"aircraftName"`
-	Origin          string `json:"origin"`
-	Destination     string `json:"destination"`
-	Departure       string `json:"departure"`
-	Arrival         string `json:"arrival"`
-	Cabin           string `json:"cabin"`
+	FlightNumber string `json:"flightNumber"`
+	// Duration shape changed alongside totalDuration; tolerate both string
+	// and number representations. Not consumed downstream.
+	Duration     json.RawMessage `json:"duration,omitempty"`
+	AircraftName string          `json:"aircraftName"`
+	Origin       string          `json:"origin"`
+	Destination  string          `json:"destination"`
+	Departure    string          `json:"departure"`
+	Arrival      string          `json:"arrival"`
+	Cabin        string          `json:"cabin"`
 }
 
 // ── Supported issuers (24 programs) ─────────────────────────────────────────
