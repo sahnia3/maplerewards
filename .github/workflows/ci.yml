@@ -58,4 +58,4 @@ jobs:
         run: npx tsc --noEmit
 
       - name: lint
-        run: npx next lint
+        run: npm run lint

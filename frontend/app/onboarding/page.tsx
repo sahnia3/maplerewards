@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useWallet } from "@/contexts/wallet-context";
 import { listCards, getRecommendations } from "@/lib/api";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
@@ -221,8 +222,8 @@ export default function OnboardingPage() {
                         boxShadow: on ? "0 8px 22px -10px var(--accent-soft), var(--shadow-1)" : "none",
                       }}
                     >
-                      <div style={{ width: "100%", aspectRatio: "1.586 / 1", overflow: "hidden", borderRadius: 8, marginBottom: 10 }}>
-                        <CreditCardVisual card={card} size="sm" />
+                      <div style={{ width: "100%", marginBottom: 10 }}>
+                        <CreditCardVisual card={card} size="sm" fill />
                       </div>
                       <div className="display" style={{ fontSize: 15, lineHeight: 1.2, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {card.name}
@@ -545,7 +546,7 @@ export default function OnboardingPage() {
                 <>Add top 3 cards to wallet <ChevronRight size={14} /></>
               )}
             </button>
-            <a
+            <Link
               href="/cards"
               className="mono"
               style={{
@@ -561,7 +562,7 @@ export default function OnboardingPage() {
               }}
             >
               Or explore the full register →
-            </a>
+            </Link>
           </>
         )}
       </div>
