@@ -340,7 +340,7 @@ func (s *AIService) registerTools() {
 			return json.Marshal(map[string]any{
 				"results":    results,
 				"fetched_at": time.Now().UTC().Format(time.RFC3339),
-				"note":       "Live award search across Apify + Seats.aero + SerpAPI cash comparison. Prices in CAD.",
+				"note":       "Live award search via Apify scraper across 15 programs (Aeroplan, Flying Blue, United, Avios, Lufthansa, etc.) plus SerpAPI cash comparison. Prices in CAD.",
 			})
 		},
 	})
