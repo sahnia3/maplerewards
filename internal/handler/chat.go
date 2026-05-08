@@ -65,7 +65,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, err := h.svc.Chat(r.Context(), req)
+	resp, err := h.svc.ChatWithTools(r.Context(), req, isPro)
 	if err != nil {
 		jsonErrorCode(w, "AI_ERROR", err.Error(), http.StatusInternalServerError)
 		return

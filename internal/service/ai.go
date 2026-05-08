@@ -23,17 +23,22 @@ type AIService struct {
 	httpClient     *http.Client
 	walletRepo     WalletRepository
 	cardRepo       CardRepository
+	transferRepo   TransferRepository
+	valuationRepo  ValuationRepository
 	optimizerSvc   *OptimizerService
 	tavilySvc      *TavilyService
 	serpSvc        *SerpAPIService
 	knowledgeBase  *knowledge.KnowledgeBase
 	awardSearchSvc *AwardSearchService
+	tools          *toolRegistry
 }
 
 func NewAIService(
 	apiKey string,
 	walletRepo WalletRepository,
 	cardRepo CardRepository,
+	transferRepo TransferRepository,
+	valuationRepo ValuationRepository,
 	optimizerSvc *OptimizerService,
 	tavilySvc *TavilyService,
 	kb *knowledge.KnowledgeBase,
@@ -41,20 +46,24 @@ func NewAIService(
 	serpSvc *SerpAPIService,
 ) *AIService {
 	modelID := "claude-sonnet-4-5"
-	return &AIService{
+	s := &AIService{
 		apiKey:  apiKey,
 		modelID: modelID,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 90 * time.Second, // longer than callClaude legacy default — tool-use rounds need headroom
 		},
 		walletRepo:     walletRepo,
 		cardRepo:       cardRepo,
+		transferRepo:   transferRepo,
+		valuationRepo:  valuationRepo,
 		optimizerSvc:   optimizerSvc,
 		tavilySvc:      tavilySvc,
 		serpSvc:        serpSvc,
 		knowledgeBase:  kb,
 		awardSearchSvc: awardSearchSvc,
 	}
+	s.registerTools()
+	return s
 }
 
 // ChatRequest represents a user's chat message with context.

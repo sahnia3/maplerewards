@@ -16,6 +16,7 @@ type CardRepository interface {
 	GetCategoryByMCC(ctx context.Context, mcc int) (*model.Category, error)
 	GetMultiplierForCard(ctx context.Context, cardID, categoryID string) (*model.CardMultiplier, error)
 	GetEverythingElseMultiplier(ctx context.Context, cardID string) (*model.CardMultiplier, error)
+	GetProgramBySlug(ctx context.Context, slug string) (*model.LoyaltyProgram, error)
 }
 
 // WalletRepository abstracts user wallet data access.

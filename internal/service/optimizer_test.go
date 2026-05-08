@@ -49,6 +49,10 @@ func (m *mockCardRepo) GetEverythingElseMultiplier(ctx context.Context, cardID s
 	return &model.CardMultiplier{EarnRate: 1.0, EarnType: "points", FallbackEarnRate: 1.0}, nil
 }
 
+func (m *mockCardRepo) GetProgramBySlug(ctx context.Context, slug string) (*model.LoyaltyProgram, error) {
+	return &model.LoyaltyProgram{Slug: slug}, nil
+}
+
 type mockWalletRepo struct {
 	users map[string]*model.User     // keyed by sessionID
 	cards map[string][]model.UserCard // keyed by userID
