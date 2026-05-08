@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -62,10 +63,26 @@ type claudeBlockMessage struct {
 	Content []claudeBlock `json:"content"`
 }
 
+// cacheMark is the Anthropic prompt-caching marker. When attached to a
+// system block or the last tool, the prefix up to and including that block
+// is cached. Default TTL is 5 minutes — long enough for a multi-message
+// chat session, short enough not to leak across logical conversations.
+type cacheMark struct {
+	Type string `json:"type"` // always "ephemeral"
+}
+
+// systemBlock is one element of the structured system prompt. The string-form
+// system field is incompatible with cache_control, so we use the array form.
+type systemBlock struct {
+	Type         string     `json:"type"` // "text"
+	Text         string     `json:"text"`
+	CacheControl *cacheMark `json:"cache_control,omitempty"`
+}
+
 type claudeToolUseRequest struct {
 	Model     string               `json:"model"`
 	MaxTokens int                  `json:"max_tokens"`
-	System    string               `json:"system"`
+	System    []systemBlock        `json:"system"`
 	Tools     []map[string]any     `json:"tools,omitempty"`
 	Messages  []claudeBlockMessage `json:"messages"`
 }
@@ -75,8 +92,10 @@ type claudeToolUseResponse struct {
 	StopReason string        `json:"stop_reason"`
 	Content    []claudeBlock `json:"content"`
 	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens         int `json:"input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
+		CacheCreationTokens int `json:"cache_creation_input_tokens"`
+		CacheReadTokens     int `json:"cache_read_input_tokens"`
 	} `json:"usage"`
 	Error *struct {
 		Type    string `json:"type"`
@@ -111,17 +130,31 @@ func (r *toolRegistry) register(t toolDef) { r.tools[t.Name] = t }
 // schemas returns the Anthropic-formatted tool array for this tier. Approach
 // B from the architect: free tier never sees Pro tools, so the model can't
 // hallucinate calling them.
+//
+// The last tool gets a cache_control marker so the entire tools array is
+// cached at the Anthropic API level — saves ~1.5K input tokens per request
+// after warmup. Sorted by name to keep cache keys stable across requests.
 func (r *toolRegistry) schemas(includePro bool) []map[string]any {
 	out := make([]map[string]any, 0, len(r.tools))
-	for _, t := range r.tools {
+	names := make([]string, 0, len(r.tools))
+	for n, t := range r.tools {
 		if t.ProOnly && !includePro {
 			continue
 		}
+		names = append(names, n)
+		_ = t
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		t := r.tools[n]
 		out = append(out, map[string]any{
 			"name":         t.Name,
 			"description":  t.Description,
 			"input_schema": t.InputSchema,
 		})
+	}
+	if len(out) > 0 {
+		out[len(out)-1]["cache_control"] = map[string]any{"type": "ephemeral"}
 	}
 	return out
 }
@@ -538,7 +571,12 @@ func (s *AIService) registerTools() {
 // The fat travel-data-injection-on-keyword approach is gone — the model now
 // gets context via tools and only the stable layers (instructions + wallet +
 // catalog) live here.
-func (s *AIService) buildToolUseSystemPrompt(walletContext, catalogContext string, isPro bool) string {
+//
+// Returns 2 system blocks with cache_control:
+//   1. Instructions + tier routing + card catalog — stable across all users at
+//      this tier; high cache hit rate (~90%+ after warmup).
+//   2. Per-user wallet context — cached separately at default 5-min TTL.
+func (s *AIService) buildToolUseSystemPrompt(walletContext, catalogContext string, isPro bool) []systemBlock {
 	var b strings.Builder
 	b.WriteString(`You are the MapleRewards AI Assistant — an expert Canadian credit card rewards advisor.
 
@@ -584,11 +622,18 @@ FREE TIER NOTE
 `)
 	}
 
-	b.WriteString("\n--- USER WALLET ---\n")
-	b.WriteString(walletContext)
+	// Catalog joins block 1 — it's stable across all users at this tier so
+	// stays in the cacheable layer.
 	b.WriteString("\n--- CARD CATALOG (reference) ---\n")
 	b.WriteString(catalogContext)
-	return b.String()
+
+	return []systemBlock{
+		// Block 1: instructions + tier routing + catalog. Cached.
+		{Type: "text", Text: b.String(), CacheControl: &cacheMark{Type: "ephemeral"}},
+		// Block 2: per-user wallet. Cached separately so user-A's wallet doesn't
+		// poison user-B's prefix.
+		{Type: "text", Text: "--- USER WALLET ---\n" + walletContext, CacheControl: &cacheMark{Type: "ephemeral"}},
+	}
 }
 
 // ── ChatWithTools — the new tool-use loop ────────────────────────────────────
@@ -717,7 +762,7 @@ func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bo
 // callClaudeWithTools — block-based, tool-aware variant of callClaude.
 func (s *AIService) callClaudeWithTools(
 	ctx context.Context,
-	system string,
+	system []systemBlock,
 	tools []map[string]any,
 	messages []claudeBlockMessage,
 ) (*claudeToolUseResponse, error) {
