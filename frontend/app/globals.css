@@ -442,21 +442,18 @@ input[type="number"]::-webkit-inner-spin-button {
   position: relative;
   isolation: isolate;
   margin-bottom: 40px;
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--rule);
-  padding: 30px 0 34px;
-  /* Per plan §0.6 — shrunk from prototype's clamp(560px,46vw,650px) */
+  /* Removed the heavy ink top-rule + warm wash that made the homepage feel
+   * fenced compared to every other page. The hero now sits flush in the page
+   * surface, same as /loyalty, /pro-tools, /pricing. */
+  padding: 12px 0 24px;
   min-height: clamp(380px, 36vw, 480px);
   overflow: visible;
 }
 
 .mr-hero-grid {
-  /* No grid. Soft maple-red wash sits behind the masthead so it has weight. */
-  position: absolute; inset: 0;
-  background-image:
-    radial-gradient(ellipse 70% 55% at 70% 35%, var(--accent-soft), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+  /* Removed. The wash made the hero look like a different surface from the
+   * rest of the page; intentional negative space is more editorial. */
+  display: none;
 }
 
 .mr-hero-art {

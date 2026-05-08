@@ -331,19 +331,27 @@ export function CardFan({
           const isHover = i === hover;
           /* When the user is hovering some other card, this card sinks + dims. */
           const otherHovered = !atRest && !isHover;
-          /* Tighter horizontal spread so 5 cards fit the hero panel cleanly. */
-          const x = offset * 40;
+          /* Wide horizontal spread so every card has a visible, clickable edge.
+           * Previous value (40 px) had cards overlapping by 200+ px, so the leftmost
+           * three were entirely covered by the center card and unhittable. */
+          const x = offset * 78;
+          /* Lift the outer cards slightly so they feel like a fan, not a flat row. */
+          const restY = Math.abs(offset) * 6;
           /* Z separation:
-           *  - rest: cards layer in z-depth based on distance from center, no card "popping out"
+           *  - rest: outer cards sit further back, but not so far that they're 3D-clipped.
            *  - user hovers a card: that card flies forward; others sink back further. */
-          const z = isHover ? 160 : -Math.abs(offset) * 22 - (otherHovered ? 10 : 0);
-          /* Rotation: rest = full fan twist; hover = the focused card flattens. */
-          const rotZ = offset * 6 + (isHover ? -offset * 5 : 0);
-          /* Lift only on actual user hover. */
-          const liftY = isHover ? -48 : 0;
+          const z = isHover ? 180 : -Math.abs(offset) * 14 - (otherHovered ? 12 : 0);
+          /* Rotation: a stronger fan twist now that cards aren't all stacked dead-center. */
+          const rotZ = offset * 9 + (isHover ? -offset * 7 : 0);
+          /* Lift only on actual user hover, plus the tiny rest-arc lift. */
+          const liftY = isHover ? -52 : restY;
           /* Scale: at rest all cards equal; user hover lifts the focused card and slightly recedes others. */
-          const scaleFactor = isHover ? 1.08 : otherHovered ? 0.96 : 1;
-          const zIndex = isHover ? 999 : 100 - Math.abs(offset) * 10;
+          const scaleFactor = isHover ? 1.1 : otherHovered ? 0.96 : 1;
+          /* Stack: hovered always wins; otherwise the BEST card (focusIndex) sits highest,
+           * with neighbours layered around it so each card has a visible side edge.
+           * This is what makes every card hittable. */
+          const distFromFocus = Math.abs(i - focusIndex);
+          const zIndex = isHover ? 999 : 200 - distFromFocus * 10;
           /* No ambient motion at rest — user wanted cards still until interacted with. */
           const ambient = "none";
           return (
