@@ -113,8 +113,17 @@
   --lime-soft:    rgba(185, 196, 106, 0.16);
 
   --gain:         #24745A;
+  --gain-soft:    rgba(36, 116, 90, 0.12);
   --loss:         #A51F2D;
   --info:         #0D9488;   /* keeps prod teal as info-only */
+  --info-text:    #14B8A6;   /* lighter teal for type on dark surfaces */
+  --info-soft:    rgba(13, 148, 136, 0.10);
+  --info-soft-2:  rgba(13, 148, 136, 0.15);
+  --info-border:  rgba(13, 148, 136, 0.22);
+  /* Card-network identifiers */
+  --card-visa:    #60A5FA;
+  --card-mc:      #FB923C;
+  --card-amex:    #34D399;
 
   /* Chart-only palette (NEVER use in static UI) */
   --chart-copper:  #A85A28;
@@ -224,8 +233,17 @@
   --lime-soft:    rgba(200, 212, 122, 0.16);
 
   --gain: #4ED39B;
+  --gain-soft: rgba(78, 211, 155, 0.16);
   --loss: #FF5A62;
   --info: #2DD4BF;
+  --info-text:   #5EEAD4;   /* brighter teal for type on dark surfaces */
+  --info-soft:   rgba(45, 212, 191, 0.14);
+  --info-soft-2: rgba(45, 212, 191, 0.20);
+  --info-border: rgba(45, 212, 191, 0.30);
+  /* Card-network identifiers (kept the same — these track issuer brand) */
+  --card-visa:   #60A5FA;
+  --card-mc:     #FB923C;
+  --card-amex:   #34D399;
 
   --chart-copper:  #F19564;
   --chart-gold:    #ECC868;

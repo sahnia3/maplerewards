@@ -209,7 +209,7 @@ export function CustomSelect({
                         className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-[13px] transition-colors cursor-pointer"
                         style={{
                           background: isActive
-                            ? "rgba(13,148,136,0.08)"
+                            ? "var(--info-soft)"
                             : "transparent",
                           color: isActive
                             ? "var(--text-primary)"

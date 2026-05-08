@@ -9,6 +9,10 @@ interface CreditCardVisualProps {
   card?: Card;
   balance?: number;
   size?: "sm" | "md" | "lg";
+  /* When true, the visual stretches to 100% of its parent (preserving 1.586:1
+   * aspect ratio) instead of using the fixed `size` width. Use this in grid
+   * cells where the card should fill the cell so left/right margins are equal. */
+  fill?: boolean;
 }
 
 const SIZE_CONFIG = {
@@ -17,7 +21,7 @@ const SIZE_CONFIG = {
   lg: { width: 380, fontSize: { name: "16px", issuer: "12px", network: "16px", dots: "14px", chip: { w: 44, h: 34 } } },
 };
 
-export function CreditCardVisual({ card, balance, size = "md" }: CreditCardVisualProps) {
+export function CreditCardVisual({ card, balance, size = "md", fill = false }: CreditCardVisualProps) {
   const theme = getCardTheme(card?.issuer);
   const network = getNetworkLabel(card?.network);
   const cfg = SIZE_CONFIG[size];
@@ -26,13 +30,19 @@ export function CreditCardVisual({ card, balance, size = "md" }: CreditCardVisua
   const [photoFailed, setPhotoFailed] = useState(false);
   const radius = size === "sm" ? 8 : size === "md" ? 14 : 18;
 
+  /* When fill mode is active, swap fixed pixel width/height for responsive 100% +
+   * CSS aspect-ratio. Inner absolute-positioned elements (chip, text) remain
+   * pixel-sized — they look correct across 160–260px where this is used. */
+  const dimensionStyle: React.CSSProperties = fill
+    ? { width: "100%", aspectRatio: "1.586 / 1" }
+    : { width: cfg.width, height };
+
   /* Real card-art branch — gradient + chip overlay only fall back if the image errors. */
   if (photoUrl && !photoFailed) {
     return (
       <div
         style={{
-          width: cfg.width,
-          height,
+          ...dimensionStyle,
           borderRadius: radius,
           position: "relative",
           overflow: "hidden",
@@ -95,8 +105,7 @@ export function CreditCardVisual({ card, balance, size = "md" }: CreditCardVisua
   return (
     <div
       style={{
-        width: cfg.width,
-        height,
+        ...dimensionStyle,
         borderRadius: radius,
         background: theme.gradient,
         position: "relative",

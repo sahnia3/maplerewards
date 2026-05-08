@@ -149,8 +149,8 @@ export default function ComparePage() {
                     <button key={seg} type="button" onClick={() => setSegment(seg)}
                       className="px-3 py-1 text-[12px] font-medium transition-all"
                       style={{
-                        background: segment === seg ? "rgba(13,148,136,0.15)" : "transparent",
-                        color: segment === seg ? "#14B8A6" : "var(--text-tertiary)",
+                        background: segment === seg ? "var(--info-soft-2)" : "transparent",
+                        color: segment === seg ? "var(--info-text)" : "var(--text-tertiary)",
                         borderLeft: seg === "business" ? "1px solid var(--border-mid)" : "none",
                       }}
                     >{seg === "base" ? "Base" : "Business Class"}</button>
@@ -170,7 +170,7 @@ export default function ComparePage() {
                   </span>
                 ) : "Compare all categories"}
               </button>
-              {error && <p className="text-[13px]" style={{ color: "#14B8A6" }}>{error}</p>}
+              {error && <p className="text-[13px]" style={{ color: "var(--info-text)" }}>{error}</p>}
             </div>
           </div>
         </AnimatedSection>
@@ -202,7 +202,7 @@ export default function ComparePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="rounded-2xl p-5 mb-5"
-              style={{ background: "linear-gradient(135deg, rgba(13,148,136,0.06), rgba(79,70,229,0.03))", border: "1px solid rgba(13,148,136,0.15)" }}
+              style={{ background: "linear-gradient(135deg, var(--info-soft), rgba(79,70,229,0.03))", border: "1px solid var(--info-soft-2)" }}
             >
               <h2 className="text-[14px] font-semibold text-white mb-3">Best card per category</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -213,7 +213,7 @@ export default function ComparePage() {
                     <span className="text-base">{CAT_ICONS[category.slug] ?? "💳"}</span>
                     <div className="min-w-0">
                       <div className="text-[12px] font-medium text-white truncate">{bestCard.card_name}</div>
-                      <div className="text-[11px]" style={{ color: "#14B8A6" }}>{fmtPct(bestCard.effective_return)}</div>
+                      <div className="text-[11px]" style={{ color: "var(--info-text)" }}>{fmtPct(bestCard.effective_return)}</div>
                     </div>
                   </div>
                 ))}

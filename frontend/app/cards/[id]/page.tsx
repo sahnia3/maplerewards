@@ -87,7 +87,7 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
         <div className="flex items-center gap-2.5 min-w-0">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "rgba(13,148,136,0.10)", border: "1px solid rgba(13,148,136,0.2)" }}
+            style={{ background: "var(--info-soft)", border: "1px solid var(--info-border)" }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" className="w-4 h-4">
               <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" strokeLinecap="round" strokeLinejoin="round" />
@@ -104,8 +104,8 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
         <span
           className="text-[13px] font-bold px-2.5 py-1 rounded-lg flex-shrink-0"
           style={{
-            background: "rgba(13,148,136,0.10)",
-            border: "1px solid rgba(13,148,136,0.2)",
+            background: "var(--info-soft)",
+            border: "1px solid var(--info-border)",
             color: "var(--accent)",
           }}
         >
@@ -232,7 +232,7 @@ export default function CardDetailPage() {
       <div className="relative min-h-screen overflow-hidden">
         <div
           className="orb w-[400px] h-[260px] top-[-60px] right-[-30px]"
-          style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.08) 0%, transparent 70%)" }}
+          style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
         />
         <DetailSkeleton />
       </div>
@@ -360,8 +360,8 @@ export default function CardDetailPage() {
                 <span
                   className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
                   style={{
-                    background: "rgba(13,148,136,0.10)",
-                    border: "1px solid rgba(13,148,136,0.22)",
+                    background: "var(--info-soft)",
+                    border: "1px solid var(--info-border)",
                     color: "var(--accent)",
                   }}
                 >
@@ -410,7 +410,7 @@ export default function CardDetailPage() {
                   <span
                     className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                     style={{
-                      background: isActive ? "rgba(13,148,136,0.15)" : "var(--card-fill)",
+                      background: isActive ? "var(--info-soft-2)" : "var(--card-fill)",
                       color: isActive ? "var(--accent)" : "var(--text-tertiary)",
                     }}
                   >
@@ -503,7 +503,7 @@ export default function CardDetailPage() {
                 <div className="flex items-center gap-4 mb-4 px-1">
                   <InfoTooltip term="earn-rate" />
                   {[
-                    { label: "3x+", color: "var(--accent)", bg: "rgba(13,148,136,0.1)" },
+                    { label: "3x+", color: "var(--accent)", bg: "var(--info-soft)" },
                     { label: "2x", color: "#F59E0B", bg: "rgba(245,158,11,0.1)" },
                     { label: "1x", color: "white", bg: "var(--card-fill)" },
                   ].map((item) => (

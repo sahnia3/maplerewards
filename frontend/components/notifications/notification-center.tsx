@@ -69,9 +69,9 @@ export function NotificationCenter() {
         onClick={() => setIsOpen(!isOpen)}
         className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all"
         style={{
-          background: isOpen ? "rgba(13,148,136,0.12)" : "rgba(255,255,255,0.04)",
-          border: isOpen ? "1px solid rgba(13,148,136,0.25)" : "1px solid rgba(255,255,255,0.08)",
-          color: isOpen ? "#14B8A6" : "var(--text-secondary)",
+          background: isOpen ? "var(--info-soft)" : "rgba(255,255,255,0.04)",
+          border: isOpen ? "1px solid var(--info-border)" : "1px solid rgba(255,255,255,0.08)",
+          color: isOpen ? "var(--info-text)" : "var(--text-secondary)",
         }}
       >
         <Bell size={16} />
@@ -105,8 +105,8 @@ export function NotificationCenter() {
               <span
                 className="text-[11px] px-2 py-0.5 rounded-full"
                 style={{
-                  background: "rgba(13,148,136,0.12)",
-                  color: "#14B8A6",
+                  background: "var(--info-soft)",
+                  color: "var(--info-text)",
                 }}
               >
                 {unreadCount} new

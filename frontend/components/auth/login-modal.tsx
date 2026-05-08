@@ -103,7 +103,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               onClick={() => { setTab(t); setError(""); }}
               className="flex-1 py-2 rounded-lg text-[13px] font-medium transition-all"
               style={{
-                background: tab === t ? "rgba(13,148,136,0.15)" : "transparent",
+                background: tab === t ? "var(--info-soft-2)" : "transparent",
                 color: tab === t ? "var(--teal-light)" : "var(--text-tertiary)",
               }}
             >
@@ -206,7 +206,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
             className="w-full py-2.5 rounded-xl text-[13.5px] font-semibold text-white transition-all maple-bg flex items-center justify-center gap-2"
             style={{
               opacity: loading ? 0.7 : 1,
-              boxShadow: "0 2px 16px rgba(13,148,136,0.3)",
+              boxShadow: "0 2px 16px var(--info-border)",
             }}
           >
             {loading ? (

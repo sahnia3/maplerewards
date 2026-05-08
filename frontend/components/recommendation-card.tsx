@@ -63,12 +63,12 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
   return (
     <div className="relative rounded-2xl p-5 lift"
       style={{
-        background: isTop ? "linear-gradient(135deg, rgba(13,148,136,0.08) 0%, rgba(79,70,229,0.04) 100%)" : "var(--bg-elevated)",
-        border: isTop ? "1px solid rgba(13,148,136,0.25)" : "1px solid var(--border-dim)",
-        boxShadow: isTop ? "0 4px 24px rgba(13,148,136,0.12), 0 1px 3px rgba(0,0,0,0.4)" : "0 1px 3px rgba(0,0,0,0.3)",
+        background: isTop ? "linear-gradient(135deg, var(--info-soft) 0%, rgba(79,70,229,0.04) 100%)" : "var(--bg-elevated)",
+        border: isTop ? "1px solid var(--info-border)" : "1px solid var(--border-dim)",
+        boxShadow: isTop ? "0 4px 24px var(--info-soft), 0 1px 3px rgba(0,0,0,0.4)" : "0 1px 3px rgba(0,0,0,0.3)",
       }}
     >
-      {isTop && <div className="absolute top-0 left-6 right-6 h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(13,148,136,0.6), transparent)" }} />}
+      {isTop && <div className="absolute top-0 left-6 right-6 h-px" style={{ background: "linear-gradient(90deg, transparent, var(--info-border), transparent)" }} />}
 
       <div className="flex items-start gap-4">
         {/* Rank bubble */}
@@ -76,7 +76,7 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
           style={{
             background: isTop ? "linear-gradient(135deg,#0D9488,#0F766E)" : isSecond ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
             color: isTop ? "#fff" : "var(--text-tertiary)",
-            boxShadow: isTop ? "0 2px 10px rgba(13,148,136,0.35)" : "none",
+            boxShadow: isTop ? "0 2px 10px var(--info-border)" : "none",
           }}
         >
           {rank}
@@ -89,7 +89,7 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
               <p className="text-[13px] mt-0.5" style={{ color: "var(--text-secondary)" }}>{rec.program_name}</p>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color: isTop ? "#14B8A6" : "var(--text-primary)" }}>
+              <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color: isTop ? "var(--info-text)" : "var(--text-primary)" }}>
                 {fmtPct(rec.effective_return)}
               </div>
               <div className="label-xs mt-1" style={{ color: "var(--text-tertiary)" }}>return</div>
@@ -119,7 +119,7 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
           {/* Footer row */}
           <div className="flex items-center gap-2 mt-2.5 flex-wrap">
             {rec.transfer_partner && (
-              <span className="label-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(13,148,136,0.12)", color: "#14B8A6", border: "1px solid rgba(13,148,136,0.2)" }}>
+              <span className="label-xs px-2 py-0.5 rounded-full" style={{ background: "var(--info-soft)", color: "var(--info-text)", border: "1px solid var(--info-border)" }}>
                 Via {rec.transfer_partner} ({rec.transfer_cpp?.toFixed(2)}&#162;/pt)
               </span>
             )}
@@ -129,7 +129,7 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
               </span>
             )}
             {isTop && (
-              <span className="label-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(13,148,136,0.12)", color: "#14B8A6", border: "1px solid rgba(13,148,136,0.2)" }}>
+              <span className="label-xs px-2 py-0.5 rounded-full" style={{ background: "var(--info-soft)", color: "var(--info-text)", border: "1px solid var(--info-border)" }}>
                 Best value
               </span>
             )}
@@ -137,9 +137,9 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
               onClick={() => setShowExplanation(!showExplanation)}
               className="label-xs px-2 py-0.5 rounded-full transition-colors"
               style={{
-                background: showExplanation ? "rgba(13,148,136,0.12)" : "rgba(255,255,255,0.04)",
-                color: showExplanation ? "#14B8A6" : "var(--text-tertiary)",
-                border: showExplanation ? "1px solid rgba(13,148,136,0.2)" : "1px solid rgba(255,255,255,0.06)",
+                background: showExplanation ? "var(--info-soft)" : "rgba(255,255,255,0.04)",
+                color: showExplanation ? "var(--info-text)" : "var(--text-tertiary)",
+                border: showExplanation ? "1px solid var(--info-border)" : "1px solid rgba(255,255,255,0.06)",
               }}
             >
               {showExplanation ? "Hide why" : "Why?"}
@@ -164,12 +164,12 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
           {showExplanation && (
             <div className="mt-3 p-3 rounded-xl text-[12px] leading-relaxed"
               style={{
-                background: "rgba(13,148,136,0.04)",
-                border: "1px solid rgba(13,148,136,0.1)",
+                background: "var(--info-soft)",
+                border: "1px solid var(--info-soft)",
                 color: "var(--text-secondary)",
               }}
             >
-              <span className="font-medium" style={{ color: "#14B8A6" }}>💡 </span>
+              <span className="font-medium" style={{ color: "var(--info-text)" }}>💡 </span>
               {generateExplanation(rec, rank, spendCategory, spendAmount)}
               {rec.note && <span className="block mt-1" style={{ color: "var(--text-tertiary)" }}>{rec.note}</span>}
             </div>

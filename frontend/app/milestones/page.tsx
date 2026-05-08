@@ -159,9 +159,9 @@ export default function MilestonesPage() {
                           disabled={isActivating}
                           className="h-8 px-4 rounded-lg font-semibold text-[12px] transition-all disabled:opacity-50"
                           style={{
-                            background: "rgba(13,148,136,0.12)",
-                            border: "1px solid rgba(13,148,136,0.25)",
-                            color: "#14B8A6",
+                            background: "var(--info-soft)",
+                            border: "1px solid var(--info-border)",
+                            color: "var(--info-text)",
                           }}
                         >
                           {isActivating ? "..." : "Start tracking"}
@@ -302,8 +302,8 @@ export default function MilestonesPage() {
                               style={{
                                 width: `${progress}%`,
                                 background:
-                                  "linear-gradient(90deg, #0D9488, #14B8A6)",
-                                boxShadow: "0 0 12px rgba(13,148,136,0.4)",
+                                  "linear-gradient(90deg, #0D9488, var(--info-text))",
+                                boxShadow: "0 0 12px var(--info-border)",
                               }}
                             />
                           </div>

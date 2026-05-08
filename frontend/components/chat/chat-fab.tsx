@@ -75,7 +75,7 @@ export function ChatFab() {
           style={{ borderBottom: "1px solid var(--border-dim)" }}
         >
           <div className="w-7 h-7 rounded-lg maple-bg flex items-center justify-center"
-            style={{ boxShadow: "0 2px 8px rgba(13,148,136,0.3)" }}>
+            style={{ boxShadow: "0 2px 8px var(--info-border)" }}>
             <span className="text-[12px]">🍁</span>
           </div>
           <div>

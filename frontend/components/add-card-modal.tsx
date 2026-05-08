@@ -119,7 +119,7 @@ export function AddCardModal({ sessionId, existingCardIds, onAdded, onClose }: P
                 border: "1px solid var(--border-dim)",
                 color: "var(--text-primary)",
               }}
-              onFocus={e => e.currentTarget.style.borderColor = "rgba(13,148,136,0.4)"}
+              onFocus={e => e.currentTarget.style.borderColor = "var(--info-border)"}
               onBlur={e => e.currentTarget.style.borderColor = "var(--border-dim)"}
             />
           </div>
@@ -144,7 +144,7 @@ export function AddCardModal({ sessionId, existingCardIds, onAdded, onClose }: P
             </div>
           )}
 
-          {error && <p className="text-[13px] px-2 py-2" style={{ color: "#14B8A6" }}>{error}</p>}
+          {error && <p className="text-[13px] px-2 py-2" style={{ color: "var(--info-text)" }}>{error}</p>}
 
           {filtered.map(card => {
             const alreadyIn = existingCardIds.includes(card.id) || added.includes(card.id);
@@ -189,7 +189,7 @@ export function AddCardModal({ sessionId, existingCardIds, onAdded, onClose }: P
                   style={
                     alreadyIn
                       ? { background: "rgba(52,211,153,0.1)", color: "#34D399", cursor: "default" }
-                      : { background: "rgba(13,148,136,0.15)", color: "#14B8A6", border: "1px solid rgba(13,148,136,0.2)" }
+                      : { background: "var(--info-soft-2)", color: "var(--info-text)", border: "1px solid var(--info-border)" }
                   }
                 >
                   {alreadyIn ? "✓ Added" : isAdding ? "…" : "Add"}

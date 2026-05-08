@@ -40,7 +40,7 @@ function LoginForm() {
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center maple-bg"
-            style={{ boxShadow: "0 2px 16px rgba(13,148,136,0.25)" }}
+            style={{ boxShadow: "0 2px 16px var(--info-border)" }}
           >
             <span className="text-lg leading-none">🍁</span>
           </div>

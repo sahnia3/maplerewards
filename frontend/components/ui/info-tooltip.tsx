@@ -82,14 +82,14 @@ export function InfoTooltip({ term, children }: InfoTooltipProps) {
           className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-64 rounded-xl p-3 text-left shadow-2xl"
           style={{
             background: "#131520",
-            border: "1px solid rgba(13,148,136,0.25)",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(13,148,136,0.1)",
+            border: "1px solid var(--info-border)",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px var(--info-soft)",
           }}
         >
           {/* Arrow */}
           <div
             className="absolute left-1/2 -translate-x-1/2 -bottom-[5px] w-2.5 h-2.5 rotate-45"
-            style={{ background: "#131520", borderRight: "1px solid rgba(13,148,136,0.25)", borderBottom: "1px solid rgba(13,148,136,0.25)" }}
+            style={{ background: "#131520", borderRight: "1px solid var(--info-border)", borderBottom: "1px solid var(--info-border)" }}
           />
           <p className="text-[11px] font-semibold mb-1" style={{ color: "#0D9488" }}>
             {content.title}

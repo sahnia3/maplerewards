@@ -8,7 +8,7 @@ import type { ProgramDetailResponse, TransferPartner } from "@/lib/types";
 function typeColor(type: string): { bg: string; border: string; text: string } {
   switch (type) {
     case "airline":
-      return { bg: "rgba(13,148,136,0.10)", border: "rgba(13,148,136,0.22)", text: "#14B8A6" };
+      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info-text)" };
     case "hotel":
       return { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.22)", text: "#F59E0B" };
     case "cashback":
@@ -166,7 +166,7 @@ export default function ProgramDetailPage() {
           </button>
           <div
             className="rounded-2xl p-14 text-center"
-            style={{ background: "var(--bg-elevated)", border: "1px solid rgba(13,148,136,0.2)" }}
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--info-border)" }}
           >
             <div className="text-4xl mb-4">⚠️</div>
             <h2 className="text-[17px] font-semibold text-white mb-2">Program Not Found</h2>
@@ -285,9 +285,9 @@ export default function ProgramDetailPage() {
                     desc: "Many airline programs allow free stopovers — add a free city to your itinerary.",
                     value: "Free bonus",
                     tag: "Tip",
-                    tagColor: "#14B8A6",
-                    tagBg: "rgba(13,148,136,0.12)",
-                    tagBorder: "rgba(13,148,136,0.25)",
+                    tagColor: "var(--info-text)",
+                    tagBg: "var(--info-soft)",
+                    tagBorder: "var(--info-border)",
                   },
                   {
                     title: "Economy Award Space",
@@ -412,9 +412,9 @@ export default function ProgramDetailPage() {
                     desc: "Redeem against travel charges on your statement — simple and reliable at base CPP.",
                     value: `${(baseCpp * 100).toFixed(1)}¢/pt`,
                     tag: "Easy",
-                    tagColor: "#14B8A6",
-                    tagBg: "rgba(13,148,136,0.12)",
-                    tagBorder: "rgba(13,148,136,0.25)",
+                    tagColor: "var(--info-text)",
+                    tagBg: "var(--info-soft)",
+                    tagBorder: "var(--info-border)",
                   },
                   {
                     title: "Gift Cards & Merchandise",

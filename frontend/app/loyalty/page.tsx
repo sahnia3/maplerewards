@@ -54,7 +54,7 @@ function ProgramTypeIcon({ type }: { type: LoyaltyProgram["program_type"] }) {
 function typeColor(type: LoyaltyProgram["program_type"]): { bg: string; border: string; text: string } {
   switch (type) {
     case "airline":
-      return { bg: "rgba(13,148,136,0.10)", border: "rgba(13,148,136,0.22)", text: "#14B8A6" };
+      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info-text)" };
     case "hotel":
       return { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.22)", text: "#F59E0B" };
     case "cashback":
@@ -110,11 +110,11 @@ export default function LoyaltyPage() {
       {/* Ambient orbs */}
       <div
         className="orb w-[400px] h-[280px] top-[-60px] right-[-40px]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.08) 0%, transparent 70%)" }}
+        style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
       />
       <div
         className="orb w-[250px] h-[250px] top-[300px] left-[0%]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.05) 0%, transparent 70%)" }}
+        style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
       />
 
       <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
@@ -160,8 +160,8 @@ export default function LoyaltyPage() {
                   <span
                     className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                     style={{
-                      background: isActive ? "rgba(13,148,136,0.15)" : "rgba(255,255,255,0.06)",
-                      color: isActive ? "#14B8A6" : "var(--text-tertiary)",
+                      background: isActive ? "var(--info-soft-2)" : "rgba(255,255,255,0.06)",
+                      color: isActive ? "var(--info-text)" : "var(--text-tertiary)",
                     }}
                   >
                     {count}
@@ -184,11 +184,11 @@ export default function LoyaltyPage() {
             className="rounded-2xl p-10 text-center fade-up-2"
             style={{
               background: "var(--bg-elevated)",
-              border: "1px solid rgba(13,148,136,0.2)",
+              border: "1px solid var(--info-border)",
               borderRadius: 12,
             }}
           >
-            <p className="text-[14px]" style={{ color: "#14B8A6" }}>{error}</p>
+            <p className="text-[14px]" style={{ color: "var(--info-text)" }}>{error}</p>
             <button
               onClick={() => {
                 setLoading(true);
@@ -274,7 +274,7 @@ export default function LoyaltyPage() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <div
                         className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                        style={{ background: "rgba(13,148,136,0.10)", border: "1px solid rgba(13,148,136,0.2)", color: "#14B8A6" }}
+                        style={{ background: "var(--info-soft)", border: "1px solid var(--info-border)", color: "var(--info-text)" }}
                       >
                         {(program.base_cpp * 100).toFixed(1)}¢/pt
                       </div>

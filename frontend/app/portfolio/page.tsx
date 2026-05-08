@@ -463,7 +463,7 @@ export default function PortfolioPage() {
                 {sqc.current_tier && (
                   <div
                     className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold"
-                    style={{ background: "rgba(13,148,136,0.15)", border: "1px solid rgba(13,148,136,0.3)", color: "var(--accent)" }}
+                    style={{ background: "var(--info-soft-2)", border: "1px solid var(--info-border)", color: "var(--accent)" }}
                   >
                     Current: Aeroplan {sqc.current_tier}
                   </div>

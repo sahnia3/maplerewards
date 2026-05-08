@@ -30,10 +30,10 @@ export function StatCard({
       className={`rounded-2xl p-4 relative overflow-hidden hover-glow ${className}`}
       style={{
         background: accent
-          ? "linear-gradient(135deg, rgba(13,148,136,0.08) 0%, rgba(79,70,229,0.03) 100%)"
+          ? "linear-gradient(135deg, var(--info-soft) 0%, rgba(79,70,229,0.03) 100%)"
           : "var(--bg-elevated)",
         border: accent
-          ? "1px solid rgba(13,148,136,0.2)"
+          ? "1px solid var(--info-border)"
           : "1px solid var(--border-dim)",
       }}
     >
@@ -42,7 +42,7 @@ export function StatCard({
           className="absolute top-0 left-4 right-4 h-px"
           style={{
             background:
-              "linear-gradient(90deg, transparent, rgba(13,148,136,0.5), transparent)",
+              "linear-gradient(90deg, transparent, var(--info-border), transparent)",
           }}
         />
       )}
@@ -79,10 +79,10 @@ export function StatCard({
             className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
             style={{
               background: accent
-                ? "rgba(13,148,136,0.15)"
+                ? "var(--info-soft-2)"
                 : "rgba(255,255,255,0.04)",
               border: accent
-                ? "1px solid rgba(13,148,136,0.2)"
+                ? "1px solid var(--info-border)"
                 : "1px solid var(--border-dim)",
             }}
           >

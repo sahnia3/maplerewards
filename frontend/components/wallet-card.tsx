@@ -63,7 +63,7 @@ export function WalletCard({ userCard, sessionId, onRemoved, onBalanceUpdated }:
         disabled={removing}
         className="absolute top-4 right-4 w-7 h-7 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150 hover:bg-red-500/15"
         style={{ color: "var(--text-tertiary)" }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#14B8A6"; }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--info-text)"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-tertiary)"; }}
         title="Remove card"
       >
@@ -129,8 +129,8 @@ export function WalletCard({ userCard, sessionId, onRemoved, onBalanceUpdated }:
               className="w-36 h-9 px-3 rounded-lg text-[14px] font-semibold text-white outline-none transition-all"
               style={{
                 background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(13,148,136,0.4)",
-                boxShadow: "0 0 0 3px rgba(13,148,136,0.1)",
+                border: "1px solid var(--info-border)",
+                boxShadow: "0 0 0 3px var(--info-soft)",
               }}
             />
             <button
@@ -163,7 +163,7 @@ export function WalletCard({ userCard, sessionId, onRemoved, onBalanceUpdated }:
           </button>
         )}
 
-        {error && <p className="text-[12px] mt-1.5" style={{ color: "#14B8A6" }}>{error}</p>}
+        {error && <p className="text-[12px] mt-1.5" style={{ color: "var(--info-text)" }}>{error}</p>}
       </div>
 
       {/* Annual fee chip */}
