@@ -322,6 +322,11 @@ export function CardFan({
           transformStyle: "preserve-3d",
           transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
           transition: "transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1)",
+          /* The 3D-rotated stack swallows hit-tests under preserve-3d in WebKit/
+           * Chromium — elementFromPoint returns this div instead of the cards
+           * that visually occupy the same pixels. Disable hit-testing here and
+           * re-enable on each card wrapper so events reach the right element. */
+          pointerEvents: "none",
         }}
       >
         {CARDS.map((card, i) => {
@@ -352,8 +357,14 @@ export function CardFan({
            * This is what makes every card hittable. */
           const distFromFocus = Math.abs(i - focusIndex);
           const zIndex = isHover ? 999 : 200 - distFromFocus * 10;
-          /* No ambient motion at rest — user wanted cards still until interacted with. */
-          const ambient = "none";
+          /* Wrapper takes the exact rendered card size so elementFromPoint
+           * correctly associates the visible pixels with the click handler.
+           * Earlier the wrapper was 0×0 (no width/height) and Card3D inside
+           * painted out of bounds — Aeroplan and Cobalt's hit-area was nowhere
+           * even though their pixels were visible. */
+          const cardScale = 0.86;
+          const cardW = 320 * cardScale;
+          const cardH = 200 * cardScale;
           return (
             <div
               key={card.id}
@@ -363,11 +374,17 @@ export function CardFan({
                 position: "absolute",
                 left: "50%",
                 top: "50%",
+                width: cardW,
+                height: cardH,
+                marginLeft: -cardW / 2,
+                marginTop: -cardH / 2,
                 transformStyle: "preserve-3d",
-                transform: `translate3d(calc(-50% + ${x}px), calc(-50% + ${liftY}px), ${z}px) rotateZ(${rotZ}deg) rotateY(${offset * -4}deg) scale(${scaleFactor})`,
+                transformOrigin: "center",
+                transform: `translate3d(${x}px, ${liftY}px, ${z}px) rotateZ(${rotZ}deg) rotateY(${offset * -4}deg) scale(${scaleFactor})`,
                 transition: "transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1), filter 320ms ease",
                 zIndex,
                 cursor: "pointer",
+                pointerEvents: "auto",
                 filter: isHover
                   ? "drop-shadow(0 40px 60px rgba(0,0,0,0.40)) drop-shadow(0 8px 18px rgba(165,31,45,0.25))"
                   : otherHovered
@@ -375,20 +392,7 @@ export function CardFan({
                     : "none",
               }}
             >
-              <div
-                style={{
-                  position: "relative",
-                  /* ambient bob runs on this inner wrapper, leaving the fan transform alone */
-                  animation: ambient,
-                  willChange: "transform",
-                  transformOrigin: "center",
-                  /* intensity scales the keyframe by clamping with translateZ — light-touch */
-                  opacity: 1,
-                  /* per-card delay-aware ease */
-                }}
-              >
-                <Card3D card={card} scale={0.86} label={i === focusIndex ? "BEST" : null} />
-              </div>
+              <Card3D card={card} scale={cardScale} label={i === focusIndex ? "BEST" : null} />
             </div>
           );
         })}

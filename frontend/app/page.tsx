@@ -248,7 +248,7 @@ export default function HomePage() {
 
   return (
     <div className="screen-shell dashboard-screen reveal" style={{ paddingTop: 0 }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px clamp(20px, 3vw, 40px)" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px clamp(20px, 4vw, 60px)" }}>
         {/* ── Masthead: kicker + display title + lede + CardFan + 3-up stats ── */}
         <section className="mr-hero">
           <div className="mr-hero-grid" />

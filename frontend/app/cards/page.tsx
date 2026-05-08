@@ -81,7 +81,7 @@ export default function CardsPage() {
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 80px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         {/* ── Masthead ─────────────────────────────────────────────── */}
         <header
           style={{
