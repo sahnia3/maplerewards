@@ -3,10 +3,10 @@
 .env.local
 .env.*.local
 
-# Go
-bin/
-api
-api_bin
+# Go — anchored to repo root so cmd/api/* and internal/repo/api* are NOT matched
+/bin/
+/api
+/api_bin
 *.exe
 *.test
 *.out

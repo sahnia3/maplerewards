@@ -193,8 +193,8 @@ func (s *ApifyAwardService) SearchAwards(
 	}
 	slog.Info("[apify-awards] actor run started", "runID", runID, "datasetID", datasetID)
 
-	// ── Step 2: Poll until complete (max 90 seconds) ─────────────────────
-	err = s.pollUntilDone(ctx, runID, 90*time.Second)
+	// ── Step 2: Poll until complete (max 150s — actor occasionally exceeds 90s) ─
+	err = s.pollUntilDone(ctx, runID, 150*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("poll actor run: %w", err)
 	}
