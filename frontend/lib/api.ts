@@ -290,6 +290,15 @@ export async function chatStream(
     signal,
   });
 
+  // Backend hasn't been redeployed with the streaming endpoint yet — fall back
+  // to the legacy non-streaming /chat. The user gets the answer (no live pills)
+  // instead of a "Sorry, I couldn't process your request" dead end.
+  if (res.status === 404) {
+    const resp = await chat(req);
+    onEvent({ type: "done", reply: resp.reply, history: resp.history });
+    return;
+  }
+
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
     throw new Error(text || `HTTP ${res.status}`);
