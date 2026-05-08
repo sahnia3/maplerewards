@@ -226,23 +226,25 @@ export default function ChatPage() {
               >
                 <div
                   style={{
-                    maxWidth: m.role === "user" ? "78%" : "100%",
+                    maxWidth: m.role === "user" ? "min(560px, 80%)" : "100%",
                     padding: m.role === "user" ? "12px 16px" : "0",
                     borderRadius: m.role === "user" ? 14 : 0,
                     background: m.role === "user" ? "var(--accent)" : "transparent",
-                    color: m.role === "user" ? "#fff" : "var(--ink-2)",
+                    color: m.role === "user" ? "#fff" : "var(--ink)",
                     borderTop: m.role === "assistant" ? "1px solid var(--rule)" : "none",
                     borderLeft: m.role === "assistant" ? "2px solid var(--accent)" : "none",
                     paddingLeft: m.role === "assistant" ? 18 : undefined,
                     paddingTop: m.role === "assistant" ? 14 : undefined,
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
                   }}
                 >
                   {m.role === "assistant" ? (
-                    <div className="serif chat-message" style={{ fontSize: 16, lineHeight: 1.6 }}>
+                    <div className="sans chat-message" style={{ fontSize: 15, lineHeight: 1.65 }}>
                       <ReactMarkdown>{m.content}</ReactMarkdown>
                     </div>
                   ) : (
-                    <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0 }}>{m.content}</p>
+                    <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: "#fff" }}>{m.content}</p>
                   )}
                 </div>
               </div>
@@ -439,14 +441,20 @@ export default function ChatPage() {
       </div>
 
       <style jsx global>{`
-        .chat-message h2 { font-family: var(--font-display); font-size: 22px; margin: 18px 0 8px; color: var(--ink); font-style: normal; }
-        .chat-message h3 { font-family: var(--font-display); font-size: 18px; margin: 14px 0 6px; color: var(--ink); font-style: normal; }
-        .chat-message p { margin: 0 0 12px; font-style: italic; }
-        .chat-message ul, .chat-message ol { padding-left: 20px; margin: 0 0 12px; font-style: italic; }
-        .chat-message li { margin: 3px 0; }
-        .chat-message strong { color: var(--ink); font-weight: 500; font-style: normal; }
+        .chat-message h2 { font-family: var(--font-display); font-size: 22px; margin: 18px 0 8px; color: var(--ink); font-style: normal; line-height: 1.2; }
+        .chat-message h3 { font-family: var(--font-display); font-size: 18px; margin: 14px 0 6px; color: var(--ink); font-style: normal; line-height: 1.25; }
+        .chat-message p { margin: 0 0 14px; color: var(--ink); }
+        .chat-message ul, .chat-message ol { padding-left: 22px; margin: 0 0 14px; color: var(--ink); }
+        .chat-message li { margin: 4px 0; }
+        .chat-message strong { color: var(--ink); font-weight: 600; }
+        .chat-message em { font-style: italic; color: var(--ink); }
         .chat-message a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-        .chat-message code { font-family: var(--font-mono); font-size: 13px; background: var(--card-fill); padding: 2px 6px; border-radius: 4px; font-style: normal; }
+        .chat-message code { font-family: var(--font-mono); font-size: 13px; background: var(--card-fill); padding: 2px 6px; border-radius: 4px; }
+        .chat-message table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+        .chat-message th, .chat-message td { border-bottom: 1px solid var(--rule); padding: 8px 10px; text-align: left; }
+        .chat-message th { color: var(--ink-3); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+        .chat-message hr { border: 0; border-top: 1px solid var(--rule); margin: 16px 0; }
+        .chat-message pre { background: var(--card-fill); padding: 12px; border-radius: 8px; overflow-x: auto; }
       `}</style>
     </div>
   );

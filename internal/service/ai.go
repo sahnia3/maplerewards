@@ -220,8 +220,10 @@ func (s *AIService) buildWalletContext(ctx context.Context, sessionID string) st
 	}
 
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
-	if err != nil {
-		return "Could not load the user's wallet."
+	if err != nil || user == nil {
+		// Session doesn't exist yet — caller hasn't run /wallet/anonymous to seed
+		// one. Treat the same as no wallet rather than panicking on nil deref.
+		return "The user has not set up a wallet yet. Encourage them to add their credit cards first."
 	}
 
 	cards, err := s.walletRepo.GetUserCards(ctx, user.ID)

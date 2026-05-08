@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -175,6 +176,53 @@ func (r *toolRegistry) call(ctx context.Context, sessionID string, isPro bool, n
 		return errResultJSON("empty_result", "Tool returned no data; try widening the query.")
 	}
 	return out
+}
+
+// programSlugAliases maps common LLM-guessed slugs to the canonical DB slug.
+// Without this the model regularly fails get_transfer_partners and get_program_cpp
+// by passing "amex-mr-canada" (where DB has "amex-mr-ca"), "amex-mr", or "amex"
+// — each failure costs a wasted round.
+var programSlugAliases = map[string]string{
+	"amex-mr":          "amex-mr-ca",
+	"amex-mr-canada":   "amex-mr-ca",
+	"amex":             "amex-mr-ca",
+	"amex-membership":  "amex-mr-ca",
+	"membership-rewards": "amex-mr-ca",
+	"avios":            "ba-avios",
+	"british-airways":  "ba-avios",
+	"flying-blue":      "flying-blue",
+	"airfrance":        "flying-blue",
+	"air-france":       "flying-blue",
+	"klm":              "flying-blue",
+	"asia-miles":       "asia-miles",
+	"cathay":           "asia-miles",
+	"hyatt":            "world-of-hyatt",
+	"hilton":           "hilton-honors",
+	"marriott":         "marriott-bonvoy",
+	"bonvoy":           "marriott-bonvoy",
+	"scene":            "scene-plus",
+	"scene+":           "scene-plus",
+	"westjet":          "westjet-rewards",
+	"airmiles":         "air-miles",
+	"air-miles":        "air-miles",
+	"rbc":              "rbc-avion",
+	"avion":            "rbc-avion",
+	"aventura":         "cibc-aventura",
+	"cibc":             "cibc-aventura",
+	"td":               "td-rewards",
+	"bmo":              "bmo-rewards",
+	"scotia":           "scotia-rewards",
+}
+
+// canonicalProgramSlug normalizes a user/LLM-supplied slug into the DB slug.
+// Returns the input lowercased if no alias matches — caller will see a
+// program_not_found error which is correct for a truly unknown slug.
+func canonicalProgramSlug(slug string) string {
+	s := strings.ToLower(strings.TrimSpace(slug))
+	if mapped, ok := programSlugAliases[s]; ok {
+		return mapped
+	}
+	return s
 }
 
 // summarizeToolResult produces a short human label for the UI status pill.
@@ -373,9 +421,11 @@ func (s *AIService) registerTools() {
 			if err := json.Unmarshal(raw, &args); err != nil {
 				return errResultJSON("invalid_args", err.Error()), nil
 			}
-			prog, err := s.cardRepo.GetProgramBySlug(ctx, strings.ToLower(args.ProgramSlug))
+			canonical := canonicalProgramSlug(args.ProgramSlug)
+			prog, err := s.cardRepo.GetProgramBySlug(ctx, canonical)
 			if err != nil || prog == nil {
-				return errResultJSON("program_not_found", fmt.Sprintf("Unknown program slug %q.", args.ProgramSlug)), nil
+				return errResultJSON("program_not_found",
+					fmt.Sprintf("Unknown program slug %q. Canonical Canadian slugs: aeroplan, amex-mr-ca, ba-avios, flying-blue, marriott-bonvoy, world-of-hyatt, rbc-avion, cibc-aventura, td-rewards, bmo-rewards, scene-plus, air-miles, westjet-rewards.", args.ProgramSlug)), nil
 			}
 			routes, err := s.transferRepo.GetTransferRoutes(ctx, prog.ID)
 			if err != nil {
@@ -417,12 +467,13 @@ func (s *AIService) registerTools() {
 			if args.Segment == "" {
 				args.Segment = "base"
 			}
-			cpp, err := s.valuationRepo.GetCPP(ctx, strings.ToLower(args.ProgramSlug), args.Segment)
+			canonical := canonicalProgramSlug(args.ProgramSlug)
+			cpp, err := s.valuationRepo.GetCPP(ctx, canonical, args.Segment)
 			if err != nil {
-				return errResultJSON("not_found", fmt.Sprintf("No CPP for %s/%s.", args.ProgramSlug, args.Segment)), nil
+				return errResultJSON("not_found", fmt.Sprintf("No CPP for %q/%s. Canonical slugs: aeroplan, amex-mr-ca, ba-avios, flying-blue, marriott-bonvoy, world-of-hyatt, rbc-avion, cibc-aventura.", args.ProgramSlug, args.Segment)), nil
 			}
 			return json.Marshal(map[string]any{
-				"program_slug": args.ProgramSlug,
+				"program_slug": canonical,
 				"segment":      args.Segment,
 				"cpp_cents":    cpp,
 			})
@@ -643,6 +694,14 @@ For award queries, structure your final answer as:
 1. Best path (program + points + taxes + CPP)
 2. Alternative paths (1-2 options)
 3. Action recommendation (which card to use, transfer to do, when to book)
+
+CANONICAL PROGRAM SLUGS — use these EXACT strings for get_transfer_partners / get_program_cpp:
+  aeroplan · amex-mr-ca · ba-avios · flying-blue · asia-miles · marriott-bonvoy ·
+  world-of-hyatt · hilton-honors · rbc-avion · cibc-aventura · cibc-dividend ·
+  td-rewards · bmo-rewards · scotia-rewards · scene-plus · air-miles · westjet-rewards ·
+  pc-optimum · capital-one-rewards · brim-rewards · mbna-rewards · nbc-rewards ·
+  hsbc-rewards · ct-money · home-trust-rewards · manulife-rewards · desjardins-bonusdollars
+Do NOT use "amex-mr-canada" (DB has "amex-mr-ca"), "amex" alone, or pluralized forms — they will fail.
 `)
 
 	if isPro {
@@ -757,17 +816,30 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 
 		// Collect text + tool_use from the response.
 		var toolCalls []claudeBlock
+		var roundText int
 		for _, b := range resp.Content {
 			switch b.Type {
 			case "text":
 				if b.Text != "" {
 					finalText.WriteString(b.Text)
 					finalText.WriteString("\n")
+					roundText += len(b.Text)
 				}
 			case "tool_use":
 				toolCalls = append(toolCalls, b)
 			}
 		}
+
+		slog.Info("[ai-tools] round complete",
+			"round", round+1,
+			"stop_reason", resp.StopReason,
+			"text_chars", roundText,
+			"tool_calls", len(toolCalls),
+			"input_tokens", resp.Usage.InputTokens,
+			"output_tokens", resp.Usage.OutputTokens,
+			"cache_read", resp.Usage.CacheReadTokens,
+			"cache_create", resp.Usage.CacheCreationTokens,
+		)
 
 		// Done if no tool calls or end_turn.
 		if len(toolCalls) == 0 || resp.StopReason == "end_turn" {
