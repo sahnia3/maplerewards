@@ -5,10 +5,31 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
-import { chat } from "@/lib/api";
+import { chatStream } from "@/lib/api";
 import type { ChatMessage } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { MapleLeaf } from "@/components/editorial/leaf-divider";
+
+// In-flight tool calls rendered as status pills under the user's last message.
+type ToolPill = {
+  id: string;
+  name: string;
+  state: "running" | "done" | "error";
+  summary?: string;
+};
+
+// Human label for each tool name. Matches the registry in internal/service/ai_tools.go.
+const TOOL_LABELS: Record<string, string> = {
+  search_award_space: "Searching award space",
+  search_cash_flights: "Checking cash prices",
+  get_transfer_partners: "Loading transfer partners",
+  get_program_cpp: "Looking up CPP",
+  web_search: "Searching the web",
+  evaluate_buy_points: "Evaluating buy-points deal",
+  recommend_stack: "Building optimal stack",
+  evaluate_missed_rewards: "Auditing missed rewards",
+  project_sqc: "Projecting Aeroplan SQC",
+};
 
 const SUGGESTIONS = [
   { label: "Best way to fly business class to London", prompt: "Best way to fly business class to London with my points" },
@@ -29,6 +50,9 @@ export default function ChatPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
+  // Tool-pill state for the in-flight turn. Cleared on send and when the
+  // assistant's response arrives.
+  const [pills, setPills] = useState<ToolPill[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -51,13 +75,36 @@ export default function ChatPage() {
     setInput("");
     setError(null);
     setLoading(true);
+    setPills([]);
     const userMsg: ChatMessage = { role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
     try {
       const sid = await ensureSession();
       if (researchMode) setSearching(true);
-      const resp = await chat({ session_id: sid, message: text, history: messages, research_mode: researchMode });
-      setMessages(resp.history);
+      await chatStream(
+        { session_id: sid, message: text, history: messages, research_mode: researchMode },
+        (e) => {
+          if (e.type === "tool_start") {
+            setPills((prev) => [...prev, { id: e.id, name: e.name, state: "running" }]);
+          } else if (e.type === "tool_done") {
+            setPills((prev) =>
+              prev.map((p) =>
+                p.id === e.id ? { ...p, state: "done", summary: e.summary } : p
+              )
+            );
+          } else if (e.type === "done") {
+            setMessages(e.history);
+            // Clear pills after the final message lands so the answer reads cleanly.
+            setPills([]);
+          } else if (e.type === "error") {
+            setError(e.message);
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", content: "Sorry, I couldn't process your request. Please try again." },
+            ]);
+          }
+        },
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       if (msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro")) {
@@ -70,6 +117,7 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
       setSearching(false);
+      setPills([]);
       inputRef.current?.focus();
     }
   }
@@ -201,15 +249,21 @@ export default function ChatPage() {
             ))}
 
             {loading && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderLeft: "2px solid var(--accent)", paddingLeft: 18 }}>
-                {searching ? (
-                  <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                    Searching live sources…
-                  </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 0", borderLeft: "2px solid var(--accent)", paddingLeft: 18 }}>
+                {pills.length === 0 ? (
+                  searching ? (
+                    <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      Searching live sources…
+                    </span>
+                  ) : (
+                    <span style={{ display: "inline-flex", gap: 5 }}>
+                      <Dot delay="0ms" /><Dot delay="150ms" /><Dot delay="300ms" />
+                    </span>
+                  )
                 ) : (
-                  <span style={{ display: "inline-flex", gap: 5 }}>
-                    <Dot delay="0ms" /><Dot delay="150ms" /><Dot delay="300ms" />
-                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {pills.map((p) => <ToolStatusPill key={p.id} pill={p} />)}
+                  </div>
                 )}
               </div>
             )}
@@ -410,5 +464,48 @@ function Dot({ delay }: { delay: string }) {
         animationDelay: delay,
       }}
     />
+  );
+}
+
+function ToolStatusPill({ pill }: { pill: ToolPill }) {
+  const label = TOOL_LABELS[pill.name] ?? pill.name;
+  const isDone = pill.state === "done";
+  const isError = pill.state === "error";
+  return (
+    <div
+      role="status"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        alignSelf: "flex-start",
+        padding: "6px 12px",
+        borderRadius: 999,
+        border: `1px solid ${isError ? "var(--loss)" : isDone ? "var(--rule)" : "var(--accent)"}`,
+        background: isError ? "var(--accent-soft)" : isDone ? "var(--surface-2)" : "var(--accent-soft)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: isError ? "var(--loss)" : isDone ? "var(--ink-3)" : "var(--accent)",
+        transition: "background 200ms, color 200ms, border-color 200ms",
+      }}
+    >
+      {isDone ? (
+        <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--gain)" }} />
+      ) : isError ? (
+        <span aria-hidden>!</span>
+      ) : (
+        <span aria-hidden style={{ display: "inline-flex", gap: 3 }}>
+          <Dot delay="0ms" />
+          <Dot delay="150ms" />
+          <Dot delay="300ms" />
+        </span>
+      )}
+      <span>
+        {label}
+        {pill.summary ? <span style={{ color: "var(--ink-2)", textTransform: "none", letterSpacing: "0.02em", marginLeft: 8 }}>· {pill.summary}</span> : null}
+      </span>
+    </div>
   );
 }

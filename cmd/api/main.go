@@ -293,6 +293,7 @@ func main() {
 
 		// AI chat assistant
 		r.Post("/chat", chatH.Chat)
+		r.Post("/chat/stream", chatH.ChatStream) // SSE — tool status pills + progressive events
 
 		// Card recommender
 		r.Post("/recommend", recommendH.Recommend)

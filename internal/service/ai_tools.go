@@ -177,6 +177,45 @@ func (r *toolRegistry) call(ctx context.Context, sessionID string, isPro bool, n
 	return out
 }
 
+// summarizeToolResult produces a short human label for the UI status pill.
+// Reads a few well-known shapes (results array, error code, count) and falls
+// back to "Done" for opaque results. Never reveals raw payload.
+func summarizeToolResult(raw json.RawMessage) string {
+	var probe map[string]any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return "Done"
+	}
+	if e, ok := probe["error"].(string); ok && e != "" {
+		return "Failed: " + e
+	}
+	if r, ok := probe["results"].([]any); ok {
+		return fmt.Sprintf("%d result%s", len(r), pluralS(len(r)))
+	}
+	if c, ok := probe["count"].(float64); ok {
+		return fmt.Sprintf("%d transfer partner%s", int(c), pluralS(int(c)))
+	}
+	if v, ok := probe["verdict"].(string); ok {
+		return strings.ToUpper(v)
+	}
+	if t, ok := probe["total_gap"].(float64); ok {
+		return fmt.Sprintf("$%.2f gap", t)
+	}
+	if t, ok := probe["total_sqc_earned"].(float64); ok {
+		return fmt.Sprintf("%d SQC earned", int(t))
+	}
+	if cpp, ok := probe["cpp_cents"].(float64); ok {
+		return fmt.Sprintf("%.2f¢/pt", cpp)
+	}
+	return "Done"
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func errResultJSON(code, msg string) json.RawMessage {
 	b, _ := json.Marshal(map[string]any{"error": code, "message": msg})
 	return b
@@ -638,11 +677,28 @@ FREE TIER NOTE
 
 // ── ChatWithTools — the new tool-use loop ────────────────────────────────────
 
-// ChatWithTools runs the canonical Anthropic tool-use loop. Replaces the legacy
-// keyword-driven Chat() flow. Returns the synthesized assistant reply plus
-// the updated history (tool_use / tool_result blocks are NOT persisted to
-// history — only the user message + final assistant text).
+// EmitFn is a callback for streaming chat events. Pass nil to ChatWithTools for
+// non-streaming mode. The handler converts events to SSE wire format.
+//
+// Event names:
+//   "round_start"  {round int}
+//   "tool_start"   {id, name, args}
+//   "tool_done"    {id, name, summary}
+//   "tool_error"   {id, name, error}
+//   "round_end"    {round, has_more bool}
+type EmitFn func(event string, data map[string]any)
+
+// ChatWithTools is the non-streaming wrapper. Calls the streaming variant with
+// nil emit and returns the synthesized reply at the end.
 func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bool) (*ChatResponse, error) {
+	return s.ChatWithToolsStream(ctx, req, isPro, nil)
+}
+
+// ChatWithToolsStream runs the canonical Anthropic tool-use loop. If emit is
+// non-nil, intermediate events (tool calls firing, rounds completing) are
+// pushed to the caller as they happen — this is what powers the SSE streaming
+// endpoint and the tool-status pills in the chat UI.
+func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, isPro bool, emit EmitFn) (*ChatResponse, error) {
 	if s.apiKey == "" {
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY not configured")
 	}
@@ -681,6 +737,10 @@ func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bo
 	finalText := strings.Builder{}
 
 	for round := 0; round < maxRounds; round++ {
+		if emit != nil {
+			emit("round_start", map[string]any{"round": round + 1})
+		}
+
 		// On the last round, withhold tools so the model must synthesize.
 		roundTools := tools
 		if round == maxRounds-1 {
@@ -711,7 +771,21 @@ func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bo
 
 		// Done if no tool calls or end_turn.
 		if len(toolCalls) == 0 || resp.StopReason == "end_turn" {
+			if emit != nil {
+				emit("round_end", map[string]any{"round": round + 1, "has_more": false})
+			}
 			break
+		}
+
+		// Announce each tool call so the UI can render a status pill.
+		if emit != nil {
+			for _, tc := range toolCalls {
+				emit("tool_start", map[string]any{
+					"id":   tc.ID,
+					"name": tc.Name,
+					"args": json.RawMessage(tc.Input),
+				})
+			}
 		}
 
 		// Dispatch tool calls in parallel with a per-call deadline.
@@ -729,9 +803,21 @@ func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bo
 					ToolUseID: tc.ID,
 					Content:   string(out),
 				}
+				if emit != nil {
+					summary := summarizeToolResult(out)
+					emit("tool_done", map[string]any{
+						"id":      tc.ID,
+						"name":    tc.Name,
+						"summary": summary,
+					})
+				}
 			}(i, tc)
 		}
 		wg.Wait()
+
+		if emit != nil {
+			emit("round_end", map[string]any{"round": round + 1, "has_more": true})
+		}
 
 		// Append all tool results as a single user message.
 		msgs = append(msgs, claudeBlockMessage{Role: "user", Content: results})

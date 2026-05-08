@@ -93,6 +93,11 @@ const RETIRED_CARD_NAMES: ReadonlySet<string> = new Set([
   /* National Bank retired Syncro Mastercard in their lineup revamp (~2019); the
    * card no longer appears on nbc.ca and is replaced by ECHO Cashback. */
   "National Bank Syncro Mastercard",
+  /* User-requested removals — sprite art quality could not be resolved despite
+   * multiple sourcing attempts. Cards remain in market but are excluded from
+   * the catalogue UI to avoid presenting low-quality / wrong imagery. */
+  "Tangerine Money-Back Credit Card",
+  "Simplii Financial Cash Back Visa",
 ]);
 
 export async function listCards(): Promise<Card[]> {
@@ -244,6 +249,83 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     method: "POST",
     body: JSON.stringify(req),
   });
+}
+
+// ── Streaming chat (SSE) ──────────────────────────────────────────────────────
+
+export type ChatStreamEvent =
+  | { type: "round_start"; round: number }
+  | { type: "tool_start"; id: string; name: string; args: unknown }
+  | { type: "tool_done"; id: string; name: string; summary: string }
+  | { type: "round_end"; round: number; has_more: boolean }
+  | { type: "done"; reply: string; history: ChatMessage[] }
+  | { type: "error"; message: string };
+
+/**
+ * chatStream — POST to /chat/stream and yield events as the backend tool-use
+ * loop progresses. Closes the perceived-latency gap on multi-tool prompts:
+ * the user sees "Searching Aeroplan…" pills resolve in real time instead of
+ * a 30-second blank screen.
+ *
+ * Errors raised by the network layer (auth, 4xx/5xx) reject the returned
+ * promise. Errors emitted by the model after streaming starts arrive as
+ * { type: "error" } events through onEvent.
+ */
+export async function chatStream(
+  req: ChatRequest,
+  onEvent: (e: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  const token = _getAccessToken?.();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}/chat/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(req),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  // SSE frames are separated by a blank line. Each frame has zero-or-more
+  // "field: value" lines; we care about "event:" and "data:".
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    let sep;
+    while ((sep = buf.indexOf("\n\n")) !== -1) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+
+      let event = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (!data) continue;
+      try {
+        const parsed = JSON.parse(data);
+        onEvent({ type: event, ...parsed } as ChatStreamEvent);
+      } catch {
+        // Ignore malformed frame
+      }
+    }
+  }
 }
 
 // ── Trip Planner ────────────────────────────────────────────────────────────
