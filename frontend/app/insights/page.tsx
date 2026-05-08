@@ -1,62 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
-import { useAuth } from "@/contexts/auth-context";
-import { getSpendHistory, getSpendStats } from "@/lib/api";
-import type { SpendEntry, SpendStats } from "@/lib/types";
-import { ProGate } from "@/components/pro-gate";
-import { AnimatedSection } from "@/components/ui/animated-list";
-import { SkeletonStat, SkeletonChart } from "@/components/ui/skeleton";
-
-function fmtCAD(v: number) {
-  return `$${v.toFixed(2)}`;
-}
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-CA", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-const CAT_ICONS: Record<string, string> = {
-  groceries: "🛒",
-  dining: "🍽️",
-  travel: "✈️",
-  gas: "⛽",
-  transit: "🚇",
-  entertainment: "🎬",
-  streaming: "📺",
-  pharmacy: "💊",
-  "foreign-currency": "💱",
-  "everything-else": "💳",
-};
-
-type ViewEntry = {
-  id: string;
-  card_name: string;
-  category_slug: string;
-  category_name: string;
-  amount: number;
-  points_earned: number;
-  dollar_value: number;
-  date: string;
-};
-
-function serverToView(e: SpendEntry): ViewEntry {
-  return {
-    id: e.id,
-    card_name: e.card_name ?? "Unknown Card",
-    category_slug: e.category_slug ?? "everything-else",
-    category_name: e.category_name ?? "Other",
-    amount: e.amount,
-    points_earned: e.points_earned,
-    dollar_value: e.dollar_value,
-    date: e.spent_at,
-  };
-}
+import { getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
+import type { SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
+import { PageMasthead } from "@/components/editorial/page-masthead";
+import { Sparkline } from "@/components/editorial/sparkline";
+import { LeafDivider } from "@/components/editorial/leaf-divider";
 
 type DateRange = "7d" | "30d" | "90d" | "all";
 
@@ -67,800 +18,489 @@ const DATE_RANGES: { value: DateRange; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-function getDaysAgo(days: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Build monthly buckets from entries for the trend chart */
-function buildMonthlyTrend(
-  entries: ViewEntry[]
-): { label: string; spend: number; value: number }[] {
-  if (entries.length === 0) return [];
-
-  const buckets: Record<string, { spend: number; value: number }> = {};
-
-  for (const e of entries) {
-    const d = new Date(e.date);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (!buckets[key]) buckets[key] = { spend: 0, value: 0 };
-    buckets[key].spend += e.amount;
-    buckets[key].value += e.dollar_value;
-  }
-
-  const sorted = Object.entries(buckets)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6); // last 6 months max
-
-  const monthNames = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-  ];
-
-  return sorted.map(([key, data]) => {
-    const [, month] = key.split("-");
-    return {
-      label: monthNames[parseInt(month, 10) - 1],
-      spend: data.spend,
-      value: data.value,
-    };
-  });
-}
-
 export default function InsightsPage() {
   const { sessionId, isReady } = useSession();
-  const { isPro } = useAuth();
-  const [allEntries, setAllEntries] = useState<ViewEntry[]>([]);
+  const [allEntries, setAllEntries] = useState<SpendEntry[]>([]);
   const [stats, setStats] = useState<SpendStats | null>(null);
+  const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>("all");
 
-  const loadData = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!sessionId) {
       setLoading(false);
       return;
     }
     setLoading(true);
+    const sinceDays = dateRange === "all" ? 0 : Number(dateRange.replace("d", ""));
     try {
-      const [history, serverStats] = await Promise.all([
+      const [history, ss, mr] = await Promise.all([
         getSpendHistory(sessionId, 100, 0),
         getSpendStats(sessionId),
+        getMissedRewards(sessionId, { sinceDays, top: 5 }).catch(() => null),
       ]);
-      if (history && history.length > 0) {
-        setAllEntries(history.map(serverToView));
-        setStats(serverStats);
-      } else {
-        setAllEntries([]);
-        setStats(null);
-      }
+      setAllEntries(history ?? []);
+      setStats(ss);
+      setMissed(mr);
     } catch {
       setAllEntries([]);
       setStats(null);
+      setMissed(null);
     }
     setLoading(false);
-  }, [sessionId]);
+  }, [sessionId, dateRange]);
 
   useEffect(() => {
-    if (isReady) loadData();
-  }, [isReady, loadData]);
+    if (isReady) load();
+  }, [isReady, load]);
 
-  // ── Filter entries by date range ───────────
+  // Filter by date range
   const entries = useMemo(() => {
     if (dateRange === "all") return allEntries;
-    const daysMap: Record<DateRange, number> = { "7d": 7, "30d": 30, "90d": 90, all: 0 };
-    const cutoff = getDaysAgo(daysMap[dateRange]);
-    return allEntries.filter((e) => new Date(e.date) >= cutoff);
+    const days = Number(dateRange.replace("d", ""));
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return allEntries.filter((e) => new Date(e.spent_at).getTime() >= cutoff);
   }, [allEntries, dateRange]);
 
-  // ── Derived aggregations (from filtered entries) ───────────
-  const isFiltered = dateRange !== "all";
-
-  const totalSpend = isFiltered
-    ? entries.reduce((s, e) => s + e.amount, 0)
-    : stats?.total_spend ?? entries.reduce((s, e) => s + e.amount, 0);
-  const totalValue = isFiltered
-    ? entries.reduce((s, e) => s + e.dollar_value, 0)
-    : stats?.total_value ?? entries.reduce((s, e) => s + e.dollar_value, 0);
-  const totalPoints = isFiltered
-    ? entries.reduce((s, e) => s + e.points_earned, 0)
-    : stats?.total_points ?? entries.reduce((s, e) => s + e.points_earned, 0);
+  const totalSpend = entries.reduce((s, e) => s + e.amount, 0);
+  const totalValue = entries.reduce((s, e) => s + e.dollar_value, 0);
+  const totalPoints = entries.reduce((s, e) => s + e.points_earned, 0);
   const avgReturn = totalSpend > 0 ? (totalValue / totalSpend) * 100 : 0;
 
-  // By category (recompute from filtered entries when filtering)
-  type CatAgg = {
-    spend: number;
-    value: number;
-    count: number;
-    name: string;
-  };
-  let catList: [string, CatAgg][];
-
-  if (!isFiltered && stats?.by_category && stats.by_category.length > 0) {
-    catList = stats.by_category.map((cs) => [
-      cs.category_name,
-      {
-        spend: cs.total_spend,
-        value: cs.total_value,
-        count: cs.entry_count,
-        name: cs.category_name,
-      },
-    ]);
-  } else {
-    const byCategory: Record<string, CatAgg> = {};
+  // Per-card aggregation (for ProgramRow-style ledger)
+  const byCard = useMemo(() => {
+    const m: Record<string, { name: string; spend: number; value: number; trend: number[]; count: number }> = {};
     for (const e of entries) {
-      if (!byCategory[e.category_slug])
-        byCategory[e.category_slug] = {
-          spend: 0,
-          value: 0,
-          count: 0,
-          name: e.category_name,
-        };
-      byCategory[e.category_slug].spend += e.amount;
-      byCategory[e.category_slug].value += e.dollar_value;
-      byCategory[e.category_slug].count += 1;
+      const k = e.card_name ?? "Unknown";
+      if (!m[k]) m[k] = { name: k, spend: 0, value: 0, trend: [], count: 0 };
+      m[k].spend += e.amount;
+      m[k].value += e.dollar_value;
+      m[k].count += 1;
     }
-    catList = Object.entries(byCategory).sort(
-      (a, b) => b[1].spend - a[1].spend
-    );
-  }
-  const maxSpend = catList[0]?.[1].spend ?? 1;
-
-  // By card
-  type CardAgg = {
-    spend: number;
-    value: number;
-    count: number;
-    name: string;
-    avgReturn: number;
-  };
-  let cardList: [string, CardAgg][];
-
-  if (!isFiltered && stats?.by_card && stats.by_card.length > 0) {
-    cardList = stats.by_card.map((cs) => [
-      cs.card_name,
-      {
-        spend: cs.total_spend,
-        value: cs.total_value,
-        count: 0,
-        name: cs.card_name,
-        avgReturn: cs.avg_return,
-      },
-    ]);
-  } else {
-    const byCard: Record<string, CardAgg> = {};
-    for (const e of entries) {
-      const key = e.card_name;
-      if (!byCard[key])
-        byCard[key] = {
-          spend: 0,
-          value: 0,
-          count: 0,
-          name: e.card_name,
-          avgReturn: 0,
-        };
-      byCard[key].spend += e.amount;
-      byCard[key].value += e.dollar_value;
-      byCard[key].count += 1;
+    // Build trend per card from entries chronologically
+    const sorted = [...entries].sort((a, b) => a.spent_at.localeCompare(b.spent_at));
+    const trendMap: Record<string, number[]> = {};
+    const running: Record<string, number> = {};
+    for (const e of sorted) {
+      running[e.card_name ?? "Unknown"] = (running[e.card_name ?? "Unknown"] ?? 0) + e.dollar_value;
+      Object.keys(running).forEach((k) => {
+        if (!trendMap[k]) trendMap[k] = [];
+        trendMap[k].push(running[k]);
+      });
     }
-    for (const data of Object.values(byCard)) {
-      data.avgReturn = data.spend > 0 ? (data.value / data.spend) * 100 : 0;
-    }
-    cardList = Object.entries(byCard).sort(
-      (a, b) => b[1].value - a[1].value
-    );
-  }
-
-  // Monthly trend data
-  const monthlyTrend = useMemo(() => buildMonthlyTrend(entries), [entries]);
-  const maxMonthlySpend = Math.max(...monthlyTrend.map((m) => m.spend), 1);
-
-  // Opportunity cost: find best earning card per category from data, then compute missed value
-  const opportunityCost = useMemo(() => {
-    if (entries.length === 0) return [];
-
-    // Find the best return rate per category from actual entries
-    const bestRateByCategory: Record<string, { card: string; rate: number }> = {};
-    for (const e of entries) {
-      const rate = e.amount > 0 ? (e.dollar_value / e.amount) * 100 : 0;
-      const existing = bestRateByCategory[e.category_slug];
-      if (!existing || rate > existing.rate) {
-        bestRateByCategory[e.category_slug] = { card: e.card_name, rate };
-      }
-    }
-
-    // Now compute opportunity cost per entry
-    const missed: {
-      entry: ViewEntry;
-      bestCard: string;
-      bestValue: number;
-      missedValue: number;
-    }[] = [];
-
-    for (const e of entries) {
-      const best = bestRateByCategory[e.category_slug];
-      if (!best || best.card === e.card_name) continue;
-      const bestValue = (e.amount * best.rate) / 100;
-      const diff = bestValue - e.dollar_value;
-      if (diff > 0.01) {
-        missed.push({
-          entry: e,
-          bestCard: best.card,
-          bestValue,
-          missedValue: diff,
-        });
-      }
-    }
-
-    missed.sort((a, b) => b.missedValue - a.missedValue);
-    return missed.slice(0, 5);
+    return Object.values(m)
+      .map((c) => ({ ...c, trend: trendMap[c.name] ?? [0, c.value] }))
+      .sort((a, b) => b.value - a.value);
   }, [entries]);
 
-  const totalMissedValue = opportunityCost.reduce(
-    (s, o) => s + o.missedValue,
-    0
-  );
-
-  // ── Loading state ────────────────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <div className="relative min-h-screen overflow-hidden">
-        <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
-          <div className="mb-8">
-            <div className="h-3 w-32 rounded shimmer mb-2" />
-            <div className="h-8 w-48 rounded-lg shimmer" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <SkeletonStat /><SkeletonStat /><SkeletonStat /><SkeletonStat />
-          </div>
-          <SkeletonChart />
-          <div className="mt-4"><SkeletonChart /></div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Main render ──────────────────────────────────────────────────────────
+  // Per-category
+  const byCategory = useMemo(() => {
+    const m: Record<string, { name: string; spend: number; value: number; count: number; share: number }> = {};
+    for (const e of entries) {
+      const k = e.category_name ?? "Other";
+      if (!m[k]) m[k] = { name: k, spend: 0, value: 0, count: 0, share: 0 };
+      m[k].spend += e.amount;
+      m[k].value += e.dollar_value;
+      m[k].count += 1;
+    }
+    const total = totalSpend || 1;
+    return Object.values(m)
+      .map((c) => ({ ...c, share: c.spend / total }))
+      .sort((a, b) => b.spend - a.spend);
+  }, [entries, totalSpend]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div
-        className="orb w-[400px] h-[250px] top-[-60px] left-[-80px]"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(13,148,136,0.07) 0%, transparent 70%)",
-        }}
-      />
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <PageMasthead
+          eyebrow="Insights"
+          eyebrowEnd="Per category · per card"
+          title={
+            <>
+              The <span style={{ fontStyle: "italic" }}>spending</span> brief.
+            </>
+          }
+          lede="Where every dollar earned, where every dollar leaked, and which card-category pairs most need re-routing."
+          cta={
+            allEntries.length > 0 ? (
+              <div
+                className="mono"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 999,
+                  padding: 2,
+                }}
+              >
+                {DATE_RANGES.map((dr) => (
+                  <button
+                    key={dr.value}
+                    onClick={() => setDateRange(dr.value)}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      background: dateRange === dr.value ? "var(--accent)" : "transparent",
+                      color: dateRange === dr.value ? "#fff" : "var(--ink-3)",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {dr.label}
+                  </button>
+                ))}
+              </div>
+            ) : undefined
+          }
+        />
 
-      <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
-        {/* Header with date range filter */}
-        <AnimatedSection className="flex items-end justify-between mb-8">
-          <div>
-            <p
-              className="label-xs mb-1.5"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              Your rewards history
-            </p>
-            <h1 className="title text-white">Insights</h1>
+        {loading ? (
+          <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+            LOADING…
           </div>
-
-          {/* Date range toggle */}
-          {allEntries.length > 0 && (
-            <div
-              className="flex items-center rounded-xl p-0.5"
-              style={{
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              {DATE_RANGES.map((dr) => (
-                <button
-                  key={dr.value}
-                  onClick={() => setDateRange(dr.value)}
-                  className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all"
-                  style={{
-                    background:
-                      dateRange === dr.value
-                        ? "rgba(13,148,136,0.15)"
-                        : "transparent",
-                    color:
-                      dateRange === dr.value
-                        ? "#14B8A6"
-                        : "var(--text-tertiary)",
-                    border:
-                      dateRange === dr.value
-                        ? "1px solid rgba(13,148,136,0.25)"
-                        : "1px solid transparent",
-                  }}
-                >
-                  {dr.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </AnimatedSection>
-
-        {entries.length === 0 && allEntries.length === 0 ? (
-          <div
-            className="rounded-2xl p-14 text-center fade-up"
-            style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-dim)",
-            }}
-          >
-            <div className="text-5xl mb-5">📊</div>
-            <h2 className="text-[18px] font-semibold text-white mb-2">
-              No spend data yet
-            </h2>
-            <p
-              className="text-[14px] max-w-[280px] mx-auto mb-7 leading-relaxed"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Use the optimizer and tap &ldquo;Log spend&rdquo; on your best
-              card to start tracking your rewards.
-            </p>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 h-11 px-6 rounded-xl font-semibold text-[14px] text-white maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98] transition-transform"
-            >
-              Go to optimizer →
-            </Link>
-          </div>
-        ) : entries.length === 0 && allEntries.length > 0 ? (
-          /* Filtered to empty */
-          <div
-            className="rounded-2xl p-10 text-center fade-up"
-            style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-dim)",
-            }}
-          >
-            <div className="text-4xl mb-4">🔍</div>
-            <h2 className="text-[16px] font-semibold text-white mb-2">
-              No data in this range
-            </h2>
-            <p
-              className="text-[13px] max-w-[260px] mx-auto mb-5"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              No spend entries found in the last{" "}
-              {dateRange === "7d" ? "7 days" : dateRange === "30d" ? "30 days" : "90 days"}.
-            </p>
-            <button
-              onClick={() => setDateRange("all")}
-              className="h-9 px-5 rounded-lg font-medium text-[13px] transition-all"
-              style={{
-                background: "rgba(13,148,136,0.12)",
-                border: "1px solid rgba(13,148,136,0.2)",
-                color: "#14B8A6",
-              }}
-            >
-              Show all time
-            </button>
-          </div>
+        ) : entries.length === 0 ? (
+          <EmptyInsights />
         ) : (
-          <div className="space-y-6">
-            {/* Summary stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 fade-up">
-              {[
-                {
-                  label: "Total spend",
-                  value: fmtCAD(totalSpend),
-                  sub: isFiltered ? dateRange.toUpperCase() : "logged",
-                },
-                {
-                  label: "Total earned",
-                  value: fmtCAD(totalValue),
-                  sub: "CAD value",
-                  highlight: true,
-                },
-                {
-                  label: "Avg return",
-                  value: `${avgReturn.toFixed(2)}%`,
-                  sub: "effective",
-                },
-                {
-                  label: "Points earned",
-                  value: Math.round(totalPoints).toLocaleString(),
-                  sub: "across cards",
-                },
-              ].map(({ label, value, sub, highlight }) => (
-                <div
-                  key={label}
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: highlight
-                      ? "linear-gradient(135deg, rgba(13,148,136,0.08), rgba(79,70,229,0.04))"
-                      : "var(--bg-elevated)",
-                    border: highlight
-                      ? "1px solid rgba(13,148,136,0.2)"
-                      : "1px solid var(--border-dim)",
-                  }}
-                >
-                  <div
-                    className="label-xs mb-2"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    {label}
-                  </div>
-                  <div
-                    className="text-[22px] font-bold tracking-tight"
-                    style={{ color: highlight ? "#14B8A6" : "white" }}
-                  >
-                    {value}
-                  </div>
-                  <div
-                    className="text-[12px] mt-0.5"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    {sub}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <>
+            {/* ── KPI strip ──────────────────────────────────────────── */}
+            <section
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 0,
+                borderTop: "1px solid var(--ink)",
+                borderBottom: "1px solid var(--rule)",
+                marginBottom: 40,
+              }}
+              className="insights-kpi"
+            >
+              <KPI label="Total spend" value={`$${totalSpend.toLocaleString("en-CA", { maximumFractionDigits: 0 })}`} sub={`${entries.length} txns`} />
+              <KPI label="Earned value" value={`$${totalValue.toFixed(2)}`} sub={`${avgReturn.toFixed(2)}% avg return`} subColor="var(--gain)" />
+              <KPI label="Points earned" value={Math.round(totalPoints).toLocaleString()} sub="across cards" />
+              <KPI
+                label="Recoverable"
+                value={`$${(missed?.total_gap ?? 0).toFixed(2)}`}
+                sub={`${missed?.missed_count ?? 0} txns mis-routed`}
+                subColor={(missed?.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--ink-3)"}
+              />
+            </section>
 
-            {/* Monthly spend trend chart */}
-            {monthlyTrend.length > 1 && (
-              <div
-                className="rounded-2xl p-5 fade-up"
-                style={{
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-dim)",
-                }}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[14px] font-semibold text-white">
-                    Monthly spend trend
+            {/* ── Card ledger (program-row pattern) ───────────────────── */}
+            <section style={{ marginBottom: 48 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 }}>
+                <div>
+                  <span className="eyebrow">Card ledger</span>
+                  <h2 className="display" style={{ fontSize: 28, margin: "4px 0 0", letterSpacing: "-0.005em" }}>
+                    Earnings by card
                   </h2>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className="w-2.5 h-2.5 rounded-sm"
-                        style={{ background: "rgba(13,148,136,0.6)" }}
-                      />
-                      <span
-                        className="text-[11px]"
-                        style={{ color: "var(--text-tertiary)" }}
-                      >
-                        Spend
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className="w-2.5 h-2.5 rounded-sm"
-                        style={{ background: "#4ADE80" }}
-                      />
-                      <span
-                        className="text-[11px]"
-                        style={{ color: "var(--text-tertiary)" }}
-                      >
-                        Value earned
-                      </span>
-                    </div>
+                </div>
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {byCard.length} card{byCard.length === 1 ? "" : "s"} · sorted by value
+                </span>
+              </div>
+              <div style={{ borderTop: "1px solid var(--ink)" }}>
+                {byCard.map((c, i) => (
+                  <CardLedgerRow key={c.name} index={i} {...c} />
+                ))}
+              </div>
+            </section>
+
+            <LeafDivider />
+
+            {/* ── Category breakdown ──────────────────────────────────── */}
+            <section style={{ marginBottom: 48, marginTop: 32 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 }}>
+                <div>
+                  <span className="eyebrow">Category brief</span>
+                  <h2 className="display" style={{ fontSize: 28, margin: "4px 0 0", letterSpacing: "-0.005em" }}>
+                    Where it goes
+                  </h2>
+                </div>
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {byCategory.length} categor{byCategory.length === 1 ? "y" : "ies"}
+                </span>
+              </div>
+              <div style={{ borderTop: "1px solid var(--ink)" }}>
+                {byCategory.map((c, i) => (
+                  <CategoryRow key={c.name} index={i} {...c} />
+                ))}
+              </div>
+            </section>
+
+            {/* ── Recoverable / missed-rewards summary ────────────────── */}
+            {missed && missed.top_missed && missed.top_missed.length > 0 && (
+              <>
+                <LeafDivider />
+                <section style={{ marginTop: 32 }}>
+                  <div style={{ marginBottom: 18 }}>
+                    <span className="eyebrow">Mis-routed</span>
+                    <h2 className="display" style={{ fontSize: 28, margin: "4px 0 0" }}>
+                      Money <span style={{ fontStyle: "italic", color: "var(--accent)" }}>left on the table</span>
+                    </h2>
+                    <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 6 }}>
+                      Transactions where a different card in your wallet would have earned more.
+                    </p>
                   </div>
-                </div>
-
-                {/* CSS bar chart */}
-                <div className="flex items-end gap-2 h-[140px]">
-                  {monthlyTrend.map((m) => (
-                    <div
-                      key={m.label}
-                      className="flex-1 flex flex-col items-center gap-1"
-                    >
-                      <div className="w-full flex items-end gap-0.5 h-[110px]">
-                        {/* Spend bar */}
-                        <div className="flex-1 flex items-end justify-center">
-                          <div
-                            className="w-full rounded-t-md transition-all duration-500"
-                            style={{
-                              height: `${Math.max((m.spend / maxMonthlySpend) * 100, 4)}%`,
-                              background:
-                                "linear-gradient(180deg, rgba(13,148,136,0.7), rgba(13,148,136,0.3))",
-                            }}
-                            title={`Spend: ${fmtCAD(m.spend)}`}
-                          />
-                        </div>
-                        {/* Value bar */}
-                        <div className="flex-1 flex items-end justify-center">
-                          <div
-                            className="w-full rounded-t-md transition-all duration-500"
-                            style={{
-                              height: `${Math.max((m.value / maxMonthlySpend) * 100, 2)}%`,
-                              background:
-                                "linear-gradient(180deg, rgba(74,222,128,0.8), rgba(74,222,128,0.3))",
-                            }}
-                            title={`Value: ${fmtCAD(m.value)}`}
-                          />
-                        </div>
-                      </div>
-                      <span
-                        className="text-[11px] font-medium"
-                        style={{ color: "var(--text-tertiary)" }}
-                      >
-                        {m.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Spending by category */}
-            {catList.length > 0 && (
-              <div
-                className="rounded-2xl p-5 fade-up"
-                style={{
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-dim)",
-                }}
-              >
-                <h2 className="text-[14px] font-semibold text-white mb-4">
-                  Spend by category
-                </h2>
-                <div className="space-y-3">
-                  {catList.map(([slug, data]) => (
-                    <div key={slug}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">
-                            {CAT_ICONS[slug] ?? "💳"}
-                          </span>
-                          <span className="text-[13px] font-medium text-white">
-                            {data.name}
-                          </span>
-                          {data.count > 0 && (
-                            <span
-                              className="label-xs px-1.5 py-0.5 rounded"
-                              style={{
-                                background: "rgba(255,255,255,0.06)",
-                                color: "var(--text-tertiary)",
-                              }}
-                            >
-                              {data.count}×
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[13px] font-semibold text-white">
-                            {fmtCAD(data.spend)}
-                          </span>
-                          <span
-                            className="text-[12px] ml-2"
-                            style={{ color: "#4ADE80" }}
-                          >
-                            +{fmtCAD(data.value)}
-                          </span>
-                        </div>
-                      </div>
+                  <div style={{ borderTop: "1px solid var(--ink)" }}>
+                    {missed.top_missed.map((m, i) => (
                       <div
-                        className="h-1.5 rounded-full overflow-hidden"
-                        style={{ background: "rgba(255,255,255,0.06)" }}
+                        key={m.spend_entry_id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "40px 1fr 110px 100px",
+                          alignItems: "center",
+                          gap: 16,
+                          padding: "16px 4px",
+                          borderTop: "1px solid var(--rule)",
+                        }}
                       >
-                        <div
-                          className="h-full rounded-full maple-bg transition-all duration-500"
-                          style={{
-                            width: `${(data.spend / maxSpend) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Top cards */}
-            {cardList.length > 0 && (
-              <div
-                className="rounded-2xl p-5 fade-up"
-                style={{
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-dim)",
-                }}
-              >
-                <h2 className="text-[14px] font-semibold text-white mb-4">
-                  Top performing cards
-                </h2>
-                <div className="space-y-3">
-                  {cardList.map(([, data], i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between py-2.5 px-3 rounded-xl"
-                      style={{
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.05)",
-                      }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-bold"
-                          style={{
-                            background:
-                              i === 0
-                                ? "linear-gradient(135deg,#0D9488,#0F766E)"
-                                : "rgba(255,255,255,0.06)",
-                            color:
-                              i === 0 ? "white" : "var(--text-tertiary)",
-                          }}
-                        >
-                          {i + 1}
+                        <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+                          {String(i + 1).padStart(2, "0")}
                         </div>
                         <div>
-                          <div className="text-[13px] font-medium text-white">
-                            {data.name}
+                          <div className="display" style={{ fontSize: 17, fontStyle: "italic" }}>
+                            ${m.amount.toFixed(0)} on {m.category_name.toLowerCase()}
                           </div>
-                          <div
-                            className="text-[12px]"
-                            style={{ color: "var(--text-tertiary)" }}
-                          >
-                            {data.avgReturn > 0
-                              ? `${data.avgReturn.toFixed(1)}% avg return`
-                              : `${data.count} transaction${data.count !== 1 ? "s" : ""}`}
+                          <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+                            Used <span style={{ color: "var(--ink-2)" }}>{m.actual_card_name}</span> · should have used <span style={{ color: "var(--accent)" }}>{m.optimal_card_name}</span>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div
-                          className="text-[13px] font-semibold"
-                          style={{
-                            color: i === 0 ? "#4ADE80" : "white",
-                          }}
-                        >
-                          {fmtCAD(data.value)}
+                        <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", textAlign: "right" }}>
+                          {new Date(m.spent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
                         </div>
-                        <div
-                          className="text-[12px]"
-                          style={{ color: "var(--text-tertiary)" }}
-                        >
-                          {fmtCAD(data.spend)} spent
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Opportunity cost (Pro gated) */}
-            <ProGate feature="detailedAnalytics">
-              {opportunityCost.length > 0 && (
-                <div
-                  className="rounded-2xl p-5 fade-up"
-                  style={{
-                    background: "var(--bg-elevated)",
-                    border: "1px solid var(--border-dim)",
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-[14px] font-semibold text-white">
-                      Opportunity cost
-                    </h2>
-                    {totalMissedValue > 0 && (
-                      <span
-                        className="text-[12px] font-semibold px-2.5 py-1 rounded-lg"
-                        style={{
-                          background: "rgba(251,191,36,0.1)",
-                          border: "1px solid rgba(251,191,36,0.2)",
-                          color: "#FBBF24",
-                        }}
-                      >
-                        {fmtCAD(totalMissedValue)} missed
-                      </span>
-                    )}
-                  </div>
-                  <p
-                    className="text-[12px] mb-4 leading-relaxed"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    Transactions where a different card in your wallet would
-                    have earned more.
-                  </p>
-                  <div className="space-y-2">
-                    {opportunityCost.map((oc) => (
-                      <div
-                        key={oc.entry.id}
-                        className="flex items-center justify-between py-2.5 px-3 rounded-xl"
-                        style={{
-                          background: "rgba(251,191,36,0.04)",
-                          border: "1px solid rgba(251,191,36,0.1)",
-                        }}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-lg">
-                            {CAT_ICONS[oc.entry.category_slug] ?? "💳"}
-                          </span>
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-medium text-white truncate">
-                              {fmtCAD(oc.entry.amount)} at{" "}
-                              {oc.entry.category_name}
-                            </div>
-                            <div
-                              className="text-[12px] truncate"
-                              style={{ color: "var(--text-tertiary)" }}
-                            >
-                              Used {oc.entry.card_name} · Best:{" "}
-                              <span style={{ color: "#4ADE80" }}>
-                                {oc.bestCard}
-                              </span>
-                            </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div className="display" style={{ fontSize: 20, fontStyle: "italic", color: "var(--accent)" }}>
+                            +${m.gap.toFixed(2)}
                           </div>
-                        </div>
-                        <div className="text-right flex-shrink-0 ml-3">
-                          <div
-                            className="text-[13px] font-semibold"
-                            style={{ color: "#FBBF24" }}
-                          >
-                            -{fmtCAD(oc.missedValue)}
-                          </div>
-                          <div
-                            className="text-[11px]"
-                            style={{ color: "var(--text-tertiary)" }}
-                          >
-                            {fmtDate(oc.entry.date)}
+                          <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+                            recoverable
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </ProGate>
-
-            {/* Recent transactions */}
-            <div
-              className="rounded-2xl p-5 fade-up"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-dim)",
-              }}
-            >
-              <h2 className="text-[14px] font-semibold text-white mb-4">
-                Recent transactions
-              </h2>
-              <div className="space-y-1">
-                {entries.slice(0, 20).map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between py-2.5 px-3 rounded-xl transition-colors hover:bg-white/[0.03]"
-                    style={{ cursor: "default" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">
-                        {CAT_ICONS[entry.category_slug] ?? "💳"}
-                      </span>
-                      <div>
-                        <div className="text-[13px] font-medium text-white">
-                          {entry.card_name}
-                        </div>
-                        <div
-                          className="text-[12px]"
-                          style={{ color: "var(--text-tertiary)" }}
-                        >
-                          {entry.category_name} · {fmtDate(entry.date)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[13px] font-semibold text-white">
-                        {fmtCAD(entry.amount)}
-                      </div>
-                      <div
-                        className="text-[12px]"
-                        style={{ color: "#4ADE80" }}
-                      >
-                        +{fmtCAD(entry.dollar_value)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+                </section>
+              </>
+            )}
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Subcomponents ─────────────────────────────────────────────────────── */
+
+function KPI({
+  label,
+  value,
+  sub,
+  subColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  subColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "22px 24px",
+        borderRight: "1px solid var(--rule)",
+        minWidth: 0,
+      }}
+    >
+      <div className="eyebrow" style={{ marginBottom: 10 }}>{label}</div>
+      <div className="display" style={{ fontSize: 36, lineHeight: 1, color: "var(--ink)", letterSpacing: "-0.005em" }}>
+        {value}
+      </div>
+      {sub && (
+        <div
+          className="mono"
+          style={{ marginTop: 8, fontSize: 11, color: subColor ?? "var(--ink-3)", letterSpacing: "0.04em" }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardLedgerRow({
+  index,
+  name,
+  spend,
+  value,
+  trend,
+  count,
+}: {
+  index: number;
+  name: string;
+  spend: number;
+  value: number;
+  trend: number[];
+  count: number;
+}) {
+  const ret = spend > 0 ? (value / spend) * 100 : 0;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "40px 1fr 140px 130px",
+        alignItems: "center",
+        gap: 16,
+        padding: "20px 4px",
+        borderTop: "1px solid var(--rule)",
+      }}
+      className="card-ledger-row"
+    >
+      <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <div>
+        <div className="display" style={{ fontSize: 19, fontStyle: "italic", lineHeight: 1.1, color: "var(--ink)" }}>
+          {name}
+        </div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+          {count} txn{count === 1 ? "" : "s"} · ${spend.toFixed(0)} spent
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+        <Sparkline data={trend.length > 1 ? trend : [0, value]} width={120} height={28} color="var(--accent)" />
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div className="display" style={{ fontSize: 22, color: "var(--ink)" }}>
+          ${value.toFixed(2)}
+        </div>
+        <div className="mono" style={{ fontSize: 9, color: ret >= 2 ? "var(--gain)" : "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase", marginTop: 2 }}>
+          {ret.toFixed(2)}% return
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryRow({
+  index,
+  name,
+  spend,
+  value,
+  count,
+  share,
+}: {
+  index: number;
+  name: string;
+  spend: number;
+  value: number;
+  count: number;
+  share: number;
+}) {
+  const ret = spend > 0 ? (value / spend) * 100 : 0;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "40px 1fr 1fr 140px 100px",
+        alignItems: "center",
+        gap: 16,
+        padding: "18px 4px",
+        borderTop: "1px solid var(--rule)",
+      }}
+      className="category-row"
+    >
+      <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <div>
+        <div className="display" style={{ fontSize: 18, fontStyle: "italic", color: "var(--ink)" }}>
+          {name}
+        </div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+          {count} txn{count === 1 ? "" : "s"}
+        </div>
+      </div>
+      <div>
+        <div style={{ height: 4, background: "var(--rule)", position: "relative", overflow: "hidden" }}>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              right: `${(1 - share) * 100}%`,
+              background: "var(--accent)",
+            }}
+          />
+        </div>
+        <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 5, letterSpacing: "0.06em" }}>
+          {(share * 100).toFixed(0)}% of spend
+        </div>
+      </div>
+      <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>
+        ${spend.toFixed(0)}
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div className="display" style={{ fontSize: 18, color: "var(--ink)" }}>
+          ${value.toFixed(2)}
+        </div>
+        <div className="mono" style={{ fontSize: 9, color: ret >= 2 ? "var(--gain)" : "var(--ink-3)", letterSpacing: "0.10em", marginTop: 2 }}>
+          {ret.toFixed(1)}% return
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyInsights() {
+  return (
+    <div
+      style={{
+        padding: "64px 32px",
+        textAlign: "center",
+        border: "1px dashed var(--rule-strong)",
+        borderRadius: 14,
+        background: "var(--card-fill)",
+      }}
+    >
+      <span className="eyebrow">Empty ledger</span>
+      <h3 className="display" style={{ fontSize: 32, margin: "8px 0 8px" }}>
+        Nothing logged yet.
+      </h3>
+      <p
+        className="serif"
+        style={{
+          fontSize: 16,
+          fontStyle: "italic",
+          color: "var(--ink-2)",
+          maxWidth: 420,
+          marginInline: "auto",
+          marginBottom: 22,
+          lineHeight: 1.4,
+        }}
+      >
+        Use the optimizer to rank cards, then tap <span className="mono" style={{ fontStyle: "normal", fontSize: 13 }}>Log this purchase</span> on the winner. Your ledger
+        builds itself.
+      </p>
+      <Link
+        href="/optimizer"
+        className="mono"
+        style={{
+          display: "inline-block",
+          padding: "12px 22px",
+          background: "var(--accent)",
+          color: "#fff",
+          borderRadius: 10,
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          textDecoration: "none",
+        }}
+      >
+        Open optimizer →
+      </Link>
     </div>
   );
 }

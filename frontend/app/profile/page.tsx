@@ -4,21 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  User,
-  Mail,
-  Calendar,
-  Shield,
-  Crown,
+  Loader2,
   LogOut,
   Trash2,
-  CreditCard,
-  Loader2,
-  Save,
   AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
-import { AnimatedSection } from "@/components/ui/animated-list";
+import { PageMasthead } from "@/components/editorial/page-masthead";
+import { LeafDivider } from "@/components/editorial/leaf-divider";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -33,8 +27,8 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 size={24} className="animate-spin" style={{ color: "var(--teal)" }} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
       </div>
     );
   }
@@ -53,7 +47,7 @@ export default function ProfilePage() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch {
-      // silently fail
+      /* swallow */
     } finally {
       setSaving(false);
     }
@@ -62,288 +56,401 @@ export default function ProfilePage() {
   async function handleDeleteAccount() {
     if (deleteConfirm !== "DELETE") return;
     try {
-      // Call delete API
       const { deleteAccount } = await import("@/lib/api");
       await deleteAccount();
       await logout();
       router.push("/login");
-    } catch {
-      // silently fail
-    }
+    } catch { /* swallow */ }
   }
 
   const initials = (user.display_name || user.email || "U")
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
+    .split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const memberSince = user.created_at
     ? new Date(user.created_at).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
     : "—";
 
-  return (
-    <div className="max-w-2xl mx-auto px-5 py-10 lg:py-14">
-      <AnimatedSection>
-        <h1 className="text-[28px] font-bold tracking-tight gradient-text mb-8">Profile</h1>
-      </AnimatedSection>
+  /* ── editorial primitives ─────────────────────────────────────────── */
+  const fieldStyle: React.CSSProperties = {
+    width: "100%",
+    height: 44,
+    padding: "0 14px",
+    background: "var(--surface)",
+    border: "1px solid var(--rule)",
+    borderRadius: 8,
+    fontSize: 14,
+    fontFamily: "var(--font-mono)",
+    color: "var(--ink)",
+    outline: "none",
+  };
+  const ctaStyle: React.CSSProperties = {
+    height: 44,
+    padding: "0 22px",
+    borderRadius: 8,
+    background: "var(--accent)",
+    color: "#fff",
+    border: "none",
+    fontFamily: "var(--font-mono)",
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: "0.10em",
+    textTransform: "uppercase",
+    cursor: "pointer",
+  };
 
-      {/* Avatar + Name Header */}
-      <AnimatedSection delay={0.05}>
-        <div className="flex items-center gap-5 mb-8">
+  return (
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 80px" }}>
+        <PageMasthead
+          eyebrow="Account"
+          eyebrowEnd={isPro ? "Pro" : "Free"}
+          title={
+            <>
+              The <span style={{ fontStyle: "italic" }}>working</span> account.
+            </>
+          }
+          lede={`Member since ${memberSince}. ${wallet.length} card${wallet.length === 1 ? "" : "s"}, ${totalPoints.toLocaleString()} points across the wallet.`}
+        />
+
+        {/* Identity row — initials medallion + name + email */}
+        <section
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            padding: "20px 0 24px",
+            borderBottom: "1px solid var(--rule)",
+            marginBottom: 26,
+          }}
+        >
           <div
-            className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-bold text-white shrink-0"
-            style={{ background: "linear-gradient(135deg, #0D9488, #0F766E)" }}
+            className="display"
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 14,
+              background: "var(--card-fill-strong)",
+              border: "1px solid var(--rule)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 28,
+              fontStyle: "italic",
+              color: "var(--accent)",
+              flexShrink: 0,
+            }}
           >
             {initials}
           </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">
+          <div style={{ minWidth: 0 }}>
+            <h2 className="display" style={{ fontSize: 28, margin: 0, lineHeight: 1.05 }}>
               {user.display_name || user.email || "User"}
             </h2>
-            <p className="text-[14px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            <p className="serif" style={{ marginTop: 4, fontSize: 14, fontStyle: "italic", color: "var(--ink-3)" }}>
               {user.email}
             </p>
             {isPro && (
               <span
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase mt-2"
+                className="mono"
                 style={{
-                  background: "linear-gradient(135deg, #FFD700, #FFA500)",
-                  color: "#000",
+                  display: "inline-block",
+                  marginTop: 8,
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.16em",
+                  textTransform: "uppercase",
                 }}
               >
-                <Crown size={10} /> Pro Member
+                ★ Pro
               </span>
             )}
           </div>
-        </div>
-      </AnimatedSection>
+        </section>
 
-      {/* Edit Display Name */}
-      <AnimatedSection delay={0.1}>
-        <div className="rounded-2xl p-6 mb-6" style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-        }}>
-          <h3 className="text-[15px] font-semibold text-white mb-4 flex items-center gap-2">
-            <User size={16} style={{ color: "var(--teal)" }} />
-            Display Name
-          </h3>
-          <div className="flex gap-3">
+        {/* Display name — editorial paper card */}
+        <section style={{ marginBottom: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Display name</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
             <input
               type="text"
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               placeholder="Your name"
-              className="flex-1 h-10 px-4 rounded-xl text-[14px] input-maple focus-ring"
+              style={{ ...fieldStyle, flex: 1 }}
             />
             <button
+              type="button"
               onClick={handleSave}
               disabled={saving || !displayName.trim()}
-              className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white transition-all accent-bg disabled:opacity-50 flex items-center gap-2"
+              style={{ ...ctaStyle, opacity: saving || !displayName.trim() ? 0.55 : 1 }}
             >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save
+              {saving ? "Saving…" : "Save →"}
             </button>
           </div>
           {saveSuccess && (
-            <p className="text-[12px] mt-2" style={{ color: "#10B981" }}>
-              ✓ Profile updated successfully
+            <p className="mono" style={{ marginTop: 8, fontSize: 11, color: "var(--gain)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+              ✓ Profile updated
             </p>
           )}
-        </div>
-      </AnimatedSection>
+        </section>
 
-      {/* Account Info */}
-      <AnimatedSection delay={0.15}>
-        <div className="rounded-2xl p-6 mb-6" style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-        }}>
-          <h3 className="text-[15px] font-semibold text-white mb-4 flex items-center gap-2">
-            <Shield size={16} style={{ color: "var(--teal)" }} />
-            Account Information
-          </h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                <Mail size={14} /> Email
-              </span>
-              <span className="text-[13px] font-medium text-white">{user.email || "—"}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                <Shield size={14} /> Auth provider
-              </span>
-              <span className="text-[13px] font-medium text-white capitalize">{user.auth_provider || "email"}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                <Calendar size={14} /> Member since
-              </span>
-              <span className="text-[13px] font-medium text-white">{memberSince}</span>
-            </div>
-          </div>
-        </div>
-      </AnimatedSection>
-
-      {/* Plan */}
-      <AnimatedSection delay={0.2}>
-        <div className="rounded-2xl p-6 mb-6" style={{
-          background: isPro ? "rgba(245,158,11,0.06)" : "var(--bg-elevated)",
-          border: isPro ? "1px solid rgba(245,158,11,0.15)" : "1px solid var(--border-dim)",
-        }}>
-          <h3 className="text-[15px] font-semibold text-white mb-4 flex items-center gap-2">
-            <Crown size={16} style={{ color: isPro ? "#F59E0B" : "var(--teal)" }} />
-            Your Plan
-          </h3>
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[15px] font-semibold text-white">
-                {isPro ? "Pro" : "Free"}
-              </span>
-              <p className="text-[13px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
-                {isPro ? "All features unlocked" : "Upgrade for unlimited access"}
-              </p>
-            </div>
-            {!isPro && (
-              <Link
-                href="/pricing"
-                className="h-9 px-5 rounded-xl text-[13px] font-semibold text-white inline-flex items-center transition-all"
+        {/* Account ledger — ruled rows */}
+        <section style={{ marginBottom: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Account information</div>
+          <div style={{ borderTop: "1px solid var(--ink)" }}>
+            {[
+              ["Email", user.email || "—"],
+              ["Auth provider", (user.auth_provider || "email").toString()],
+              ["Member since", memberSince],
+              ["Plan", isPro ? "Pro" : "Free"],
+              ["Cards in wallet", String(wallet.length)],
+              ["Total points", totalPoints.toLocaleString()],
+            ].map(([k, v]) => (
+              <div
+                key={k as string}
                 style={{
-                  background: "linear-gradient(135deg, #F59E0B, #D97706)",
-                  boxShadow: "0 2px 12px rgba(245,158,11,0.25)",
+                  display: "grid",
+                  gridTemplateColumns: "200px 1fr",
+                  alignItems: "baseline",
+                  padding: "14px 4px",
+                  borderBottom: "1px solid var(--rule)",
                 }}
               >
-                Upgrade to Pro
-              </Link>
-            )}
+                <span className="eyebrow">{k}</span>
+                <span className="mono" style={{ fontSize: 14, color: "var(--ink)", letterSpacing: "0.02em" }}>
+                  {v}
+                </span>
+              </div>
+            ))}
           </div>
-        </div>
-      </AnimatedSection>
+        </section>
 
-      {/* Cards & Points Summary */}
-      <AnimatedSection delay={0.25}>
-        <div className="rounded-2xl p-6 mb-6" style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-        }}>
-          <h3 className="text-[15px] font-semibold text-white mb-4 flex items-center gap-2">
-            <CreditCard size={16} style={{ color: "var(--teal)" }} />
-            Wallet Summary
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl p-4" style={{ background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.12)" }}>
-              <div className="text-[22px] font-bold text-white">{wallet.length}</div>
-              <div className="text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>Cards in wallet</div>
+        {/* Plan — only shown when Free */}
+        {!isPro && (
+          <section
+            style={{
+              border: "1px solid var(--rule)",
+              borderRadius: 14,
+              background: "var(--card-fill-strong)",
+              padding: "22px 24px",
+              marginBottom: 26,
+              display: "flex",
+              gap: 18,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <span className="eyebrow" style={{ color: "var(--accent)" }}>Pro upgrade</span>
+              <h3 className="display" style={{ fontSize: 24, margin: "8px 0 4px", fontStyle: "italic" }}>
+                Unlock the full toolkit.
+              </h3>
+              <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, margin: 0, lineHeight: 1.45 }}>
+                Award watcher, devaluation alarms, India arbitrage, unlimited optimizer history.
+              </p>
             </div>
-            <div className="rounded-xl p-4" style={{ background: "rgba(13,148,136,0.06)", border: "1px solid rgba(13,148,136,0.12)" }}>
-              <div className="text-[22px] font-bold text-white">{totalPoints.toLocaleString()}</div>
-              <div className="text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>Total points</div>
-            </div>
-          </div>
-        </div>
-      </AnimatedSection>
+            <Link
+              href="/pricing"
+              className="mono"
+              style={{
+                padding: "12px 22px",
+                borderRadius: 8,
+                background: "var(--accent)",
+                color: "#fff",
+                textDecoration: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+              }}
+            >
+              See pricing →
+            </Link>
+          </section>
+        )}
 
-      {/* Actions */}
-      <AnimatedSection delay={0.3}>
-        <div className="space-y-3">
-          {/* Sign Out */}
+        <LeafDivider />
+
+        {/* Sign-out */}
+        <section style={{ marginBottom: 18 }}>
           <button
+            type="button"
             onClick={async () => {
               await logout();
               router.push("/login");
             }}
-            className="w-full flex items-center gap-3 px-5 py-3.5 rounded-xl text-[14px] font-medium transition-all"
+            className="mono"
             style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-dim)",
-              color: "var(--text-secondary)",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-              e.currentTarget.style.color = "var(--text-primary)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = "var(--bg-elevated)";
-              e.currentTarget.style.color = "var(--text-secondary)";
+              width: "100%",
+              padding: "14px 18px",
+              borderRadius: 10,
+              background: "transparent",
+              border: "1px solid var(--rule-strong)",
+              color: "var(--ink-2)",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
             }}
           >
-            <LogOut size={16} />
-            Sign Out
+            <LogOut size={14} />
+            Sign out
           </button>
+        </section>
 
-          {/* Delete Account */}
-          <button
-            onClick={() => setDeleteModalOpen(true)}
-            className="w-full flex items-center gap-3 px-5 py-3.5 rounded-xl text-[14px] font-medium transition-all"
-            style={{
-              background: "rgba(239,68,68,0.04)",
-              border: "1px solid rgba(239,68,68,0.12)",
-              color: "#f87171",
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(239,68,68,0.08)"}
-            onMouseLeave={e => e.currentTarget.style.background = "rgba(239,68,68,0.04)"}
-          >
-            <Trash2 size={16} />
-            Delete Account
-          </button>
-        </div>
-      </AnimatedSection>
-
-      {/* Delete Confirmation Modal */}
-      {deleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+        {/* Danger zone — maple-red rule */}
+        <section
+          style={{
+            borderTop: "2px solid var(--accent)",
+            paddingTop: 22,
+          }}
         >
-          <div className="w-full max-w-[400px] rounded-2xl p-6" style={{
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border-dim)",
-            boxShadow: "var(--shadow-float)",
-          }}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: "rgba(239,68,68,0.12)", color: "#f87171" }}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+            <span className="eyebrow" style={{ color: "var(--accent)" }}>Danger zone</span>
+            <span className="mr-kicker-line" style={{ maxWidth: 60 }} />
+          </div>
+          <h3 className="display" style={{ fontSize: 22, margin: "0 0 6px", fontStyle: "italic" }}>
+            Delete account.
+          </h3>
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, lineHeight: 1.45, marginBottom: 14 }}>
+            Permanent. All wallet, spend, and watch data is removed. There is no recovery path — this is the editorial nuclear option.
+          </p>
+          <button
+            type="button"
+            onClick={() => setDeleteModalOpen(true)}
+            className="mono"
+            style={{
+              padding: "12px 18px",
+              borderRadius: 8,
+              background: "transparent",
+              border: "1px solid var(--accent)",
+              color: "var(--accent)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Trash2 size={13} />
+            Delete account
+          </button>
+        </section>
+      </div>
+
+      {/* Delete confirm — paper-on-paper modal */}
+      {deleteModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(11,17,24,0.55)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              background: "var(--surface)",
+              border: "1px solid var(--ink)",
+              borderRadius: 14,
+              padding: "24px 26px",
+              boxShadow: "var(--shadow-2)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                }}
               >
-                <AlertTriangle size={20} />
+                <AlertTriangle size={18} />
               </div>
-              <h3 className="text-[16px] font-semibold text-white">Delete Account</h3>
+              <h3 className="display" style={{ fontSize: 22, margin: 0, fontStyle: "italic" }}>
+                Confirm delete.
+              </h3>
             </div>
-            <p className="text-[13px] leading-relaxed mb-4" style={{ color: "var(--text-secondary)" }}>
-              This action is permanent and cannot be undone. All your data including cards, spend history, and settings will be deleted.
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, lineHeight: 1.5, marginBottom: 14 }}>
+              Permanent. Cards, spend log, and settings are removed.
             </p>
-            <p className="text-[13px] mb-3" style={{ color: "var(--text-secondary)" }}>
-              Type <span className="font-mono font-semibold text-white">DELETE</span> to confirm:
+            <p className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", marginBottom: 8 }}>
+              Type <span style={{ color: "var(--accent)", fontWeight: 600 }}>DELETE</span> to confirm:
             </p>
             <input
               type="text"
               value={deleteConfirm}
               onChange={e => setDeleteConfirm(e.target.value)}
               placeholder="DELETE"
-              className="w-full h-10 px-4 rounded-xl text-[14px] input-maple focus-ring mb-4"
+              style={{ ...fieldStyle, marginBottom: 16 }}
             />
-            <div className="flex gap-3">
+            <div style={{ display: "flex", gap: 10 }}>
               <button
+                type="button"
                 onClick={() => { setDeleteModalOpen(false); setDeleteConfirm(""); }}
-                className="flex-1 h-10 rounded-xl text-[13px] font-medium transition-all"
+                className="mono"
                 style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid var(--border-dim)",
-                  color: "var(--text-secondary)",
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 8,
+                  background: "transparent",
+                  border: "1px solid var(--rule-strong)",
+                  color: "var(--ink-2)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
                 }}
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleDeleteAccount}
                 disabled={deleteConfirm !== "DELETE"}
-                className="flex-1 h-10 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-30"
+                className="mono"
                 style={{
-                  background: "#EF4444",
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 8,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: deleteConfirm === "DELETE" ? "pointer" : "not-allowed",
+                  opacity: deleteConfirm === "DELETE" ? 1 : 0.4,
                 }}
               >
-                Delete Account
+                Delete forever
               </button>
             </div>
           </div>

@@ -1,87 +1,133 @@
 "use client";
 
+import Link from "next/link";
 import { OptimizerForm } from "@/components/optimizer-form";
+import { LeafDivider } from "@/components/editorial/leaf-divider";
 
 export default function OptimizerPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient background orbs */}
-      <div
-        className="orb w-[600px] h-[400px] top-[-100px] left-1/2 -translate-x-1/2"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.12) 0%, transparent 70%)" }}
-      />
-      <div
-        className="orb w-[300px] h-[300px] top-[200px] left-[5%]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.06) 0%, transparent 70%)" }}
-      />
-      <div
-        className="orb w-[250px] h-[250px] top-[150px] right-[8%]"
-        style={{ background: "radial-gradient(ellipse, rgba(139,92,246,0.06) 0%, transparent 70%)" }}
-      />
-
-      <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
-        {/* Hero */}
-        <div className="text-center mb-14 fade-up">
-          {/* Pill badge */}
-          <div
-            className="inline-flex items-center gap-2 mb-7 px-3.5 py-1.5 rounded-full text-[12px] font-medium"
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        {/* ── Editorial masthead ──────────────────────────────────── */}
+        <header
+          style={{
+            borderBottom: "1px solid var(--rule)",
+            paddingBottom: 28,
+            marginBottom: 32,
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            alignItems: "end",
+            gap: 24,
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <span className="eyebrow">Optimizer</span>
+              <span className="mr-kicker-line" style={{ maxWidth: 100 }} />
+              <span className="eyebrow">Live wallet · CAD</span>
+            </div>
+            <h1
+              className="display"
+              style={{
+                fontSize: "clamp(40px, 5vw, 56px)",
+                margin: 0,
+                letterSpacing: "-0.015em",
+                lineHeight: 0.96,
+              }}
+            >
+              Best card for the<br />
+              <span style={{ fontStyle: "italic" }}>next</span>{" "}
+              <span style={{ color: "var(--accent)" }}>swipe</span>.
+            </h1>
+            <p
+              className="serif"
+              style={{
+                fontSize: 17,
+                fontStyle: "italic",
+                color: "var(--ink-2)",
+                marginTop: 14,
+                maxWidth: 560,
+                lineHeight: 1.45,
+              }}
+            >
+              Tell us what you&rsquo;re buying. We rank every card in your wallet by
+              real CAD returned — points × CPP, net of caps and transfer
+              partners.
+            </p>
+          </div>
+          <Link
+            href="/wallet"
+            className="mono"
             style={{
-              background: "rgba(13,148,136,0.1)",
-              border: "1px solid rgba(13,148,136,0.2)",
-              color: "#14B8A6",
+              fontSize: 11,
+              color: "var(--ink-3)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+              padding: "10px 16px",
+              border: "1px solid var(--rule)",
+              borderRadius: 8,
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488] animate-pulse inline-block" />
-            Built for Canadian cardholders
-          </div>
+            Build wallet →
+          </Link>
+        </header>
 
-          {/* Headline */}
-          <h1 className="display gradient-text-warm mb-5">Spend Optimizer</h1>
+        {/* ── Form + results ─────────────────────────────────────── */}
+        <OptimizerForm />
 
-          <p
-            className="text-[17px] leading-relaxed max-w-[420px] mx-auto"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            Tell us what you&apos;re buying. We rank your cards by real dollar value returned — not just points.
-          </p>
-        </div>
+        <LeafDivider />
 
-        {/* Optimizer card */}
-        <div className="fade-up-1">
-          <OptimizerForm />
-        </div>
-
-        {/* Footer hint */}
-        <p className="text-center text-[13px] mt-10 fade-up-2" style={{ color: "var(--text-tertiary)" }}>
-          No cards yet?{" "}
-          <a
-            href="/wallet"
-            className="transition-colors hover:text-white/70"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            Build your wallet →
-          </a>
-        </p>
-
-        {/* Stats row */}
+        {/* ── Footer hint ────────────────────────────────────────── */}
         <div
-          className="mt-16 grid grid-cols-3 gap-px rounded-2xl overflow-hidden fade-up-3"
-          style={{ background: "var(--border-dim)", border: "1px solid var(--border-dim)" }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 0,
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            overflow: "hidden",
+            background: "var(--card-fill)",
+            marginTop: 22,
+          }}
         >
           {[
-            { value: "40+", label: "Canadian cards" },
-            { value: "100%", label: "Free, no login" },
+            { value: "102", label: "Canadian cards" },
+            { value: "27", label: "Loyalty programs" },
+            { value: "8", label: "Spend categories" },
             { value: "CAD", label: "Dollar values" },
-          ].map(({ value, label }) => (
+          ].map((s, i) => (
             <div
-              key={label}
-              className="flex flex-col items-center justify-center py-5 gap-0.5"
-              style={{ background: "var(--bg-elevated)" }}
+              key={s.label}
+              style={{
+                padding: "20px 22px",
+                borderLeft: i > 0 ? "1px solid var(--rule)" : "none",
+                minWidth: 0,
+              }}
             >
-              <span className="text-2xl font-bold tracking-tight text-white">{value}</span>
-              <span className="label-xs" style={{ color: "var(--text-tertiary)" }}>
-                {label}
-              </span>
+              <div
+                className="display"
+                style={{
+                  fontSize: 28,
+                  letterSpacing: "-0.005em",
+                  color: "var(--ink)",
+                  lineHeight: 1,
+                }}
+              >
+                {s.value}
+              </div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  color: "var(--ink-3)",
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  marginTop: 6,
+                }}
+              >
+                {s.label}
+              </div>
             </div>
           ))}
         </div>

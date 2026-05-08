@@ -80,6 +80,23 @@ func (s *OptimizerService) GetBestCard(
 		return nil, fmt.Errorf("wallet is empty — add cards first")
 	}
 
+	// ── 2.5 Network-routing rules (merchant constraints) ─────────────────
+	// Canada-specific: Costco Canada accepts Mastercard only (since 2014).
+	// Filter out non-MC cards when merchant=costco_ca; if no MC cards remain,
+	// surface a clear error instead of silently zero-result-ing.
+	if req.Merchant == "costco_ca" {
+		filtered := userCards[:0]
+		for _, uc := range userCards {
+			if uc.Card != nil && uc.Card.Network == "mastercard" {
+				filtered = append(filtered, uc)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("no Mastercard in wallet — Costco Canada accepts only Mastercard. Add a Mastercard or pay another way.")
+		}
+		userCards = filtered
+	}
+
 	// ── 3. Fan-out: score all cards concurrently ──────────────────────────
 	type result struct {
 		rec model.CardRecommendation

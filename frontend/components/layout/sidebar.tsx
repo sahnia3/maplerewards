@@ -2,10 +2,13 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Zap,
   CreditCard,
+  Wallet,
   BarChart2,
   Rss,
   PieChart,
@@ -17,12 +20,32 @@ import {
   User,
   X,
   Settings,
+  Sparkles,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { UserMenu } from "@/components/auth/user-menu";
 import { NotificationCenter } from "@/components/notifications/notification-center";
+
+/* ── Maple-leaf brand glyph (lime, scales with size prop) ───────────── */
+function MapleLeaf({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="var(--lime)"
+      stroke="none"
+      aria-hidden
+    >
+      {/* Stylised maple leaf — single-fill silhouette */}
+      <path d="M12 2 L13.2 6.2 L17 4.5 L15.5 8.5 L20 8 L17.5 11 L22 12.5 L18.5 14 L20.5 17.5 L16.5 16 L17 20.5 L13.5 18 L12 22 L10.5 18 L7 20.5 L7.5 16 L3.5 17.5 L5.5 14 L2 12.5 L6.5 11 L4 8 L8.5 8.5 L7 4.5 L10.8 6.2 Z" />
+    </svg>
+  );
+}
 
 /* ── Section-grouped navigation ────────────────────────────────────── */
 
@@ -39,11 +62,12 @@ interface NavSection {
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Main",
+    label: "Workspace",
     items: [
       { href: "/",              label: "Home",         icon: LayoutDashboard },
       { href: "/cards",         label: "Cards",        icon: CreditCard      },
       { href: "/optimizer",     label: "Optimizer",    icon: Zap             },
+      { href: "/wallet",        label: "Wallet",       icon: Wallet          },
       { href: "/trip-planner",  label: "Trip Planner", icon: Plane           },
     ],
   },
@@ -52,6 +76,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/insights",      label: "Insights",     icon: BarChart2       },
       { href: "/portfolio",     label: "Portfolio",    icon: PieChart        },
+      { href: "/pro-tools",     label: "Pro Tools",    icon: Sparkles        },
       { href: "/feed",          label: "Feed",         icon: Rss             },
       { href: "/chat",          label: "AI Assistant", icon: MessageCircle   },
     ],
@@ -70,8 +95,12 @@ export function Sidebar() {
   const { totalPoints, wallet, summary } = useWallet();
   const { isAuthenticated, isPro, isLoading: authLoading } = useAuth();
   const { isCollapsed, toggleSidebar, isMobileOpen, setMobileOpen } = useSidebar();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const sidebarWidth = isCollapsed ? 56 : 240;
+  const isDark = mounted && theme === "dark";
 
   const isActive = (href: string) =>
     pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -87,50 +116,52 @@ export function Sidebar() {
         key={href}
         href={href}
         onClick={() => isMobile && setMobileOpen(false)}
-        className="flex items-center gap-3 rounded-lg transition-all duration-150 group relative"
+        className="flex items-center gap-3 rounded-[9px] transition-all duration-150 group relative mono"
         style={{
-          padding: collapsed ? "8px 0" : "8px 10px",
+          padding: collapsed ? "9px 0" : "9px 10px",
           justifyContent: collapsed ? "center" : "flex-start",
-          color: active ? "var(--teal-light)" : "var(--text-secondary)",
+          fontSize: 12,
+          fontWeight: active ? 600 : 500,
+          color: active ? "var(--ink)" : "var(--ink-3)",
+          background: active ? "var(--card-fill)" : "transparent",
+          border: active ? "1px solid var(--rule)" : "1px solid transparent",
         }}
         onMouseEnter={(e) => {
           if (!active) {
-            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-            e.currentTarget.style.color = "var(--text-primary)";
+            e.currentTarget.style.background = "var(--card-fill)";
+            e.currentTarget.style.color = "var(--ink)";
           }
         }}
         onMouseLeave={(e) => {
           if (!active) {
             e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = "var(--text-secondary)";
+            e.currentTarget.style.color = "var(--ink-3)";
           }
         }}
         title={collapsed ? label : undefined}
       >
-        {/* Active indicator — Linear-style left border */}
+        {/* Active indicator — 3px maple-red bar at -16px */}
         {active && (
           <div
-            className="absolute left-0 top-[20%] bottom-[20%] w-[2.5px] rounded-full"
+            className="absolute"
             style={{
-              background: "var(--teal)",
-              boxShadow: "0 0 6px rgba(13,148,136,0.35)",
+              left: collapsed ? -8 : -16,
+              top: 8,
+              bottom: 8,
+              width: 3,
+              borderRadius: 99,
+              background: "var(--accent)",
             }}
           />
         )}
         <Icon
-          size={17}
-          strokeWidth={active ? 2.2 : 1.7}
+          size={15}
+          strokeWidth={active ? 2.0 : 1.6}
           className="shrink-0"
-          style={{
-            marginLeft: collapsed ? 0 : 2,
-            transition: "transform 0.15s ease",
-          }}
+          style={{ marginLeft: collapsed ? 0 : 0 }}
         />
         {!collapsed && (
-          <span
-            className="text-[13px] whitespace-nowrap"
-            style={{ fontWeight: active ? 600 : 450 }}
-          >
+          <span className="whitespace-nowrap" style={{ letterSpacing: "0.02em" }}>
             {label}
           </span>
         )}
@@ -144,30 +175,33 @@ export function Sidebar() {
 
     return (
       <>
-        {/* Logo + Header */}
+        {/* Logo lockup: maple leaf glyph (lime) + wordmark */}
         <div
           className="flex items-center shrink-0"
           style={{
             height: 56,
             padding: collapsed ? "0 10px" : "0 16px",
             justifyContent: collapsed ? "center" : "space-between",
-            borderBottom: "1px solid var(--border-dim)",
+            borderBottom: "1px solid var(--rule)",
           }}
         >
           <Link
             href="/"
-            className="flex items-center gap-2.5"
+            className="flex items-center gap-2"
             onClick={() => isMobile && setMobileOpen(false)}
           >
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 maple-bg"
-              style={{ boxShadow: "0 2px 8px rgba(13,148,136,0.2)" }}
-            >
-              <span className="text-[13px] leading-none">🍁</span>
-            </div>
+            <MapleLeaf size={16} />
             {!collapsed && (
-              <span className="text-[14px] font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
-                maple<span style={{ color: "var(--teal)" }}>rewards</span>
+              <span
+                className="display"
+                style={{
+                  fontSize: 18,
+                  letterSpacing: "-0.01em",
+                  color: "var(--ink)",
+                  fontWeight: 400,
+                }}
+              >
+                maple<span style={{ color: "var(--accent)" }}>rewards</span>
               </span>
             )}
           </Link>
@@ -178,7 +212,7 @@ export function Sidebar() {
                 <button
                   onClick={() => setMobileOpen(false)}
                   className="p-1.5 rounded-lg transition-colors"
-                  style={{ color: "var(--text-tertiary)" }}
+                  style={{ color: "var(--ink-3)" }}
                 >
                   <X size={16} />
                 </button>
@@ -187,15 +221,65 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Sectioned nav items */}
-        <nav className="flex-1 overflow-y-auto px-2.5 pt-3 pb-2">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.label} className="mb-3">
-              {!collapsed && (
-                <div
-                  className="px-2.5 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]"
-                  style={{ color: "var(--text-tertiary)" }}
+        {/* Sidebar portfolio summary card (editorial) */}
+        {!collapsed && (
+          <div className="px-3 pt-4 pb-3 shrink-0">
+            <div className="sidebar-portfolio">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="eyebrow" style={{ fontSize: 9, letterSpacing: "0.14em" }}>
+                  Portfolio
+                </span>
+                <span
+                  className="mono inline-flex items-center gap-1"
+                  style={{ fontSize: 10, color: "var(--gain)" }}
                 >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--gain)",
+                    }}
+                  />
+                  LIVE
+                </span>
+              </div>
+              <div
+                className="display"
+                style={{ fontSize: 26, lineHeight: 1, color: "var(--ink)" }}
+              >
+                {summary?.value_range_high
+                  ? `$${summary.value_range_high.toFixed(0)}`
+                  : `$${(totalPoints / 100).toFixed(0)}`}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2.5">
+                <div>
+                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em" }}>
+                    POINTS
+                  </div>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--ink)" }}>
+                    {(totalPoints / 1000).toFixed(1)}K
+                  </div>
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em" }}>
+                    CARDS
+                  </div>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
+                    {wallet.length}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sectioned nav items */}
+        <nav className="flex-1 overflow-y-auto px-3 pt-1 pb-2">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} className="mb-4">
+              {!collapsed && (
+                <div className="eyebrow" style={{ paddingLeft: 10, marginBottom: 8 }}>
                   {section.label}
                 </div>
               )}
@@ -208,169 +292,94 @@ export function Sidebar() {
 
         {/* Upgrade CTA — shown when not Pro */}
         {!authLoading && !isPro && !collapsed && (
-          <div className="px-2.5 pb-2 shrink-0">
+          <div className="px-3 pb-2 shrink-0">
             <Link
               href="/pricing"
               onClick={() => isMobile && setMobileOpen(false)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-150"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-150 mono"
               style={{
-                background:
-                  isActive("/pricing")
-                    ? "rgba(245,158,11,0.12)"
-                    : "rgba(245,158,11,0.05)",
-                border: "1px solid rgba(245,158,11,0.12)",
-                color: "#F59E0B",
-                fontSize: 12,
-                fontWeight: 500,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(245,158,11,0.12)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive("/pricing")) {
-                  e.currentTarget.style.background = "rgba(245,158,11,0.05)";
-                }
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-soft)",
+                color: "var(--accent)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
               }}
             >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-              </svg>
-              <span>Upgrade to Pro</span>
+              <span>★ Upgrade to Pro</span>
             </Link>
           </div>
         )}
 
-        {/* My Rewards mini-card */}
-        {!collapsed && (
-          <div className="px-2.5 pb-2.5 shrink-0">
-            <div
-              className="rounded-lg p-3"
-              style={{
-                background: "rgba(13,148,136,0.05)",
-                border: "1px solid rgba(13,148,136,0.1)",
-              }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-widest"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  My Rewards
-                </span>
-                <span
-                  className="text-[10px]"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  {wallet.length} card{wallet.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="text-[20px] font-bold tracking-tight tabular-nums" style={{ color: "var(--text-primary)" }}>
-                {totalPoints.toLocaleString()}
-              </div>
-              <div
-                className="text-[10.5px] mt-0.5"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                total points
-              </div>
-              {summary &&
-                (summary.value_range_low > 0 ||
-                  summary.value_range_high > 0) && (
-                  <p
-                    className="text-[11px] mt-1"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    ≈ ${summary.value_range_low.toFixed(0)}–$
-                    {summary.value_range_high.toFixed(0)} CAD
-                  </p>
-                )}
-              <Link
-                href="/cards"
-                onClick={() => isMobile && setMobileOpen(false)}
-                className="inline-flex items-center gap-1 mt-2 text-[11px] font-medium transition-opacity"
-                style={{ color: "var(--teal-light)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-              >
-                View wallet →
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {/* Bottom section: Profile/Settings + Auth */}
-        <div
-          className="shrink-0"
-          style={{ borderTop: "1px solid var(--border-dim)" }}
-        >
-          <div className="px-2.5 pt-2 pb-1 space-y-0.5">
+        {/* Bottom section: Profile/Settings + Theme + Auth */}
+        <div className="sidebar-footer px-3 pt-2 pb-3 shrink-0">
+          <div className="space-y-0.5">
             {BOTTOM_NAV.map((item) => renderNavItem(item, isMobile))}
           </div>
+
+          {/* Theme toggle */}
+          {!collapsed && mounted && (
+            <button
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg mono transition-all"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--ink-2)",
+                background: "var(--card-fill)",
+                border: "1px solid var(--rule)",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              {isDark ? <Sun size={13} /> : <Moon size={13} />}
+              <span>{isDark ? "Light" : "Dark"} mode</span>
+            </button>
+          )}
 
           {/* Auth: User menu or Sign In */}
           {!authLoading &&
             (isAuthenticated ? (
               <UserMenu collapsed={collapsed} />
             ) : (
-              <div className="px-2.5 pb-3 shrink-0">
-                <Link
-                  href="/login"
-                  onClick={() => isMobile && setMobileOpen(false)}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12.5px] font-medium transition-all"
-                  style={{
-                    background: "rgba(13,148,136,0.1)",
-                    color: "var(--teal-light)",
-                    border: "1px solid rgba(13,148,136,0.15)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(13,148,136,0.18)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(13,148,136,0.1)";
-                  }}
-                >
-                  <LogIn size={14} />
-                  {!collapsed ? "Sign In" : null}
-                </Link>
-              </div>
+              <Link
+                href="/login"
+                onClick={() => isMobile && setMobileOpen(false)}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg mono transition-all"
+                style={{
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <LogIn size={13} />
+                {!collapsed ? "Sign In" : null}
+              </Link>
             ))}
         </div>
 
         {/* Collapse toggle — desktop only */}
         {!isMobile && (
-          <div className="px-2.5 pb-2.5 shrink-0">
+          <div className="px-3 pb-3 shrink-0">
             <button
               onClick={toggleSidebar}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all"
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all mono"
               style={{
-                color: "var(--text-tertiary)",
-                background: "rgba(255,255,255,0.02)",
-                border: "1px solid var(--border-dim)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                e.currentTarget.style.color = "var(--text-secondary)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.02)";
-                e.currentTarget.style.color = "var(--text-tertiary)";
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--ink-3)",
+                background: "transparent",
+                border: "1px solid var(--rule)",
               }}
               title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              {isCollapsed ? (
-                <ChevronRight size={13} />
-              ) : (
-                <ChevronLeft size={13} />
-              )}
+              {isCollapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
               {!isCollapsed && <span>Collapse</span>}
             </button>
           </div>
@@ -386,8 +395,10 @@ export function Sidebar() {
         className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 z-40"
         style={{
           width: sidebarWidth,
-          background: "var(--bg-surface)",
-          borderRight: "1px solid var(--border-dim)",
+          background: "var(--sidebar-fill)",
+          borderRight: "1px solid var(--rule)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
           transition: "width 0.25s cubic-bezier(0.22, 1, 0.36, 1)",
         }}
       >
@@ -399,7 +410,7 @@ export function Sidebar() {
         <div
           className="fixed inset-0 z-40 lg:hidden"
           style={{
-            background: "rgba(0,0,0,0.6)",
+            background: "rgba(16,24,32,0.6)",
             backdropFilter: "blur(4px)",
           }}
           onClick={() => setMobileOpen(false)}
@@ -411,8 +422,10 @@ export function Sidebar() {
         className="fixed left-0 top-0 bottom-0 z-50 flex flex-col lg:hidden"
         style={{
           width: 272,
-          background: "var(--bg-surface)",
-          borderRight: "1px solid var(--border-dim)",
+          background: "var(--sidebar-fill)",
+          borderRight: "1px solid var(--rule)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
           transform: isMobileOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
         }}

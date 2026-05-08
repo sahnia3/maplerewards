@@ -9,7 +9,7 @@ import { SidebarProvider } from "@/contexts/sidebar-context";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="data-theme" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
       <AuthProvider>
         <SessionProvider>
           <WalletProvider>

@@ -72,8 +72,32 @@ export async function ensureSession(): Promise<string> {
 
 // ── Cards ────────────────────────────────────────────────────────────────────
 
+/* Cards that the issuer has officially retired in Canada and no longer issues
+ * to new customers. Filtered out of the catalogue everywhere — onboarding picker,
+ * cards register, recommendations. Update this list when a card is rebranded or
+ * pulled from the market. */
+const RETIRED_CARD_NAMES: ReadonlySet<string> = new Set([
+  /* Capital One pulled out of Canadian Aspire line ~2017–2018; replaced by
+   * Aspire Cash Platinum / Smart Rewards. The Aspire Travel variants are no
+   * longer issued. */
+  "Capital One Aspire Travel Platinum Mastercard",
+  "Capital One Aspire Travel World Elite Mastercard",
+  /* Capital One Costco was never a Canadian product — Costco Canada's MC has
+   * been issued by CIBC since 2015. The catalogue entry is stale data. */
+  "Capital One Costco Mastercard",
+  /* HSBC Canada was sold to RBC in March 2024; HSBC Canada credit cards were
+   * retired and existing balances transferred to RBC products. No longer issued. */
+  "HSBC +Rewards Mastercard",
+  "HSBC Cashback Mastercard",
+  "HSBC World Elite Mastercard",
+  /* National Bank retired Syncro Mastercard in their lineup revamp (~2019); the
+   * card no longer appears on nbc.ca and is replaced by ECHO Cashback. */
+  "National Bank Syncro Mastercard",
+]);
+
 export async function listCards(): Promise<Card[]> {
-  return request<Card[]>("/cards");
+  const all = await request<Card[]>("/cards");
+  return all.filter(c => !RETIRED_CARD_NAMES.has(c.name));
 }
 
 export async function getCard(id: string): Promise<Card> {
@@ -342,6 +366,126 @@ export async function activateBonus(sessionId: string, cardId: string): Promise<
   return request<WelcomeBonus>(`/wallet/${sessionId}/bonuses/${cardId}/activate`, {
     method: "POST",
   });
+}
+
+// ── Missed Rewards (Pro-tier insight) ────────────────────────────────────────
+
+import type { MissedRewardsReport } from "./types";
+
+export async function getMissedRewards(
+  sessionId: string,
+  opts?: { sinceDays?: number; top?: number }
+): Promise<MissedRewardsReport> {
+  const qs = new URLSearchParams();
+  if (opts?.sinceDays != null) qs.set("since", String(opts.sinceDays));
+  if (opts?.top != null) qs.set("top", String(opts.top));
+  const tail = qs.toString() ? `?${qs.toString()}` : "";
+  return request<MissedRewardsReport>(`/wallet/${sessionId}/missed-rewards${tail}`);
+}
+
+// ── Card Credits + Annual-Fee Countdown ──────────────────────────────────────
+
+import type { CardCreditStatus } from "./types";
+
+export async function getCardCredits(sessionId: string): Promise<CardCreditStatus[]> {
+  return request<CardCreditStatus[]>(`/wallet/${sessionId}/credits`);
+}
+
+export async function recordCreditRedemption(
+  sessionId: string,
+  creditDefId: string,
+  body: { redeemed_amount: number; note?: string }
+): Promise<CardCreditStatus> {
+  return request<CardCreditStatus>(`/wallet/${sessionId}/credits/${creditDefId}/redeem`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// ── 2026 Aeroplan SQC Projector ──────────────────────────────────────────────
+
+import type { SQCProjection } from "./types";
+
+export async function getSQCProjection(sessionId: string): Promise<SQCProjection> {
+  return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection`);
+}
+
+// ── Aeroplan availability watcher ────────────────────────────────────────────
+
+import type {
+  AwardWatch, CreateAwardWatchRequest,
+  BuyPromo, BuyPointsRequest, BuyPointsVerdict,
+  DevaluationEvent,
+  Merchant, StackRecommendation,
+  CardValueSummary,
+  IndiaArbitrageProperty,
+  TangerineCategory,
+} from "./types";
+
+export async function listAwardWatches(sessionId: string): Promise<AwardWatch[]> {
+  return request<AwardWatch[]>(`/wallet/${sessionId}/award-watches`);
+}
+
+export async function createAwardWatch(sessionId: string, body: CreateAwardWatchRequest): Promise<AwardWatch> {
+  return request<AwardWatch>(`/wallet/${sessionId}/award-watches`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteAwardWatch(sessionId: string, watchId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/award-watches/${watchId}`, { method: "DELETE" });
+}
+
+// ── Buy-points break-even calculator ─────────────────────────────────────────
+
+export async function listBuyPromos(): Promise<BuyPromo[]> {
+  return request<BuyPromo[]>("/buy-points/promos");
+}
+
+export async function evaluateBuyPoints(req: BuyPointsRequest): Promise<BuyPointsVerdict> {
+  return request<BuyPointsVerdict>("/buy-points/evaluate", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Devaluation alerts ───────────────────────────────────────────────────────
+
+export async function listDevaluations(sessionId?: string): Promise<DevaluationEvent[]> {
+  const path = sessionId ? `/wallet/${sessionId}/devaluations` : "/devaluations";
+  return request<DevaluationEvent[]>(path);
+}
+
+// ── Triple-stack calculator ──────────────────────────────────────────────────
+
+export async function listMerchants(): Promise<Merchant[]> {
+  return request<Merchant[]>("/merchants");
+}
+
+export async function recommendStack(req: { session_id: string; merchant_slug: string; spend_amount: number }): Promise<StackRecommendation> {
+  return request<StackRecommendation>("/stack-recommend", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+// ── Annual card-value comparison ─────────────────────────────────────────────
+
+export async function getCardValueSummary(sessionId: string): Promise<CardValueSummary[]> {
+  return request<CardValueSummary[]>(`/wallet/${sessionId}/card-value`);
+}
+
+// ── India-outbound hotel arbitrage ───────────────────────────────────────────
+
+export async function getIndiaArbitrage(sessionId: string): Promise<IndiaArbitrageProperty[]> {
+  return request<IndiaArbitrageProperty[]>(`/wallet/${sessionId}/india-arbitrage`);
+}
+
+// ── Tangerine 2% rotating-category resolver ─────────────────────────────────
+
+export async function listTangerineCategories(): Promise<TangerineCategory[]> {
+  return request<TangerineCategory[]>("/tangerine-categories");
 }
 
 // ── Billing (Stripe) ─────────────────────────────────────────────────────────

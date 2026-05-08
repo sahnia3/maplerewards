@@ -61,6 +61,8 @@ export interface OptimizeRequest {
   spend_amount: number;
   mcc_code?: number;
   redemption_segment?: "base" | "business";
+  /** Optional merchant slug for network-routing rules. "costco_ca" filters to Mastercard-only. */
+  merchant?: string;
 }
 
 export interface CardRecommendation {
@@ -297,4 +299,272 @@ export interface WelcomeBonus {
   completed_at?: string;
   progress: number; // 0.0 - 1.0
   days_left: number;
+}
+
+// ── Missed Rewards Reports ──────────────────────────────────────────────────
+
+export interface MissedRewardEntry {
+  spend_entry_id: string;
+  spent_at: string;
+  category_slug: string;
+  category_name: string;
+  amount: number;
+  actual_card_id: string;
+  actual_card_name: string;
+  actual_value: number;
+  optimal_card_id: string;
+  optimal_card_name: string;
+  optimal_value: number;
+  gap: number;
+}
+
+export interface CategoryMissed {
+  category_slug: string;
+  category_name: string;
+  total_spend: number;
+  actual_value: number;
+  optimal_value: number;
+  gap: number;
+  optimal_card_name: string;
+  entry_count: number;
+  missed_count: number;
+}
+
+export interface MissedRewardsReport {
+  since: string;
+  total_spend: number;
+  total_actual_value: number;
+  total_optimal_value: number;
+  total_gap: number;
+  entry_count: number;
+  missed_count: number;
+  by_category: CategoryMissed[];
+  top_missed: MissedRewardEntry[];
+  wallet_snapshot: string; // "current" — disclosure for users
+}
+
+// ── Card Credits + Annual-Fee Countdown ──────────────────────────────────────
+
+export interface CardCreditStatus {
+  credit_def_id: string;
+  card_id: string;
+  card_name: string;
+  card_annual_fee: number;
+  fee_renewal_date?: string;     // ISO YYYY-MM-DD
+  days_to_renewal?: number;
+
+  name: string;                  // e.g. "Travel Credit"
+  description?: string;
+  value_cad: number;
+  recurrence: "annual" | "biennial" | "quadrennial" | "once";
+  sort_order: number;
+
+  user_credit_id?: string;
+  anniversary_year: number;
+  redeemed_amount: number;
+  redeemed_at?: string;
+  remaining: number;
+  status: "unused" | "partial" | "redeemed";
+  note?: string;
+}
+
+// ── 2026 Aeroplan SQC (Status Qualifying Credits) projector ──────────────────
+
+export interface SQCCardContribution {
+  card_id: string;
+  card_name: string;
+  dollars_per_sqc: number;
+  ytd_spend: number;
+  sqc_earned: number;
+}
+
+export interface SQCTier {
+  status_level: string;
+  sqc_required: number;
+  min_revenue_cad: number;
+}
+
+export interface SQCProjection {
+  year: number;
+  total_sqc_earned: number;
+  cards: SQCCardContribution[];
+  tiers: SQCTier[];
+  current_tier?: string;
+  next_tier?: string;
+  sqc_to_next_tier?: number;
+  spend_to_next_tier?: number;
+  best_card_for_gap?: string;
+  wallet_has_no_aeroplan_cards: boolean;
+}
+
+// ── Aeroplan availability watcher ────────────────────────────────────────────
+
+export interface AwardWatch {
+  id?: string;
+  user_id?: string;
+  origin: string;
+  destination: string;
+  depart_date: string;
+  flex_days: number;
+  cabin: "economy" | "business" | "first";
+  max_points?: number | null;
+  program_slug: string;
+  is_active: boolean;
+  last_checked_at?: string;
+  last_min_points?: number | null;
+  created_at?: string;
+}
+
+export interface CreateAwardWatchRequest {
+  origin: string;
+  destination: string;
+  depart_date: string;
+  flex_days: number;
+  cabin: "economy" | "business" | "first";
+  max_points?: number | null;
+  program_slug: string;
+}
+
+// ── Buy-points break-even calculator ─────────────────────────────────────────
+
+export interface BuyPromo {
+  program_slug: string;
+  promo_label: string;
+  base_cents_per_point: number;
+  promo_cents_per_point: number;
+  valid_from: string;
+  valid_to?: string;
+  source_url?: string;
+}
+
+export interface BuyPointsRequest {
+  program_slug: string;
+  points_needed: number;
+  cash_alternative_cad: number;
+}
+
+export interface BuyPointsVerdict {
+  program_slug: string;
+  points_needed: number;
+  cash_alternative_cad: number;
+  break_even_cents_per_point: number;
+  current_promo_cents_per_point: number;
+  base_purchase_cents_per_point: number;
+  buy_cost_cad: number;
+  verdict: "buy" | "earn" | "pay_cash";
+  rationale: string;
+  promo_label?: string;
+  source_url?: string;
+}
+
+// ── Devaluation events ───────────────────────────────────────────────────────
+
+export interface DevaluationEvent {
+  id: string;
+  program_slug: string;
+  title: string;
+  description: string;
+  severity: "minor" | "major";
+  effective_date: string;
+  posted_at: string;
+  source_url?: string;
+  days_until: number;
+  user_holds_balance: boolean;
+}
+
+// ── Triple-stack calculator ──────────────────────────────────────────────────
+
+export interface Merchant {
+  slug: string;
+  name: string;
+  category_slug?: string;
+  primary_url?: string;
+}
+
+export interface PortalRate {
+  portal: string;
+  merchant_slug: string;
+  rate_pct: number;
+  source_url?: string;
+  scraped_at?: string;
+}
+
+export interface NetworkOffer {
+  id: string;
+  network: "amex" | "visa" | "mastercard";
+  merchant_slug: string;
+  title: string;
+  reward_type: "statement_credit" | "bonus_points" | "merchant_discount";
+  reward_value: number;
+  min_spend: number;
+  card_filter?: string | null;
+  valid_to?: string | null;
+  source: string;
+  source_url?: string;
+}
+
+export interface StackComponent {
+  layer: "portal" | "card" | "network_offer" | "loyalty";
+  source: string;
+  value_cad: number;
+  detail?: string;
+  source_url?: string;
+}
+
+export interface StackRecommendation {
+  merchant_slug: string;
+  merchant_name: string;
+  spend_amount: number;
+  best_portal?: PortalRate;
+  best_card?: CardRecommendation;
+  network_offers: NetworkOffer[];
+  components: StackComponent[];
+  total_value_cad: number;
+  effective_return_pct: number;
+  warnings?: string[];
+}
+
+// ── Annual card value ────────────────────────────────────────────────────────
+
+export interface CardValueComponent {
+  component_type: "insurance" | "lounge" | "concierge" | "fx_savings" | "multiplier" | "credit_bundle";
+  annual_ev_cad: number;
+  description: string;
+  sort_order: number;
+}
+
+export interface CardValueSummary {
+  card_id: string;
+  card_name: string;
+  annual_fee: number;
+  components: CardValueComponent[];
+  total_ev_cad: number;
+  net_ev_cad: number;
+  is_positive: boolean;
+}
+
+// ── India-outbound hotel arbitrage ───────────────────────────────────────────
+
+export interface IndiaArbitrageProperty {
+  program_slug: string;
+  property_name: string;
+  city: string;
+  points_per_night: number;
+  cash_rate_inr?: number;
+  cash_rate_cad: number;
+  value_cad_per_point: number;
+  user_balance: number;
+  nights_affordable: number;
+  total_savings_cad: number;
+  notes?: string;
+  source_url?: string;
+}
+
+// ── Tangerine MCC categories ─────────────────────────────────────────────────
+
+export interface TangerineCategory {
+  slug: string;
+  display_name: string;
+  mcc_codes: number[];
+  description?: string;
 }

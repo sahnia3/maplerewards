@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { getCardTheme, getNetworkLabel } from "@/lib/card-themes";
+import { cardImageUrl } from "@/lib/card-images";
 import type { Card } from "@/lib/types";
 
 interface CreditCardVisualProps {
@@ -20,13 +22,82 @@ export function CreditCardVisual({ card, balance, size = "md" }: CreditCardVisua
   const network = getNetworkLabel(card?.network);
   const cfg = SIZE_CONFIG[size];
   const height = Math.round(cfg.width / 1.586);
+  const photoUrl = cardImageUrl(card?.name);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const radius = size === "sm" ? 8 : size === "md" ? 14 : 18;
+
+  /* Real card-art branch — gradient + chip overlay only fall back if the image errors. */
+  if (photoUrl && !photoFailed) {
+    return (
+      <div
+        style={{
+          width: cfg.width,
+          height,
+          borderRadius: radius,
+          position: "relative",
+          overflow: "hidden",
+          flexShrink: 0,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.32), 0 2px 6px rgba(0,0,0,0.18)",
+          userSelect: "none",
+          background: theme.gradient,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photoUrl}
+          alt={card?.name ?? "Credit card"}
+          loading="lazy"
+          onError={() => setPhotoFailed(true)}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+        {/* Specular sheen */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0) 62%)",
+            pointerEvents: "none",
+          }}
+        />
+        {/* Optional balance chip — bottom-right, only on md/lg */}
+        {balance !== undefined && balance > 0 && size !== "sm" && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 10,
+              right: 10,
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(6px)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#fff",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {balance.toLocaleString()} pts
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
       style={{
         width: cfg.width,
         height,
-        borderRadius: size === "sm" ? 8 : size === "md" ? 14 : 18,
+        borderRadius: radius,
         background: theme.gradient,
         position: "relative",
         overflow: "hidden",

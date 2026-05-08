@@ -9,6 +9,20 @@ export interface Article {
   tags: string[];
   body: string;    // full markdown content
   relatedCards?: string[]; // card names that relate to this article
+  cover_image?: string;    // hero photo URL (16:9). Optional — falls back to slug-seeded picsum.
+  cover_credit?: string;   // attribution shown below the photo
+}
+
+/** Returns the local generated cover at /articles/<slug>.png. The feed renders
+ * via <img onError> which falls back to a picsum placeholder if the local file
+ * is missing (e.g. generation hasn't finished or one slug failed). */
+export function articleCover(a: Pick<Article, "slug" | "cover_image">): string {
+  return a.cover_image ?? `/articles/${a.slug}.png`;
+}
+
+/** Backstop URL when the local cover errors. */
+export function articleCoverFallback(slug: string): string {
+  return `https://picsum.photos/seed/maple-${slug}/1280/720`;
 }
 
 export const ARTICLES: Article[] = [

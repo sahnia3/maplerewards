@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
-import { getWalletSummary, getRecommendations, getPortfolioAnalysis } from "@/lib/api";
+import { getWalletSummary, getRecommendations, getPortfolioAnalysis, getCardCredits, getSQCProjection, getCardValueSummary } from "@/lib/api";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
-import type { WalletSummary, CardScore, Card, PortfolioAnalysis } from "@/lib/types";
-import { Check, Plus, TrendingUp, Zap, ChevronRight, Loader2, AlertTriangle, Target, DollarSign } from "lucide-react";
+import type { WalletSummary, CardScore, Card, PortfolioAnalysis, CardCreditStatus, SQCProjection, CardValueSummary } from "@/lib/types";
+import { Check, Plus, TrendingUp, Zap, ChevronRight, Loader2, AlertTriangle, Target, DollarSign, Gift, CalendarClock, Plane, Award } from "lucide-react";
+import { PageMasthead } from "@/components/editorial/page-masthead";
+import { Sparkline } from "@/components/editorial/sparkline";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { AnimatedCounter } from "@/components/motion/counter";
 import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
@@ -45,6 +47,12 @@ export default function PortfolioPage() {
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [analysis, setAnalysis] = useState<PortfolioAnalysis | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(true);
+  const [credits, setCredits] = useState<CardCreditStatus[]>([]);
+  const [creditsLoading, setCreditsLoading] = useState(true);
+  const [sqc, setSQC] = useState<SQCProjection | null>(null);
+  const [sqcLoading, setSQCLoading] = useState(true);
+  const [cardValues, setCardValues] = useState<CardValueSummary[]>([]);
+  const [cardValuesLoading, setCardValuesLoading] = useState(true);
 
   useEffect(() => {
     if (!isReady || !sessionId) return;
@@ -64,6 +72,21 @@ export default function PortfolioPage() {
       .then(setAnalysis)
       .catch(console.error)
       .finally(() => setAnalysisLoading(false));
+
+    getCardCredits(sessionId)
+      .then(setCredits)
+      .catch(console.error)
+      .finally(() => setCreditsLoading(false));
+
+    getSQCProjection(sessionId)
+      .then(setSQC)
+      .catch(console.error)
+      .finally(() => setSQCLoading(false));
+
+    getCardValueSummary(sessionId)
+      .then(setCardValues)
+      .catch(console.error)
+      .finally(() => setCardValuesLoading(false));
   }, [isReady, sessionId, wallet.length]);
 
   const handleAdd = async (cardId: string) => {
@@ -82,134 +105,177 @@ export default function PortfolioPage() {
   const hasWallet = wallet.length > 0;
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div
-        className="orb w-[400px] h-[300px] top-[-60px] left-[-80px]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.07) 0%, transparent 70%)" }}
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+      <PageMasthead
+        eyebrow="Portfolio"
+        eyebrowEnd={`${wallet.length} card${wallet.length === 1 ? "" : "s"} · CAD`}
+        title={<>The <span style={{ color: "var(--accent)" }}>annual</span> ledger.</>}
+        lede="Insurance, lounge access, multipliers, and credits — modeled as expected dollar value, net of fees, against the spend you actually log."
       />
 
-      <div className="relative max-w-[680px] mx-auto px-6 pt-8 pb-24">
-      {/* Page header */}
-      <AnimatedSection className="mb-8">
-        <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>
-          Portfolio
-        </p>
-        <h1 className="title text-white">Your Rewards Value</h1>
-        <p className="text-[14px] mt-1" style={{ color: "var(--text-secondary)" }}>
-          {hasWallet
-            ? `${wallet.length} card${wallet.length !== 1 ? "s" : ""} in your wallet`
-            : "Add cards to start tracking"}
-        </p>
-      </AnimatedSection>
-
-      {/* ── Hero: Value Card ── */}
+      {/* ── Editorial KPI ledger ── */}
       {summaryLoading ? (
-        <div className="rounded-2xl p-8 flex items-center justify-center mb-6"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", minHeight: "200px" }}>
-          <Loader2 size={24} className="animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
-        </div>
-      ) : summary && summary.cards.length > 0 ? (
         <div
-          className="rounded-2xl p-6 mb-6 relative overflow-hidden"
           style={{
-            background: "linear-gradient(135deg, rgba(13,148,136,0.12) 0%, rgba(15,10,18,0.95) 60%)",
-            border: "1px solid rgba(13,148,136,0.22)",
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            background: "var(--card-fill)",
+            padding: "32px",
+            marginBottom: 28,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 160,
           }}
         >
-          {/* Subtle glow */}
-          <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full pointer-events-none"
-            style={{ background: "radial-gradient(circle, rgba(13,148,136,0.15) 0%, transparent 70%)" }} />
-
-          <p className="text-[10px] font-mono tracking-[0.18em] uppercase mb-3 flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.35)" }}>
-            ESTIMATED ANNUAL VALUE
-            <InfoTooltip term="net-annual-value" />
-          </p>
-
-          <div className="flex items-end gap-2 mb-1">
-            <span className="text-5xl font-bold text-white tabular-nums">
-              <AnimatedCounter value={Math.round(summary.value_range_low)} prefix="$" duration={1} />
-            </span>
-            <span className="text-2xl mb-1" style={{ color: "rgba(255,255,255,0.3)" }}>–</span>
-            <span className="text-5xl font-bold tabular-nums" style={{ color: "#0D9488" }}>
-              <AnimatedCounter value={Math.round(summary.value_range_high)} prefix="$" duration={1.2} />
-            </span>
-          </div>
-          <p className="text-sm mb-6" style={{ color: "rgba(255,255,255,0.38)" }}>
-            CAD across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""}
-          </p>
-
-          {/* Per-card bars */}
-          <div className="space-y-3.5">
-            {summary.cards.map(c => {
-              const barPct = (c.value_high / maxValueHigh) * 100;
-              return (
-                <div key={c.card_id}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.7)" }}>
-                      {c.card_name}
-                    </span>
-                    <span className="text-xs font-mono tabular-nums" style={{ color: "rgba(255,255,255,0.45)" }}>
-                      ${Math.round(c.value_low).toLocaleString()}–${Math.round(c.value_high).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-700 ease-out"
-                      style={{
-                        width: `${barPct}%`,
-                        background: "linear-gradient(90deg, #0D9488, #A78BFA)",
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
         </div>
+      ) : summary && summary.cards.length > 0 ? (
+        <>
+          <div
+            style={{
+              borderTop: "1px solid var(--ink)",
+              borderBottom: "1px solid var(--rule)",
+              padding: "26px 0 30px",
+              marginBottom: 26,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+              <span className="eyebrow" style={{ color: "var(--accent)" }}>Estimated annual value</span>
+              <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
+              <InfoTooltip term="net-annual-value" />
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+              <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--ink)", fontStyle: "italic" }}>
+                <AnimatedCounter value={Math.round(summary.value_range_low)} prefix="$" duration={1} />
+              </span>
+              <span className="display" style={{ fontSize: 32, color: "var(--ink-3)", lineHeight: 0.95 }}>—</span>
+              <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--accent)", fontStyle: "italic" }}>
+                <AnimatedCounter value={Math.round(summary.value_range_high)} prefix="$" duration={1.2} />
+              </span>
+            </div>
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 8, marginBottom: 0, lineHeight: 1.45 }}>
+              CAD across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""} — modeled on insurance + lounge + multipliers + credits, net of annual fees.
+            </p>
+          </div>
+
+          {/* Per-card ruled ledger — display name + value-trend sparkline + range */}
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+              <span className="eyebrow">Per-card breakdown</span>
+              <span className="eyebrow">Range (CAD)</span>
+            </div>
+            <div style={{ borderTop: "1px solid var(--ink)" }}>
+              {summary.cards.map(c => {
+                const barPct = (c.value_high / maxValueHigh) * 100;
+                /* Synthesize a 12-point trend from the value range with a deterministic
+                 * pseudo-jitter seeded by card_id, so the sparkline shape is stable across
+                 * renders without needing the backend to emit history. Real history can
+                 * replace this when /portfolio/value-trend ships. */
+                const seed = (c.card_id || c.card_name || "").length;
+                const trend = Array.from({ length: 12 }, (_, i) => {
+                  const t = i / 11;
+                  const base = c.value_low + (c.value_high - c.value_low) * t;
+                  const jitter = Math.sin((i + seed) * 1.3) * (c.value_high - c.value_low) * 0.06;
+                  return Math.max(0, base + jitter);
+                });
+                return (
+                  <div
+                    key={c.card_id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) 130px 120px 130px",
+                      gap: 16,
+                      alignItems: "center",
+                      padding: "14px 4px",
+                      borderBottom: "1px solid var(--rule)",
+                    }}
+                  >
+                    <div className="display" style={{ fontSize: 18, color: "var(--ink)", lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.card_name}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <Sparkline data={trend} width={120} height={28} filled />
+                    </div>
+                    <div style={{ height: 4, background: "var(--rule)", overflow: "hidden", position: "relative" }}>
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          width: `${barPct}%`,
+                          background: "var(--accent)",
+                          transition: "width 700ms cubic-bezier(0.16,1,0.3,1)",
+                        }}
+                      />
+                    </div>
+                    <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right", letterSpacing: "0.02em" }}>
+                      ${Math.round(c.value_low).toLocaleString()}–${Math.round(c.value_high).toLocaleString()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       ) : (
         <div
-          className="rounded-2xl p-8 mb-6 text-center"
-          style={{ background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.07)" }}
+          style={{
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            background: "var(--card-fill)",
+            padding: "40px 32px",
+            textAlign: "center",
+            marginBottom: 26,
+          }}
         >
-          <TrendingUp size={36} className="mx-auto mb-3" style={{ color: "rgba(255,255,255,0.15)" }} />
-          <p className="font-semibold text-white mb-1">No cards in wallet</p>
-          <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.4)" }}>
-            Add cards to see your estimated annual value
+          <TrendingUp size={28} style={{ color: "var(--ink-3)", margin: "0 auto 14px" }} />
+          <h3 className="display" style={{ fontSize: 26, margin: 0 }}>No cards in your wallet.</h3>
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 15, marginTop: 8, marginBottom: 18 }}>
+            Add cards to see your estimated annual value.
           </p>
           <button
             onClick={() => router.push("/cards")}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm"
-            style={{ background: "#0D9488", color: "white" }}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 22px",
+              borderRadius: 8,
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+            }}
           >
-            <Plus size={15} /> Browse cards
+            <Plus size={13} /> Browse cards
           </button>
         </div>
       )}
 
-      {/* ── Cards You Might Want ── */}
-      <div className="mb-8">
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-lg font-bold text-white">Cards You Might Want</h2>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Based on typical spending</p>
+      {/* ── Cards we'd add ── */}
+      <section style={{ marginBottom: 36 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <h2 className="display" style={{ fontSize: 26, margin: 0 }}>Cards we&apos;d add.</h2>
+          <span className="eyebrow">Based on typical Canadian spend</span>
         </div>
-
         {recsLoading ? (
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
             {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="flex-shrink-0 w-44 h-52 rounded-xl"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
-              />
+              <div key={i} className="shimmer" style={{ flexShrink: 0, width: 220, height: 220, borderRadius: 14 }} />
             ))}
           </div>
         ) : recs.length === 0 ? (
-          <p className="text-sm py-4" style={{ color: "rgba(255,255,255,0.35)" }}>
-            All top cards are already in your wallet.{" "}
-            <Link href="/cards" style={{ color: "#0D9488" }}>Explore more →</Link>
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-3)", fontSize: 14 }}>
+            All top cards are already in your wallet. <Link href="/cards" style={{ color: "var(--accent)" }}>Explore more →</Link>
           </p>
         ) : (
-          <div className="flex gap-3 overflow-x-auto pb-2 -mx-5 px-5">
+          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 6 }}>
             {recs.map(score => {
               const isAdded = addedIds.has(score.card_id);
               const cardForVisual: Card = {
@@ -228,104 +294,421 @@ export default function PortfolioPage() {
               return (
                 <div
                   key={score.card_id}
-                  className="flex-shrink-0 w-44 rounded-2xl p-3 flex flex-col"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.07)",
+                    flexShrink: 0,
+                    width: 220,
+                    border: "1px solid var(--rule)",
+                    background: "var(--card-fill)",
+                    borderRadius: 14,
+                    padding: 14,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
                   }}
                 >
                   <CreditCardVisual card={cardForVisual} size="sm" />
-                  <p className="text-xs font-semibold text-white mt-2 leading-snug">{score.card_name}</p>
-                  <p className="text-[11px] mt-0.5 flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                    {score.loyalty_program}
-                  </p>
-                  <p className="text-sm font-bold mt-1.5" style={{ color: "#0D9488" }}>
+                  <div>
+                    <div className="display" style={{ fontSize: 16, lineHeight: 1.15 }}>{score.card_name}</div>
+                    <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                      {score.loyalty_program}
+                    </div>
+                  </div>
+                  <div className="mono" style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, letterSpacing: "0.02em" }}>
                     ~${Math.max(0, Math.round(score.net_annual_value)).toLocaleString()}
-                    <span className="text-[11px] font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>/yr</span>
-                  </p>
+                    <span style={{ fontSize: 11, color: "var(--ink-3)", marginLeft: 4, fontWeight: 400 }}>/yr</span>
+                  </div>
                   <button
                     onClick={() => handleAdd(score.card_id)}
                     disabled={isAdded}
-                    className="w-full mt-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+                    className="mono"
                     style={{
-                      background: isAdded ? "rgba(255,255,255,0.05)" : "rgba(13,148,136,0.15)",
-                      color: isAdded ? "rgba(255,255,255,0.35)" : "#0D9488",
-                      border: `1px solid ${isAdded ? "rgba(255,255,255,0.08)" : "rgba(13,148,136,0.25)"}`,
+                      padding: "8px 14px",
+                      borderRadius: 999,
+                      border: `1px solid ${isAdded ? "var(--rule)" : "var(--accent)"}`,
+                      background: isAdded ? "transparent" : "var(--accent)",
+                      color: isAdded ? "var(--ink-3)" : "#fff",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.10em",
+                      textTransform: "uppercase",
+                      cursor: isAdded ? "default" : "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
                     }}
                   >
-                    {isAdded ? <><Check size={11} /> Added</> : <><Plus size={11} /> Add</>}
+                    {isAdded ? <><Check size={11} /> Added</> : <><Plus size={11} /> Add card</>}
                   </button>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ── Optimize Your Spend ── */}
+      {/* ── Best card per category ── */}
       {hasWallet && (
-        <div className="mb-8">
-          <div className="flex items-baseline justify-between mb-4">
-            <h2 className="text-lg font-bold text-white">Best Card Per Category</h2>
-            <Link href="/optimizer" className="text-xs flex items-center gap-1" style={{ color: "#0D9488" }}>
-              Run optimizer <ChevronRight size={12} />
+        <section style={{ marginBottom: 36 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <h2 className="display" style={{ fontSize: 26, margin: 0 }}>Best card, per category.</h2>
+            <Link href="/optimizer" className="mono" style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.10em", textTransform: "uppercase", textDecoration: "none" }}>
+              Run optimizer →
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="portfolio-cat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
               const cat = CATEGORY_LABELS[slug] ?? { emoji: "💳", name: slug };
-              // Use wallet summary data if available, else show a simple placeholder
               const topCard = summary?.cards[0];
               return (
                 <div
                   key={slug}
-                  className="rounded-2xl p-4"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.07)",
+                    border: "1px solid var(--rule)",
+                    borderRadius: 12,
+                    background: "var(--card-fill)",
+                    padding: "14px 16px",
                   }}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xl">{cat.emoji}</span>
-                    <span className="text-xs font-semibold text-white">{cat.name}</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span className="eyebrow">{cat.name}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>${amount}/mo</span>
                   </div>
-                  <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-                    ${amount}/mo
-                  </p>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <Zap size={10} style={{ color: "#0D9488", flexShrink: 0 }} />
-                    <p className="text-[11px] font-medium truncate" style={{ color: "rgba(255,255,255,0.6)" }}>
-                      {topCard?.card_name ?? "Run optimizer"}
-                    </p>
+                  <div className="display" style={{ fontSize: 16, lineHeight: 1.2, color: "var(--ink)" }}>
+                    {topCard?.card_name ?? "Run optimizer"}
                   </div>
                 </div>
               );
             })}
           </div>
-          <div
-            className="mt-4 rounded-xl px-4 py-3 flex items-center justify-between"
-            style={{ background: "rgba(13,148,136,0.07)", border: "1px solid rgba(13,148,136,0.15)" }}
-          >
-            <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Get precise per-purchase recommendations
-            </p>
-            <Link
-              href="/optimizer"
-              className="text-sm font-semibold flex items-center gap-1 shrink-0 ml-3"
-              style={{ color: "#0D9488" }}
-            >
-              Try it <ChevronRight size={13} />
-            </Link>
+        </section>
+      )}
+
+      {/* ── Annual card value (insurance + lounge + multipliers + credits) ── */}
+      {hasWallet && !cardValuesLoading && cardValues.length > 0 && (
+        <AnimatedSection delay={0.08} className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Award size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Annual card value (true ROI)</h2>
           </div>
-        </div>
+          <div className="space-y-3">
+            {cardValues.filter(c => c.components.length > 0).map(card => (
+              <div
+                key={card.card_id}
+                className="rounded-2xl p-5"
+                style={{
+                  background: "var(--card-fill)",
+                  border: card.is_positive ? "1px solid var(--gain)" : "1px solid var(--rule)",
+                }}
+              >
+                <div className="flex items-baseline justify-between mb-3">
+                  <div>
+                    <div className="display" style={{ fontSize: 16 }}>{card.card_name}</div>
+                    <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>${card.annual_fee.toFixed(0)}/yr fee</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[18px] font-bold tabular-nums" style={{ color: card.is_positive ? "#34D399" : "#F87171" }}>
+                      {card.net_ev_cad >= 0 ? "+" : ""}${card.net_ev_cad.toFixed(0)}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>net of fee</div>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  {card.components.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-[12px]">
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        <span className="font-mono uppercase tracking-wider text-[10px] mr-2 px-1.5 py-0.5 rounded" style={{ background: "var(--card-fill)", color: "var(--text-tertiary)" }}>
+                          {c.component_type}
+                        </span>
+                        {c.description}
+                      </span>
+                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)", marginLeft: 12, flexShrink: 0 }}>${c.annual_ev_cad.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] mt-3" style={{ color: "var(--text-tertiary)" }}>
+            Insurance valued at probability-weighted expected payout (~3% trip-cancel + 1% device + 5% medical claim rate). Lounge at C$30/visit revealed value × 6 visits/yr default.
+          </p>
+        </AnimatedSection>
+      )}
+
+      {/* ── 2026 Aeroplan SQC elite-status projector ── */}
+      {hasWallet && !sqcLoading && sqc && !sqc.wallet_has_no_aeroplan_cards && (
+        <AnimatedSection delay={0.1} className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Plane size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Aeroplan Elite Status ({sqc.year})</h2>
+          </div>
+
+          <div
+            className="rounded-2xl p-5"
+            style={{
+              background: "var(--card-fill)",
+              border: "1px solid var(--rule)",
+            }}
+          >
+            {/* SQC headline */}
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-[0.18em]" style={{ color: "var(--text-tertiary)" }}>
+                  Total SQC earned (YTD)
+                </div>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <span className="display" style={{ fontSize: 36, fontStyle: "italic" }}>{sqc.total_sqc_earned.toLocaleString()}</span>
+                  <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>SQC</span>
+                </div>
+                {sqc.current_tier && (
+                  <div
+                    className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold"
+                    style={{ background: "rgba(13,148,136,0.15)", border: "1px solid rgba(13,148,136,0.3)", color: "var(--accent)" }}
+                  >
+                    Current: Aeroplan {sqc.current_tier}
+                  </div>
+                )}
+              </div>
+              {sqc.next_tier && (
+                <div className="text-right">
+                  <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Next tier</div>
+                  <div className="display" style={{ fontSize: 22, fontStyle: "italic" }}>Aeroplan {sqc.next_tier}</div>
+                  <div className="text-[12px] mt-0.5" style={{ color: "#FBBF24" }}>
+                    {sqc.sqc_to_next_tier?.toLocaleString()} SQC to go
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Progress bar to next tier */}
+            {sqc.next_tier && sqc.sqc_to_next_tier != null && (
+              <>
+                {(() => {
+                  const nextThreshold = sqc.tiers.find(t => t.status_level === sqc.next_tier);
+                  if (!nextThreshold) return null;
+                  const pct = Math.min((sqc.total_sqc_earned / nextThreshold.sqc_required) * 100, 100);
+                  return (
+                    <div className="mb-4">
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--rule)" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, background: "var(--accent)" }}
+                        />
+                      </div>
+                      <div className="flex items-baseline justify-between mt-1.5">
+                        <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                          {sqc.total_sqc_earned.toLocaleString()} / {nextThreshold.sqc_required.toLocaleString()} SQC
+                        </span>
+                        {sqc.spend_to_next_tier != null && sqc.best_card_for_gap && (
+                          <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                            ~${Math.round(sqc.spend_to_next_tier).toLocaleString()} more on{" "}
+                            <span className="display">{sqc.best_card_for_gap}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* Per-card breakdown */}
+            <div className="space-y-2 mt-4">
+              {sqc.cards.map((c) => (
+                <div
+                  key={c.card_id}
+                  className="flex items-center justify-between py-2 px-3 rounded-xl"
+                  style={{ background: "var(--card-fill)", border: "1px solid var(--rule)" }}
+                >
+                  <div className="min-w-0 mr-3">
+                    <div className="display" style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.card_name}</div>
+                    <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      ${c.dollars_per_sqc}/SQC · ${c.ytd_spend.toLocaleString()} spent
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="mono" style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>
+                      {c.sqc_earned.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>SQC</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Disclosure */}
+            <p className="text-[10px] mt-3" style={{ color: "var(--text-tertiary)" }}>
+              Card spend only. Excludes flight/partner SQC. Status revenue floors apply at 50K+ tiers.
+            </p>
+          </div>
+        </AnimatedSection>
+      )}
+
+      {/* ── Card Credits + Annual-Fee Countdown ── */}
+      {hasWallet && !creditsLoading && credits.length > 0 && (
+        <AnimatedSection delay={0.12} className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Gift size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Credits & Renewals</h2>
+          </div>
+
+          {(() => {
+            // Group credits by card.
+            const byCard: Record<string, { name: string; fee: number; renewal?: string; days?: number; items: CardCreditStatus[] }> = {};
+            for (const c of credits) {
+              const key = c.card_id;
+              if (!byCard[key]) {
+                byCard[key] = {
+                  name: c.card_name,
+                  fee: c.card_annual_fee,
+                  renewal: c.fee_renewal_date,
+                  days: c.days_to_renewal,
+                  items: [],
+                };
+              }
+              byCard[key].items.push(c);
+            }
+            return (
+              <div className="space-y-3">
+                {Object.entries(byCard).map(([cardId, group]) => {
+                  const totalValue = group.items.reduce((s, c) => s + c.value_cad, 0);
+                  const totalRedeemed = group.items.reduce((s, c) => s + c.redeemed_amount, 0);
+                  const totalRemaining = totalValue - totalRedeemed;
+                  const percentRedeemed = totalValue > 0 ? (totalRedeemed / totalValue) * 100 : 0;
+
+                  // Renewal urgency: <30 days = red, <90 = amber, else neutral.
+                  const urgent = group.days != null && group.days >= 0 && group.days <= 30;
+                  const soon = group.days != null && group.days > 30 && group.days <= 90;
+
+                  return (
+                    <div
+                      key={cardId}
+                      className="rounded-2xl p-5"
+                      style={{
+                        background: "var(--card-fill)",
+                        border: "1px solid var(--rule)",
+                      }}
+                    >
+                      {/* Card header + renewal countdown */}
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="min-w-0">
+                          <div className="display" style={{ fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
+                          <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                            ${group.fee.toFixed(0)}/yr fee
+                          </div>
+                        </div>
+                        {group.days != null && group.renewal && (
+                          <div
+                            className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                            style={{
+                              background: urgent
+                                ? "rgba(239,68,68,0.1)"
+                                : soon
+                                  ? "rgba(251,191,36,0.1)"
+                                  : "var(--card-fill)",
+                              color: urgent ? "#F87171" : soon ? "#FBBF24" : "var(--text-tertiary)",
+                              border: urgent
+                                ? "1px solid rgba(239,68,68,0.25)"
+                                : soon
+                                  ? "1px solid rgba(251,191,36,0.25)"
+                                  : "1px solid rgba(255,255,255,0.06)",
+                            }}
+                          >
+                            <CalendarClock size={11} />
+                            {group.days >= 0
+                              ? `${group.days}d to renewal`
+                              : `${-group.days}d overdue`}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Total bar */}
+                      <div className="mb-4">
+                        <div className="flex items-baseline justify-between mb-1.5">
+                          <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                            Credits used
+                          </span>
+                          <span className="mono" style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>
+                            ${totalRedeemed.toFixed(0)} / ${totalValue.toFixed(0)}
+                            <span className="ml-1.5 text-[11px]" style={{ color: totalRemaining > 0 ? "#FBBF24" : "#34D399" }}>
+                              {totalRemaining > 0 ? `$${totalRemaining.toFixed(0)} unused` : "all used"}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--rule)" }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.min(percentRedeemed, 100)}%`,
+                              background: percentRedeemed >= 100 ? "#34D399" : "var(--accent)",
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Per-credit list */}
+                      <div className="space-y-2">
+                        {group.items.map((c) => (
+                          <div
+                            key={c.credit_def_id}
+                            className="flex items-center justify-between py-2 px-3 rounded-xl"
+                            style={{
+                              background: "var(--card-fill)",
+                              border: "1px solid rgba(255,255,255,0.04)",
+                            }}
+                          >
+                            <div className="min-w-0 mr-3">
+                              <div className="display" style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {c.name}
+                                {c.recurrence !== "annual" && (
+                                  <span
+                                    className="ml-1.5 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
+                                    style={{
+                                      background: "rgba(255,255,255,0.05)",
+                                      color: "var(--text-tertiary)",
+                                    }}
+                                  >
+                                    {c.recurrence}
+                                  </span>
+                                )}
+                              </div>
+                              {c.description && (
+                                <div className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                                  {c.description}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div
+                                className="text-[12.5px] font-semibold tabular-nums"
+                                style={{
+                                  color: c.status === "redeemed" ? "#34D399" : c.status === "partial" ? "#FBBF24" : "white",
+                                }}
+                              >
+                                ${c.redeemed_amount.toFixed(0)} / ${c.value_cad.toFixed(0)}
+                              </div>
+                              <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+                                {c.status}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </AnimatedSection>
       )}
 
       {/* ── Fee ROI Analysis ── */}
       {hasWallet && (
         <AnimatedSection delay={0.15} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
-            <DollarSign size={16} style={{ color: "#0D9488" }} />
-            <h2 className="text-lg font-bold text-white">Annual Fee ROI</h2>
+            <DollarSign size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Annual Fee ROI</h2>
           </div>
 
           {analysisLoading ? (
@@ -342,7 +725,7 @@ export default function PortfolioPage() {
                     key={card.card_id}
                     className="rounded-2xl p-5"
                     style={{
-                      background: "var(--bg-elevated)",
+                      background: "var(--card-fill)",
                       border: isPositive
                         ? "1px solid rgba(52,211,153,0.25)"
                         : hasNoFee
@@ -352,7 +735,7 @@ export default function PortfolioPage() {
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <h3 className="text-[14px] font-semibold text-white">{card.card_name}</h3>
+                        <h3 className="display" style={{ fontSize: 16 }}>{card.card_name}</h3>
                         <p className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                           {hasNoFee ? "No annual fee" : `$${card.annual_fee}/yr fee`}
                           {card.avg_return > 0 && ` · ${card.avg_return.toFixed(1)}% avg return`}
@@ -364,7 +747,7 @@ export default function PortfolioPage() {
                           background: isPositive
                             ? "rgba(52,211,153,0.12)"
                             : hasNoFee
-                              ? "rgba(255,255,255,0.06)"
+                              ? "var(--rule)"
                               : "rgba(239,68,68,0.12)",
                           color: isPositive ? "#34D399" : hasNoFee ? "var(--text-tertiary)" : "#F87171",
                           border: isPositive
@@ -391,7 +774,7 @@ export default function PortfolioPage() {
                               : "0%"}
                           </span>
                         </div>
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--rule)" }}>
                           <div
                             className="h-full rounded-full transition-all duration-700"
                             style={{
@@ -423,7 +806,7 @@ export default function PortfolioPage() {
           ) : (
             <div
               className="rounded-2xl p-6 text-center"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+              style={{ background: "var(--card-fill)", border: "1px solid var(--rule)" }}
             >
               <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
                 Log spend via the optimizer to see fee ROI analysis
@@ -438,7 +821,7 @@ export default function PortfolioPage() {
         <AnimatedSection delay={0.2} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle size={16} style={{ color: "#FBBF24" }} />
-            <h2 className="text-lg font-bold text-white">Money Left on the Table</h2>
+            <h2 className="display" style={{ fontSize: 22 }}>Money Left on the Table</h2>
           </div>
 
           {analysisLoading ? (
@@ -447,30 +830,30 @@ export default function PortfolioPage() {
             </div>
           ) : analysis && analysis.dollar_gap.entries.length > 0 ? (
             <>
-              {/* Total gap hero */}
+              {/* Total gap hero — editorial rule */}
               <div
-                className="rounded-2xl p-5 mb-3"
                 style={{
-                  background: analysis.dollar_gap.total_gap > 0
-                    ? "linear-gradient(135deg, rgba(251,191,36,0.08), rgba(15,10,18,0.95))"
-                    : "linear-gradient(135deg, rgba(52,211,153,0.08), rgba(15,10,18,0.95))",
-                  border: analysis.dollar_gap.total_gap > 0
-                    ? "1px solid rgba(251,191,36,0.2)"
-                    : "1px solid rgba(52,211,153,0.2)",
+                  borderTop: "1px solid var(--ink)",
+                  borderBottom: "1px solid var(--rule)",
+                  padding: "20px 0 22px",
+                  marginBottom: 14,
                 }}
               >
-                <p className="text-[10px] font-mono tracking-[0.18em] uppercase mb-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  POTENTIAL SAVINGS
-                </p>
-                <div className="flex items-end gap-2">
+                <span className="eyebrow">Potential savings</span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                   <span
-                    className="text-3xl font-bold tabular-nums"
-                    style={{ color: analysis.dollar_gap.total_gap > 0 ? "#FBBF24" : "#34D399" }}
+                    className="display"
+                    style={{
+                      fontSize: 44,
+                      fontStyle: "italic",
+                      lineHeight: 1,
+                      color: analysis.dollar_gap.total_gap > 0 ? "var(--accent)" : "var(--gain)",
+                    }}
                   >
                     ${analysis.dollar_gap.total_gap.toFixed(2)}
                   </span>
-                  <span className="text-sm mb-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
-                    {analysis.dollar_gap.total_gap > 0 ? "missed" : "— already optimal!"}
+                  <span className="serif" style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-3)" }}>
+                    {analysis.dollar_gap.total_gap > 0 ? "missed last cycle" : "— already optimal!"}
                   </span>
                 </div>
               </div>
@@ -478,7 +861,7 @@ export default function PortfolioPage() {
               {/* Per-category breakdown */}
               <div
                 className="rounded-2xl overflow-hidden"
-                style={{ border: "1px solid var(--border-dim)" }}
+                style={{ border: "1px solid var(--rule)" }}
               >
                 {analysis.dollar_gap.entries.map((entry, i) => {
                   const hasGap = entry.gap > 0;
@@ -487,12 +870,12 @@ export default function PortfolioPage() {
                       key={entry.category_name}
                       className="px-5 py-3.5 flex items-center justify-between"
                       style={{
-                        background: "var(--bg-elevated)",
+                        background: "var(--card-fill)",
                         borderTop: i > 0 ? "1px solid var(--border-dim)" : "none",
                       }}
                     >
                       <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-white">{entry.category_name}</p>
+                        <p className="mono" style={{ fontSize: 13, color: "var(--ink)" }}>{entry.category_name}</p>
                         <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                           Used: {entry.card_used}
                           {hasGap && entry.optimal_card !== entry.card_used && (
@@ -524,7 +907,7 @@ export default function PortfolioPage() {
           ) : (
             <div
               className="rounded-2xl p-6 text-center"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+              style={{ background: "var(--card-fill)", border: "1px solid var(--rule)" }}
             >
               <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
                 Log spend via the optimizer to see opportunity cost analysis
@@ -538,51 +921,56 @@ export default function PortfolioPage() {
       {hasWallet && (
         <AnimatedSection delay={0.25} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
-            <Target size={16} style={{ color: "#14B8A6" }} />
-            <h2 className="text-lg font-bold text-white">Wallet Coverage</h2>
+            <Target size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Wallet Coverage</h2>
           </div>
 
           {analysisLoading ? (
             <SkeletonCard />
           ) : analysis && analysis.utilization.gaps.length > 0 ? (
             <>
-              {/* Score hero */}
+              {/* Score hero — editorial */}
               <div
-                className="rounded-2xl p-6 mb-3 flex items-center gap-6"
                 style={{
-                  background: "linear-gradient(135deg, rgba(13,148,136,0.08), rgba(15,10,18,0.95))",
-                  border: "1px solid rgba(13,148,136,0.2)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 14,
+                  background: "var(--card-fill-strong)",
+                  padding: "20px 22px",
+                  marginBottom: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 22,
+                  flexWrap: "wrap",
                 }}
               >
-                {/* Circular score */}
-                <div className="relative w-20 h-20 shrink-0">
-                  <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="6" />
+                <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0 }}>
+                  <svg width="88" height="88" viewBox="0 0 88 88" style={{ transform: "rotate(-90deg)" }}>
+                    <circle cx="44" cy="44" r="38" fill="none" stroke="var(--rule)" strokeWidth="3" />
                     <circle
-                      cx="40" cy="40" r="34" fill="none"
-                      stroke="#0D9488"
-                      strokeWidth="6"
+                      cx="44" cy="44" r="38" fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth="3"
                       strokeLinecap="round"
-                      strokeDasharray={`${analysis.utilization.score * 213.6} 213.6`}
-                      className="transition-all duration-1000"
+                      strokeDasharray={`${analysis.utilization.score * 238.76} 238.76`}
+                      style={{ transition: "stroke-dasharray 1s cubic-bezier(.16,1,.3,1)" }}
                     />
                   </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xl font-bold text-white">
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)" }}>
                       {Math.round(analysis.utilization.score * 100)}%
                     </span>
                   </div>
                 </div>
-                <div>
-                  <p className="text-[15px] font-semibold text-white mb-1">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <h3 className="display" style={{ fontSize: 22, margin: 0, lineHeight: 1.15 }}>
                     {analysis.utilization.covered_categories}/{analysis.utilization.total_categories} categories covered
-                  </p>
-                  <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                  </h3>
+                  <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, marginTop: 4, lineHeight: 1.45 }}>
                     {analysis.utilization.score >= 0.8
-                      ? "Great coverage! Your wallet handles most spend categories well."
+                      ? "Great coverage. Your wallet handles most categories well."
                       : analysis.utilization.score >= 0.5
-                        ? "Good start. Consider adding cards for uncovered categories."
-                        : "You have gaps in several categories. Adding 1-2 cards could help."}
+                        ? "Good start. Consider adding cards for the uncovered categories."
+                        : "Gaps in several categories. Adding one or two more cards would help."}
                   </p>
                 </div>
               </div>
@@ -603,7 +991,7 @@ export default function PortfolioPage() {
                     }}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] font-medium text-white">{gap.category_name}</span>
+                      <span className="mono" style={{ fontSize: 12, color: "var(--ink)", fontWeight: 600 }}>{gap.category_name}</span>
                       <span
                         className="text-[10px] font-bold"
                         style={{ color: gap.is_covered ? "#34D399" : "#F87171" }}
@@ -621,7 +1009,7 @@ export default function PortfolioPage() {
           ) : (
             <div
               className="rounded-2xl p-6 text-center"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+              style={{ background: "var(--card-fill)", border: "1px solid var(--rule)" }}
             >
               <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
                 Add cards to see your wallet coverage analysis
@@ -631,26 +1019,43 @@ export default function PortfolioPage() {
         </AnimatedSection>
       )}
 
-      {/* ── Onboarding CTA if wallet empty ── */}
+      {/* ── Onboarding CTA if wallet empty — editorial ── */}
       {!hasWallet && (
         <div
-          className="rounded-2xl p-6 text-center"
           style={{
-            background: "linear-gradient(135deg, rgba(13,148,136,0.08) 0%, rgba(8,9,14,0.8) 100%)",
-            border: "1px solid rgba(13,148,136,0.18)",
+            borderTop: "1px solid var(--ink)",
+            borderBottom: "1px solid var(--rule)",
+            padding: "30px 0 32px",
+            textAlign: "center",
           }}
         >
-          <Zap size={28} className="mx-auto mb-3" style={{ color: "#0D9488" }} />
-          <p className="font-semibold text-white mb-1">Get personalized recommendations</p>
-          <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.4)" }}>
-            Answer 4 quick questions to find your perfect card stack
+          <span className="eyebrow" style={{ color: "var(--accent)" }}>Build a wallet</span>
+          <h3 className="display" style={{ fontSize: "clamp(28px, 4vw, 40px)", margin: "10px 0 0", lineHeight: 1, fontStyle: "italic" }}>
+            Four questions, one stack.
+          </h3>
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 10, marginBottom: 18 }}>
+            Answer four quick questions and we&apos;ll model your perfect Canadian card stack.
           </p>
           <button
             onClick={() => router.push("/onboarding")}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-[15px] text-white transition-all"
-            style={{ background: "#0D9488" }}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "14px 26px",
+              borderRadius: 8,
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+            }}
           >
-            Start quiz <ChevronRight size={16} />
+            Start quiz <ChevronRight size={14} />
           </button>
         </div>
       )}

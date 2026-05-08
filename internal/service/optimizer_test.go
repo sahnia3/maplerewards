@@ -81,6 +81,10 @@ func (m *mockWalletRepo) UpdateBalance(ctx context.Context, userID, cardID strin
 	return nil
 }
 
+func (m *mockWalletRepo) UpdateCardDetails(ctx context.Context, userID, cardID string, req model.UpdateCardDetailsRequest) error {
+	return nil
+}
+
 type mockValuationRepo struct {
 	cpps map[string]float64 // keyed by "slug:segment"
 }

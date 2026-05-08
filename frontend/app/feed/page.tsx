@@ -1,457 +1,381 @@
 "use client";
 
 import { useState } from "react";
-import { ARTICLES } from "@/lib/articles";
-import type { Article } from "@/lib/articles";
-import { Clock, Tag, Zap, ArrowLeft, ChevronRight } from "lucide-react";
-import { AnimatedList, AnimatedItem, AnimatedSection } from "@/components/ui/animated-list";
-import { EmptyFeed } from "@/components/ui/empty-state";
-import ReactMarkdown from "react-markdown";
-import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import { ARTICLES, articleCover, articleCoverFallback } from "@/lib/articles";
+import type { Article } from "@/lib/articles";
+import { PageMasthead } from "@/components/editorial/page-masthead";
+import { LeafDivider } from "@/components/editorial/leaf-divider";
 
 const CATEGORIES = [
-  { slug: "all", label: "All", emoji: "\uD83D\uDCCB" },
-  { slug: "guide", label: "Guides", emoji: "\uD83D\uDCD6" },
-  { slug: "card", label: "Cards", emoji: "\uD83D\uDCB3" },
-  { slug: "tip", label: "Tips", emoji: "\uD83D\uDCA1" },
-  { slug: "news", label: "News", emoji: "\uD83D\uDCF0" },
+  { slug: "all",   label: "All" },
+  { slug: "guide", label: "Guides" },
+  { slug: "card",  label: "Cards" },
+  { slug: "tip",   label: "Tips" },
+  { slug: "news",  label: "News" },
 ] as const;
 
-function ArticleCard({
-  article,
-  featured = false,
-  onClick,
-}: {
-  article: Article;
-  featured?: boolean;
-  onClick: () => void;
-}) {
-  const dateStr = new Date(article.date).toLocaleDateString("en-CA", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+type CatSlug = (typeof CATEGORIES)[number]["slug"];
+
+export default function FeedPage() {
+  const [filter, setFilter] = useState<CatSlug>("all");
+  const [open, setOpen] = useState<Article | null>(null);
+
+  const filtered = filter === "all" ? ARTICLES : ARTICLES.filter((a) => a.category === filter);
+  const lead = filtered[0];
+  const rest = filtered.slice(1);
+
+  if (open) {
+    return <ArticleView article={open} onClose={() => setOpen(null)} />;
+  }
 
   return (
-    <div
-      onClick={onClick}
-      className={`rounded-2xl overflow-hidden cursor-pointer group hover-accent hover-lift ${
-        featured ? "col-span-2" : ""
-      }`}
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.07)",
-      }}
-    >
-      {/* Emoji hero */}
-      <div
-        className={`flex items-center justify-center ${
-          featured ? "h-36" : "h-24"
-        }`}
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(13,148,136,0.08) 0%, rgba(8,9,14,0.6) 100%)",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-        }}
-      >
-        <span className={featured ? "text-6xl" : "text-4xl"}>
-          {article.emoji}
-        </span>
-      </div>
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <PageMasthead
+          eyebrow="Feed"
+          eyebrowEnd={`${ARTICLES.length} essays · CAD`}
+          title={
+            <>
+              The <span style={{ fontStyle: "italic" }}>maple</span> dispatch.
+            </>
+          }
+          lede="Long-form essays, sweet-spot guides, and quarterly devaluation watches — written for Canadian rewards power-users."
+        />
 
-      <div className="p-4">
-        {/* Meta row */}
-        <div className="flex items-center gap-2 mb-2">
-          <span
-            className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
-            style={{ background: "rgba(13,148,136,0.12)", color: "#0D9488" }}
-          >
-            {article.category}
-          </span>
-          <span
-            className="flex items-center gap-1 text-[11px]"
-            style={{ color: "rgba(255,255,255,0.3)" }}
-          >
-            <Clock size={10} />
-            {article.readTime} min read
-          </span>
-          <span
-            className="ml-auto text-[11px]"
-            style={{ color: "rgba(255,255,255,0.25)" }}
-          >
-            {dateStr}
-          </span>
-        </div>
-
-        <h3
-          className={`font-bold leading-snug mb-2 group-hover:text-white transition-colors ${
-            featured ? "text-lg" : "text-sm"
-          }`}
-          style={{ color: "rgba(255,255,255,0.9)" }}
-        >
-          {article.title}
-        </h3>
-
-        <p
-          className={`leading-relaxed mb-3 ${
-            featured ? "text-sm" : "text-xs"
-          }`}
-          style={{ color: "rgba(255,255,255,0.45)" }}
-        >
-          {article.excerpt}
-        </p>
-
-        {/* Tags + Read more */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-wrap gap-1.5">
-            {article.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
+        {/* Filter pills */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 32 }}>
+          {CATEGORIES.map((c) => {
+            const active = filter === c.slug;
+            return (
+              <button
+                key={c.slug}
+                type="button"
+                onClick={() => setFilter(c.slug)}
+                className="mono"
                 style={{
-                  background: "rgba(255,255,255,0.06)",
-                  color: "rgba(255,255,255,0.4)",
+                  padding: "6px 14px",
+                  borderRadius: 999,
+                  border: `1px solid ${active ? "var(--accent)" : "var(--rule)"}`,
+                  background: active ? "var(--accent)" : "transparent",
+                  color: active ? "#fff" : "var(--ink-2)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
                 }}
               >
-                <Tag size={8} />
-                {tag}
-              </span>
-            ))}
-          </div>
-          <span
-            className="flex items-center gap-0.5 text-[11px] font-medium shrink-0 ml-2"
-            style={{ color: "#0D9488" }}
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Lead article — full-width hero photo + masthead text */}
+        {lead && (
+          <article
+            onClick={() => setOpen(lead)}
+            className="feed-lead"
+            style={{
+              borderTop: "1px solid var(--ink)",
+              borderBottom: "1px solid var(--rule)",
+              paddingBottom: 36,
+              marginBottom: 18,
+              cursor: "pointer",
+            }}
           >
-            Read <ChevronRight size={12} />
-          </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={articleCover(lead)}
+              alt={lead.title}
+              loading="eager"
+              onError={(e) => {
+                const t = e.currentTarget;
+                if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(lead.slug); }
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                aspectRatio: "16 / 9",
+                objectFit: "cover",
+                marginTop: 22,
+                borderRadius: 14,
+                boxShadow: "var(--shadow-1)",
+              }}
+            />
+            <div style={{ paddingTop: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <span className="eyebrow" style={{ color: "var(--accent)" }}>{lead.category}</span>
+                <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
+                <span className="eyebrow">
+                  {new Date(lead.date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+                <span className="eyebrow">·</span>
+                <span className="eyebrow">{lead.readTime}m read</span>
+              </div>
+              <h2
+                className="display"
+                style={{
+                  fontSize: "clamp(32px, 4vw, 52px)",
+                  margin: 0,
+                  lineHeight: 0.96,
+                  letterSpacing: "-0.015em",
+                  maxWidth: 920,
+                }}
+              >
+                {lead.title}
+              </h2>
+              <p
+                className="serif"
+                style={{
+                  marginTop: 14,
+                  fontSize: 18,
+                  fontStyle: "italic",
+                  color: "var(--ink-2)",
+                  lineHeight: 1.45,
+                  maxWidth: 720,
+                }}
+              >
+                {lead.excerpt}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18 }}>
+                {lead.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: "var(--ink-3)",
+                      letterSpacing: "0.10em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    #{t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </article>
+        )}
+
+        {/* Article ledger — thumbnail + category + title/excerpt + date + read time */}
+        <div style={{ borderTop: "1px solid var(--rule)" }}>
+          {rest.map((a, i) => (
+            <article
+              key={a.slug}
+              onClick={() => setOpen(a)}
+              className="feed-row"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "92px 70px 1fr 100px 80px",
+                alignItems: "center",
+                gap: 18,
+                padding: "16px 4px",
+                borderTop: i > 0 ? "1px solid var(--rule)" : "none",
+                cursor: "pointer",
+                transition: "background 160ms",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <div
+                style={{
+                  width: 92,
+                  height: 64,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  border: "1px solid var(--rule)",
+                  background: "var(--card-fill)",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={articleCover(a)}
+                  alt={a.title}
+                  loading="lazy"
+                  onError={(e) => {
+                    const t = e.currentTarget;
+                    if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(a.slug); }
+                  }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              </div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+                {a.category}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <h3
+                  className="display"
+                  style={{
+                    fontSize: 20,
+                    margin: 0,
+                    lineHeight: 1.15,
+                    letterSpacing: "-0.005em",
+                    color: "var(--ink)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {a.title}
+                </h3>
+                <p
+                  className="serif"
+                  style={{
+                    marginTop: 3,
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    color: "var(--ink-3)",
+                    lineHeight: 1.4,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {a.excerpt}
+                </p>
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+                {new Date(a.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "right", letterSpacing: "0.04em" }}>
+                {a.readTime} min →
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function ArticleReader({
-  article,
-  onBack,
-}: {
-  article: Article;
-  onBack: () => void;
-}) {
-  const dateStr = new Date(article.date).toLocaleDateString("en-CA", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-
+/* ── Article reading view ─────────────────────────────────────────────── */
+function ArticleView({ article, onClose }: { article: Article; onClose: () => void }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-    >
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-[13px] font-medium mb-6 transition-opacity hover:opacity-70"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        <ArrowLeft size={14} />
-        Back to feed
-      </button>
-
-      {/* Article hero */}
-      <div
-        className="rounded-2xl overflow-hidden mb-6"
-        style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-        }}
-      >
-        <div
-          className="flex items-center justify-center h-40"
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 740, margin: "0 auto", padding: "24px clamp(20px, 3vw, 40px) 80px" }}>
+        <button
+          onClick={onClose}
+          className="mono"
           style={{
-            background:
-              "linear-gradient(135deg, rgba(13,148,136,0.10) 0%, rgba(8,9,14,0.8) 100%)",
-            borderBottom: "1px solid rgba(255,255,255,0.05)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 24,
+            fontSize: 11,
+            color: "var(--ink-3)",
+            letterSpacing: "0.10em",
+            textTransform: "uppercase",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
           }}
         >
-          <span className="text-7xl">{article.emoji}</span>
+          ← Back to dispatch
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          <span className="eyebrow" style={{ color: "var(--accent)" }}>{article.category}</span>
+          <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
+          <span className="eyebrow">
+            {new Date(article.date).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" })}
+          </span>
+          <span className="eyebrow">·</span>
+          <span className="eyebrow">{article.readTime} min read</span>
         </div>
 
-        <div className="p-6">
-          {/* Meta */}
-          <div className="flex items-center gap-3 mb-3">
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
-              style={{ background: "rgba(13,148,136,0.12)", color: "#0D9488" }}
-            >
-              {article.category}
-            </span>
-            <span
-              className="flex items-center gap-1 text-[12px]"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              <Clock size={11} />
-              {article.readTime} min read
-            </span>
-            <span
-              className="text-[12px]"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              {dateStr}
-            </span>
-          </div>
+        {/* Cover photo — sits between the kicker line and the title */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={articleCover(article)}
+          alt={article.title}
+          loading="eager"
+          onError={(e) => {
+            const t = e.currentTarget;
+            if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(article.slug); }
+          }}
+          style={{
+            display: "block",
+            width: "100%",
+            aspectRatio: "16 / 9",
+            objectFit: "cover",
+            borderRadius: 14,
+            margin: "20px 0 24px",
+            boxShadow: "var(--shadow-1)",
+          }}
+        />
 
-          {/* Title */}
-          <h1 className="text-[22px] font-bold text-white leading-tight mb-3">
-            {article.title}
-          </h1>
+        <h1
+          className="display"
+          style={{ fontSize: "clamp(36px, 4.5vw, 52px)", margin: 0, lineHeight: 1, letterSpacing: "-0.015em" }}
+        >
+          {article.title}
+        </h1>
 
-          {/* Excerpt */}
-          <p
-            className="text-[14px] leading-relaxed"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            {article.excerpt}
-          </p>
-        </div>
-      </div>
+        <p
+          className="serif"
+          style={{
+            marginTop: 18,
+            fontSize: 19,
+            fontStyle: "italic",
+            color: "var(--ink-2)",
+            lineHeight: 1.4,
+            paddingBottom: 24,
+            borderBottom: "1px solid var(--rule)",
+          }}
+        >
+          {article.excerpt}
+        </p>
 
-      {/* Article body */}
-      <div
-        className="rounded-2xl p-6 mb-6"
-        style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-dim)",
-        }}
-      >
-        <div className="prose prose-invert prose-sm max-w-none text-[14px] leading-relaxed [&>h2]:text-[17px] [&>h2]:font-bold [&>h2]:text-white [&>h2]:mt-8 [&>h2]:mb-3 [&>h3]:text-[15px] [&>h3]:font-semibold [&>h3]:text-white [&>h3]:mt-6 [&>h3]:mb-2 [&>p]:mb-3 [&>ul]:mb-3 [&>ol]:mb-3 [&>blockquote]:border-l-2 [&>blockquote]:border-[#0D9488] [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-[var(--text-secondary)] [&_table]:w-full [&_table]:text-[13px] [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:pb-2 [&_th]:pr-4 [&_td]:py-1.5 [&_td]:pr-4 [&_td]:border-t [&_td]:border-white/5 [&_strong]:text-white [&_a]:text-[#0D9488] [&>h2:first-child]:mt-0">
+        <div className="serif article-body" style={{ fontSize: 17, color: "var(--ink-2)", lineHeight: 1.7, marginTop: 28 }}>
           <ReactMarkdown>{article.body}</ReactMarkdown>
         </div>
-      </div>
 
-      {/* Related cards */}
-      {article.relatedCards && article.relatedCards.length > 0 && (
-        <div
-          className="rounded-2xl p-5 mb-6"
-          style={{
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border-dim)",
-          }}
-        >
-          <h3 className="text-[13px] font-semibold text-white mb-3">
-            Related Cards
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {article.relatedCards.map((card) => (
-              <Link
-                key={card}
-                href={`/cards?q=${encodeURIComponent(card)}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all hover:scale-[1.02]"
-                style={{
-                  background: "rgba(13,148,136,0.08)",
-                  border: "1px solid rgba(13,148,136,0.18)",
-                  color: "#14B8A6",
-                }}
-              >
-                <span className="text-[10px]">💳</span>
-                {card}
-              </Link>
-            ))}
+        <LeafDivider />
+
+        {article.relatedCards && article.relatedCards.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <span className="eyebrow">Related cards</span>
+            <ul style={{ marginTop: 12, padding: 0, listStyle: "none", display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {article.relatedCards.map((c) => (
+                <li key={c}>
+                  <Link
+                    href="/cards"
+                    className="mono"
+                    style={{
+                      display: "inline-block",
+                      padding: "8px 14px",
+                      border: "1px solid var(--rule)",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      color: "var(--ink-2)",
+                      letterSpacing: "0.04em",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {c}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      )}
-
-      {/* Tags */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {article.tags.map((tag) => (
-          <span
-            key={tag}
-            className="text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              color: "rgba(255,255,255,0.4)",
-            }}
-          >
-            <Tag size={9} />
-            {tag}
-          </span>
-        ))}
+        )}
       </div>
 
-      {/* Back to feed */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-[13px] font-medium transition-opacity hover:opacity-70"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        <ArrowLeft size={14} />
-        Back to feed
-      </button>
-    </motion.div>
-  );
-}
-
-export default function FeedPage() {
-  const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [openArticle, setOpenArticle] = useState<Article | null>(null);
-
-  const filtered =
-    activeCategory === "all"
-      ? ARTICLES
-      : ARTICLES.filter((a) => a.category === activeCategory);
-
-  const [featured, ...rest] = filtered;
-
-  return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient */}
-      <div
-        className="orb w-[400px] h-[250px] top-[-80px] left-[-50px]"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(13,148,136,0.06) 0%, transparent 70%)",
-        }}
-      />
-
-      <div className="relative max-w-[760px] mx-auto px-6 pt-8 pb-24">
-        <AnimatePresence mode="wait">
-          {openArticle ? (
-            <ArticleReader
-              key="reader"
-              article={openArticle}
-              onBack={() => setOpenArticle(null)}
-            />
-          ) : (
-            <motion.div
-              key="feed"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* Header */}
-              <AnimatedSection>
-                <p
-                  className="label-xs mb-1.5"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  Feed
-                </p>
-                <h1 className="title text-white mb-1">Rewards Intelligence</h1>
-                <p
-                  className="text-[14px]"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Guides, tips, and card news to maximize your rewards
-                </p>
-              </AnimatedSection>
-
-              {/* Quick tip banner */}
-              <AnimatedSection delay={0.05}>
-                <div
-                  className="rounded-2xl p-4 mt-6 mb-7 flex items-start gap-3 hover-accent"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(13,148,136,0.10) 0%, rgba(8,9,14,0.8) 100%)",
-                    border: "1px solid rgba(13,148,136,0.20)",
-                  }}
-                >
-                  <Zap
-                    size={16}
-                    className="mt-0.5 shrink-0"
-                    style={{ color: "#0D9488" }}
-                  />
-                  <div>
-                    <p className="text-[13px] font-semibold text-white mb-0.5">
-                      Tip of the day
-                    </p>
-                    <p
-                      className="text-[12px]"
-                      style={{ color: "rgba(255,255,255,0.55)" }}
-                    >
-                      Transferring Amex MR points to Aeroplan for business class
-                      flights can yield 3\u20135\u00A2 per point \u2014 3\u00D7 more than booking
-                      through Amex Travel.
-                    </p>
-                  </div>
-                </div>
-              </AnimatedSection>
-
-              {/* Category filter pills */}
-              <AnimatedSection delay={0.1}>
-                <div className="flex gap-2 overflow-x-auto pb-1 mb-6 scroll-x">
-                  {CATEGORIES.map((cat) => (
-                    <button
-                      key={cat.slug}
-                      onClick={() => setActiveCategory(cat.slug)}
-                      className={`pill-btn ${
-                        activeCategory === cat.slug ? "active" : ""
-                      }`}
-                      style={
-                        activeCategory === cat.slug
-                          ? {
-                              background: "#0D9488",
-                              color: "white",
-                              borderColor: "#0D9488",
-                            }
-                          : undefined
-                      }
-                    >
-                      <span>{cat.emoji}</span>
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-              </AnimatedSection>
-
-              {/* Article count */}
-              <p
-                className="text-[12px] mb-4"
-                style={{ color: "var(--text-tertiary)" }}
-              >
-                {filtered.length} article{filtered.length !== 1 ? "s" : ""}
-              </p>
-
-              {/* Articles grid */}
-              {filtered.length === 0 ? (
-                <EmptyFeed />
-              ) : (
-                <AnimatedList className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {featured && (
-                    <AnimatedItem>
-                      <ArticleCard
-                        article={featured}
-                        featured
-                        onClick={() => setOpenArticle(featured)}
-                      />
-                    </AnimatedItem>
-                  )}
-                  {rest.map((article) => (
-                    <AnimatedItem key={article.slug}>
-                      <ArticleCard
-                        article={article}
-                        onClick={() => setOpenArticle(article)}
-                      />
-                    </AnimatedItem>
-                  ))}
-                </AnimatedList>
-              )}
-
-              {/* Footer note */}
-              <p
-                className="text-center text-[11px] mt-10"
-                style={{ color: "rgba(255,255,255,0.2)" }}
-              >
-                All point values are estimates. Verify with your card issuer
-                before redeeming.
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <style jsx global>{`
+        .article-body h2 { font-family: var(--font-display); font-size: 30px; margin: 38px 0 14px; letter-spacing: -0.01em; color: var(--ink); }
+        .article-body h3 { font-family: var(--font-display); font-size: 22px; margin: 28px 0 10px; color: var(--ink); }
+        .article-body p { margin: 0 0 16px; }
+        .article-body ul, .article-body ol { padding-left: 20px; margin: 0 0 16px; }
+        .article-body li { margin: 4px 0; }
+        .article-body strong { color: var(--ink); font-weight: 500; }
+        .article-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+        .article-body code { font-family: var(--font-mono); font-size: 14px; background: var(--card-fill); padding: 2px 6px; border-radius: 4px; }
+        .article-body blockquote { border-left: 2px solid var(--accent); padding-left: 18px; margin: 22px 0; color: var(--ink-2); font-style: italic; }
+      `}</style>
     </div>
   );
 }

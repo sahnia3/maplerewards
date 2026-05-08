@@ -1,39 +1,39 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { useWallet } from "@/contexts/wallet-context";
 import { listCards } from "@/lib/api";
 import type { Card, UserCard } from "@/lib/types";
-import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
-import { SkeletonCard } from "@/components/ui/skeleton";
 import { CardEditModal } from "@/components/cards/card-edit-modal";
+import { EditorialCardVisual } from "@/components/editorial/editorial-card";
+import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { cardImageUrl } from "@/lib/card-images";
 
-function CardRowSkeleton() {
-  return (
-    <div
-      className="flex items-center gap-4 px-4 py-3.5 rounded-xl"
-      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)", borderRadius: 10 }}
-    >
-      <div className="w-10 h-10 rounded-lg shimmer flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="h-3.5 w-36 rounded shimmer mb-2" />
-        <div className="h-3 w-24 rounded shimmer" />
-      </div>
-      <div className="h-8 w-20 rounded-lg shimmer flex-shrink-0" />
-    </div>
-  );
-}
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Editorial Cards page.
+ *
+ *   1. Page masthead — eyebrow + display title + serif lede + count
+ *   2. Wallet rail — horizontal stylised card visuals you can edit
+ *   3. Filter pills (issuer / network / fee tier)
+ *   4. Available-cards ledger — editorial table rows (no card chips)
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+type Filter = {
+  network?: "amex" | "visa" | "mastercard";
+  feeTier?: "free" | "low" | "premium";
+  issuer?: string;
+};
 
 export default function CardsPage() {
-  const { wallet, isLoading: walletLoading, addCard, getCardValueRange } = useWallet();
+  const { wallet, isLoading: walletLoading, addCard } = useWallet();
   const [allCards, setAllCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(true);
   const [cardsError, setCardsError] = useState<string | null>(null);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [editingCard, setEditingCard] = useState<UserCard | null>(null);
+  const [filter, setFilter] = useState<Filter>({});
   const carouselRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,7 +44,6 @@ export default function CardsPage() {
       .finally(() => setCardsLoading(false));
   }, []);
 
-  // Track which card IDs the user already has
   const walletCardIds = new Set(wallet.map((uc) => uc.card_id));
 
   async function handleAddCard(cardId: string) {
@@ -53,304 +52,508 @@ export default function CardsPage() {
       await addCard(cardId);
       setAddedIds((prev) => new Set([...prev, cardId]));
     } catch {
-      // silently handle
+      /* noop */
     } finally {
       setAddingCardId(null);
     }
   }
 
-  function formatFee(fee: number): string {
-    if (fee === 0) return "No annual fee";
-    return `$${fee}/yr`;
-  }
+  // Filtered set + issuer list (top issuers by frequency)
+  const issuers = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allCards.forEach((c) => (counts[c.issuer] = (counts[c.issuer] ?? 0) + 1));
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 6)
+      .map(([n]) => n);
+  }, [allCards]);
 
-  function formatBonus(card: Card): string {
-    if (!card.welcome_bonus_points) return "—";
-    return `${card.welcome_bonus_points.toLocaleString()} pts`;
-  }
+  const filtered = useMemo(() => {
+    return allCards.filter((c) => {
+      if (filter.network && c.network !== filter.network) return false;
+      if (filter.issuer && c.issuer !== filter.issuer) return false;
+      if (filter.feeTier === "free" && c.annual_fee !== 0) return false;
+      if (filter.feeTier === "low" && (c.annual_fee === 0 || c.annual_fee >= 150)) return false;
+      if (filter.feeTier === "premium" && c.annual_fee < 150) return false;
+      return true;
+    });
+  }, [allCards, filter]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient orbs */}
-      <div
-        className="orb w-[450px] h-[300px] top-[-70px] left-[10%]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.09) 0%, transparent 70%)" }}
-      />
-      <div
-        className="orb w-[220px] h-[220px] top-[400px] right-[5%]"
-        style={{ background: "radial-gradient(ellipse, rgba(13,148,136,0.05) 0%, transparent 70%)" }}
-      />
-
-      <div className="relative max-w-5xl mx-auto px-6 pt-8 pb-24">
-
-        {/* Header */}
-        <AnimatedSection className="flex items-end justify-between mb-8">
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 80px" }}>
+        {/* ── Masthead ─────────────────────────────────────────────── */}
+        <header
+          style={{
+            borderBottom: "1px solid var(--rule)",
+            paddingBottom: 28,
+            marginBottom: 32,
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            alignItems: "end",
+            gap: 24,
+          }}
+        >
           <div>
-            <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>Your collection</p>
-            <h1 className="title text-white">My Cards</h1>
-            {!walletLoading && wallet.length > 0 && (
-              <p className="text-[14px] mt-1" style={{ color: "var(--text-secondary)" }}>
-                {wallet.length} card{wallet.length !== 1 ? "s" : ""} in wallet
-              </p>
-            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <span className="eyebrow">Catalogue</span>
+              <span className="mr-kicker-line" style={{ maxWidth: 100 }} />
+              <span className="eyebrow">{allCards.length} cards · CAD</span>
+            </div>
+            <h1
+              className="display"
+              style={{ fontSize: "clamp(40px, 5vw, 56px)", margin: 0, letterSpacing: "-0.015em", lineHeight: 0.96 }}
+            >
+              The Canadian<br />
+              <span style={{ color: "var(--accent)" }}>card</span>{" "}
+              <span style={{ fontStyle: "italic" }}>register</span>.
+            </h1>
+            <p
+              className="serif"
+              style={{
+                fontSize: 17,
+                fontStyle: "italic",
+                color: "var(--ink-2)",
+                marginTop: 14,
+                maxWidth: 560,
+                lineHeight: 1.45,
+              }}
+            >
+              Every card priced against your wallet. Annual-fee math, welcome-bonus
+              runways, and effective-return on the categories you actually spend in.
+            </p>
           </div>
           <Link
             href="/wallet"
-            className="flex items-center gap-2 h-10 px-5 rounded-xl font-semibold text-[14px] text-white transition-all maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98]"
+            className="btn btn-primary"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-            </svg>
-            Add a card
+            + Add a card
           </Link>
-        </AnimatedSection>
+        </header>
 
-        {/* Wallet Carousel */}
-        <AnimatedSection delay={0.05} className="mb-10">
-          <p className="label-xs mb-4" style={{ color: "var(--text-tertiary)" }}>Wallet</p>
+        {/* ── Wallet rail ──────────────────────────────────────────── */}
+        <section style={{ marginBottom: 48 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 }}>
+            <div>
+              <span className="eyebrow">Your collection</span>
+              <h2 className="display" style={{ fontSize: 24, margin: "4px 0 0", letterSpacing: "-0.005em" }}>
+                Wallet
+              </h2>
+            </div>
+            <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              {wallet.length} card{wallet.length === 1 ? "" : "s"}
+            </span>
+          </div>
 
           {walletLoading ? (
-            <div className="flex gap-4 overflow-x-auto pb-2">
-              {[1, 2].map((i) => (
+            <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 8 }}>
+              {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  style={{ width: 280, height: 176, borderRadius: 14, flexShrink: 0 }}
+                  style={{
+                    width: 300,
+                    height: 188,
+                    borderRadius: 14,
+                    flexShrink: 0,
+                  }}
                   className="shimmer"
                 />
               ))}
             </div>
           ) : wallet.length === 0 ? (
             <div
-              className="flex flex-col items-center justify-center py-10 rounded-2xl text-center"
               style={{
-                background: "var(--bg-elevated)",
-                border: "1px dashed var(--border-mid)",
-                borderRadius: 12,
+                padding: "48px 32px",
+                textAlign: "center",
+                border: "1px dashed var(--rule-strong)",
+                borderRadius: 14,
+                background: "var(--card-fill)",
               }}
             >
-              <div
-                className="w-12 h-12 rounded-xl mb-3 flex items-center justify-center"
-                style={{ background: "rgba(13,148,136,0.08)", border: "1px solid rgba(13,148,136,0.14)" }}
+              <span className="eyebrow">Empty wallet</span>
+              <h3 className="display" style={{ fontSize: 28, margin: "8px 0 6px" }}>
+                Nothing tracked yet.
+              </h3>
+              <p
+                className="serif"
+                style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-2)", marginBottom: 20, maxWidth: 360, marginInline: "auto", lineHeight: 1.4 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="#0D9488" strokeWidth="1.8" className="w-6 h-6">
-                  <rect x="2" y="7" width="20" height="14" rx="2" />
-                  <path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z" />
-                </svg>
-              </div>
-              <p className="text-[14px] font-semibold text-white mb-1">Your wallet is empty</p>
-              <p className="text-[13px] mb-4" style={{ color: "var(--text-secondary)" }}>
-                Add cards below to start tracking your rewards
+                Add the cards you carry — Maple will start pricing every swipe against
+                them.
               </p>
-              <Link
-                href="/wallet"
-                className="inline-flex items-center gap-2 h-9 px-5 rounded-xl font-semibold text-[13px] text-white maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98] transition-transform"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                </svg>
+              <Link href="/wallet" className="btn btn-primary">
                 Add cards
               </Link>
             </div>
           ) : (
             <div
               ref={carouselRef}
-              className="flex gap-4 overflow-x-auto pb-3"
-              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              style={{
+                display: "flex",
+                gap: 18,
+                overflowX: "auto",
+                paddingBottom: 8,
+                scrollbarWidth: "none",
+                msOverflowStyle: "none" as never,
+              }}
             >
               {wallet.map((uc) => (
-                <div key={uc.id} className="group flex-shrink-0 flex flex-col items-center gap-1.5">
-                  <button
-                    onClick={() => setEditingCard(uc)}
-                    className="cursor-pointer outline-none transition-transform hover:-translate-y-1 focus:outline-none"
-                    style={{ background: "none", border: "none", padding: 0 }}
-                    title={uc.card?.name ?? "Edit card"}
+                <button
+                  key={uc.id}
+                  onClick={() => setEditingCard(uc)}
+                  style={{
+                    flexShrink: 0,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    transition: "transform 200ms cubic-bezier(.2,.7,.2,1)",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-3px)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+                  title={uc.card?.name ?? "Edit card"}
+                >
+                  <EditorialCardVisual
+                    card={{
+                      name: uc.card?.name ?? "Card",
+                      issuer: uc.card?.issuer,
+                      network: uc.card?.network,
+                      imageUrl: cardImageUrl(uc.card?.name),
+                    }}
+                    size="md"
+                  />
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: "var(--ink-3)",
+                      marginTop: 8,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      textAlign: "left",
+                      paddingLeft: 4,
+                    }}
                   >
-                    <CreditCardVisual
-                      card={uc.card}
-                      balance={uc.point_balance}
-                      size="md"
-                    />
-                  </button>
-                  <span className="text-[11px] mt-1 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: "var(--text-tertiary)" }}>
-                    Tap to edit
-                  </span>
-                  {(() => {
-                    const range = getCardValueRange(uc.card_id);
-                    if (!range || (range.low === 0 && range.high === 0)) return null;
-                    return (
-                      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                        ~${range.low.toFixed(0)}–${range.high.toFixed(0)} value
-                      </span>
-                    );
-                  })()}
-                </div>
+                    {(uc.point_balance ?? 0).toLocaleString()} pts
+                  </div>
+                </button>
               ))}
             </div>
           )}
-        </AnimatedSection>
+        </section>
 
-        {/* All Available Cards */}
-        <AnimatedSection delay={0.1}>
-          <div className="flex items-center justify-between mb-4">
-            <p className="label-xs" style={{ color: "var(--text-tertiary)" }}>Available Cards</p>
-            {!cardsLoading && allCards.length > 0 && (
-              <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                {allCards.length} cards
-              </span>
-            )}
+        <LeafDivider />
+
+        {/* ── Filter pills ─────────────────────────────────────────── */}
+        <section style={{ marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 }}>
+            <div>
+              <span className="eyebrow">All cards</span>
+              <h2 className="display" style={{ fontSize: 24, margin: "4px 0 0", letterSpacing: "-0.005em" }}>
+                Available register
+              </h2>
+            </div>
+            <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              {filtered.length} matching
+            </span>
           </div>
 
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+            {/* Network */}
+            <FilterChip
+              label="All networks"
+              active={!filter.network}
+              onClick={() => setFilter((f) => ({ ...f, network: undefined }))}
+            />
+            {(["amex", "visa", "mastercard"] as const).map((n) => (
+              <FilterChip
+                key={n}
+                label={n.toUpperCase()}
+                active={filter.network === n}
+                onClick={() =>
+                  setFilter((f) => ({ ...f, network: f.network === n ? undefined : n }))
+                }
+              />
+            ))}
+            <span style={{ width: 1, height: 22, background: "var(--rule)", margin: "0 6px" }} />
+            {/* Fee tier */}
+            <FilterChip
+              label="No AF"
+              active={filter.feeTier === "free"}
+              onClick={() =>
+                setFilter((f) => ({ ...f, feeTier: f.feeTier === "free" ? undefined : "free" }))
+              }
+            />
+            <FilterChip
+              label="Low fee"
+              active={filter.feeTier === "low"}
+              onClick={() =>
+                setFilter((f) => ({ ...f, feeTier: f.feeTier === "low" ? undefined : "low" }))
+              }
+            />
+            <FilterChip
+              label="Premium"
+              active={filter.feeTier === "premium"}
+              onClick={() =>
+                setFilter((f) => ({ ...f, feeTier: f.feeTier === "premium" ? undefined : "premium" }))
+              }
+            />
+            <span style={{ width: 1, height: 22, background: "var(--rule)", margin: "0 6px" }} />
+            {/* Issuer (top 6) */}
+            {issuers.map((iss) => (
+              <FilterChip
+                key={iss}
+                label={iss}
+                active={filter.issuer === iss}
+                onClick={() =>
+                  setFilter((f) => ({ ...f, issuer: f.issuer === iss ? undefined : iss }))
+                }
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* ── Available-cards ledger ──────────────────────────────── */}
+        <section>
           {cardsLoading ? (
-            <div className="flex flex-col gap-2.5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <CardRowSkeleton key={i} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <RowSkeleton key={i} />
               ))}
             </div>
           ) : cardsError ? (
             <div
-              className="rounded-2xl p-8 text-center"
               style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid rgba(13,148,136,0.2)",
-                borderRadius: 12,
+                padding: "32px",
+                textAlign: "center",
+                border: "1px solid var(--accent-soft)",
+                borderRadius: 14,
+                background: "var(--card-fill)",
               }}
             >
-              <p className="text-[14px]" style={{ color: "#14B8A6" }}>{cardsError}</p>
-              <button
-                onClick={() => {
-                  setCardsLoading(true);
-                  listCards()
-                    .then((d) => setAllCards(d ?? []))
-                    .catch(() => setCardsError("Could not load cards"))
-                    .finally(() => setCardsLoading(false));
-                }}
-                className="mt-3 text-[13px] transition-colors hover:text-white"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                Try again
-              </button>
+              <p className="mono" style={{ fontSize: 12, color: "var(--accent)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {cardsError}
+              </p>
             </div>
-          ) : allCards.length === 0 ? (
-            <div
-              className="rounded-2xl p-10 text-center"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-dim)",
-                borderRadius: 12,
-              }}
-            >
-              <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>No cards available yet.</p>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "48px", textAlign: "center" }}>
+              <span className="eyebrow">No matches</span>
+              <p
+                className="serif"
+                style={{ fontStyle: "italic", color: "var(--ink-2)", marginTop: 6, fontSize: 15 }}
+              >
+                Loosen the filters to see more cards.
+              </p>
             </div>
           ) : (
             <div
-              className="rounded-2xl overflow-hidden"
-              style={{ border: "1px solid var(--border-dim)", borderRadius: 12 }}
+              style={{
+                borderTop: "1px solid var(--ink)",
+                borderBottom: "1px solid var(--rule)",
+              }}
             >
-              {allCards.map((card, i) => {
+              {filtered.map((card) => {
                 const inWallet = walletCardIds.has(card.id) || addedIds.has(card.id);
                 const isAdding = addingCardId === card.id;
                 return (
-                  <div
+                  <CardLedgerRow
                     key={card.id}
-                    className="flex items-center gap-4 px-5 py-4 transition-colors hover:!bg-white/[0.03]"
-                    style={{
-                      background: "var(--bg-elevated)",
-                      borderTop: i > 0 ? "1px solid var(--border-dim)" : "none",
-                    }}
-                  >
-                    {/* Card visual thumbnail */}
-                    <div className="flex-shrink-0">
-                      <CreditCardVisual card={card} size="sm" />
-                    </div>
-
-                    {/* Card info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-semibold text-white truncate">{card.name}</p>
-                      <p className="text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
-                        {card.issuer}
-                        <span className="mx-1.5" style={{ color: "var(--text-tertiary)" }}>·</span>
-                        <span style={{ color: "var(--text-tertiary)" }}>{formatFee(card.annual_fee)}</span>
-                      </p>
-                      {card.welcome_bonus_points > 0 && (
-                        <p className="text-[11px] mt-1 font-medium" style={{ color: "#0D9488" }}>
-                          Welcome: {formatBonus(card)} in {card.welcome_bonus_months}mo
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Network badge */}
-                    <div className="hidden sm:block flex-shrink-0">
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-                        style={{
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid var(--border-mid)",
-                          color: "var(--text-tertiary)",
-                        }}
-                      >
-                        {card.network}
-                      </span>
-                    </div>
-
-                    {/* Add to wallet button */}
-                    <button
-                      onClick={() => !inWallet && handleAddCard(card.id)}
-                      disabled={inWallet || isAdding}
-                      className="flex-shrink-0 h-9 px-4 rounded-lg text-[12px] font-semibold transition-all"
-                      style={
-                        inWallet
-                          ? {
-                              background: "rgba(16,185,129,0.10)",
-                              border: "1px solid rgba(16,185,129,0.22)",
-                              color: "#10B981",
-                              cursor: "default",
-                            }
-                          : {
-                              background: isAdding ? "rgba(13,148,136,0.15)" : "rgba(255,255,255,0.06)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              color: "white",
-                              cursor: "pointer",
-                            }
-                      }
-                    >
-                      {inWallet ? (
-                        <span className="flex items-center gap-1.5">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                            <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          Added
-                        </span>
-                      ) : isAdding ? (
-                        <span className="flex items-center gap-1.5">
-                          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
-                          Adding…
-                        </span>
-                      ) : (
-                        "Add to wallet"
-                      )}
-                    </button>
-                  </div>
+                    card={card}
+                    inWallet={inWallet}
+                    isAdding={isAdding}
+                    onAdd={() => !inWallet && handleAddCard(card.id)}
+                  />
                 );
               })}
             </div>
           )}
-        </AnimatedSection>
+        </section>
 
         {editingCard && (
-          <>
-            <CardEditModal
-              card={editingCard}
-              open={!!editingCard}
-              onClose={() => {
-                setEditingCard(null);
-              }}
-            />
-          </>
+          <CardEditModal
+            card={editingCard}
+            open={!!editingCard}
+            onClose={() => setEditingCard(null)}
+          />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Subcomponents ──────────────────────────────────────────────────────── */
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mono"
+      style={{
+        padding: "6px 12px",
+        borderRadius: 999,
+        background: active ? "var(--accent)" : "transparent",
+        color: active ? "#fff" : "var(--ink-2)",
+        border: `1px solid ${active ? "var(--accent)" : "var(--rule)"}`,
+        fontSize: 11,
+        fontWeight: 500,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        cursor: "pointer",
+        transition: "all 180ms cubic-bezier(.2,.7,.2,1)",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CardLedgerRow({
+  card,
+  inWallet,
+  isAdding,
+  onAdd,
+}: {
+  card: Card;
+  inWallet: boolean;
+  isAdding: boolean;
+  onAdd: () => void;
+}) {
+  const fee = card.annual_fee === 0 ? "No annual fee" : `$${card.annual_fee}/yr`;
+  const bonusValue =
+    card.welcome_bonus_points > 0
+      ? `${card.welcome_bonus_points.toLocaleString()} pts`
+      : null;
+  const bonusSpend =
+    card.welcome_bonus_min_spend > 0
+      ? `on $${card.welcome_bonus_min_spend.toLocaleString()} in ${card.welcome_bonus_months}mo`
+      : null;
+
+  return (
+    <Link
+      href={`/cards/${card.id}`}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "84px 1fr 180px 120px 130px",
+        alignItems: "center",
+        gap: 18,
+        padding: "20px 4px",
+        borderTop: "1px solid var(--rule)",
+        textDecoration: "none",
+        color: "inherit",
+        transition: "background 160ms",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {/* Index/network glyph */}
+      <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        {card.network?.toUpperCase() ?? "—"}
+      </div>
+
+      {/* Name + issuer */}
+      <div style={{ minWidth: 0 }}>
+        <div
+          className="display"
+          style={{
+            fontSize: 22,
+            letterSpacing: "-0.005em",
+            color: "var(--ink)",
+            lineHeight: 1.1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {card.name}
+        </div>
+        <div
+          className="serif"
+          style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 2, fontStyle: "italic" }}
+        >
+          {card.issuer}
+          {bonusValue && (
+            <>
+              {" · "}
+              <span className="mono" style={{ fontStyle: "normal", color: "var(--accent)", fontSize: 11, letterSpacing: "0.04em" }}>
+                {bonusValue}
+              </span>
+              {bonusSpend && <span style={{ color: "var(--ink-3)" }}> {bonusSpend}</span>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Fee */}
+      <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
+        {fee}
+      </div>
+
+      {/* CPP / loyalty program slug */}
+      <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+        {(card.loyalty_program?.name ?? "—").toUpperCase()}
+      </div>
+
+      {/* CTA */}
+      <div style={{ justifySelf: "end" }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!inWallet && !isAdding) onAdd();
+          }}
+          disabled={inWallet || isAdding}
+          className="mono"
+          style={{
+            height: 36,
+            padding: "0 16px",
+            borderRadius: 8,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            background: inWallet ? "transparent" : "var(--accent)",
+            color: inWallet ? "var(--gain)" : "#fff",
+            border: inWallet ? "1px solid var(--gain)" : "1px solid var(--accent)",
+            cursor: inWallet || isAdding ? "default" : "pointer",
+            transition: "transform 160ms",
+          }}
+        >
+          {inWallet ? "✓ In wallet" : isAdding ? "Adding…" : "+ Add"}
+        </button>
+      </div>
+    </Link>
+  );
+}
+
+function RowSkeleton() {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "84px 1fr 180px 120px 130px",
+        alignItems: "center",
+        gap: 18,
+        padding: "20px 4px",
+        borderTop: "1px solid var(--rule)",
+      }}
+    >
+      <div style={{ height: 10, width: 60 }} className="shimmer" />
+      <div>
+        <div style={{ height: 20, width: "60%", marginBottom: 6 }} className="shimmer" />
+        <div style={{ height: 12, width: "40%" }} className="shimmer" />
+      </div>
+      <div style={{ height: 12, width: 80 }} className="shimmer" />
+      <div style={{ height: 12, width: 90 }} className="shimmer" />
+      <div style={{ justifySelf: "end", height: 36, width: 90, borderRadius: 8 }} className="shimmer" />
     </div>
   );
 }

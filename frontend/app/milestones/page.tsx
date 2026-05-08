@@ -8,6 +8,7 @@ import { getUserBonuses, activateBonus } from "@/lib/api";
 import type { WelcomeBonus } from "@/lib/types";
 import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
 import { SkeletonCard } from "@/components/ui/skeleton";
+import { PageMasthead } from "@/components/editorial/page-masthead";
 
 function fmtCAD(v: number) {
   return `$${v.toLocaleString("en-CA", {
@@ -78,32 +79,14 @@ export default function MilestonesPage() {
   const completedBonuses = bonuses.filter((b) => b.is_completed);
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div
-        className="orb w-[450px] h-[280px] top-[-60px] left-1/2 -translate-x-1/2"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(245,158,11,0.07) 0%, transparent 70%)",
-        }}
-      />
-
-      <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
-        {/* Header */}
-        <AnimatedSection className="mb-8">
-          <p
-            className="label-xs mb-1.5"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            Bonus tracking
-          </p>
-          <h1 className="title text-white mb-2">Milestones</h1>
-          <p
-            className="text-[14px]"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            Track progress toward welcome bonuses and annual spend thresholds.
-          </p>
-        </AnimatedSection>
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <PageMasthead
+          eyebrow="Bonus tracking"
+          eyebrowEnd={`${activeBonuses.length} active · ${completedBonuses.length} completed`}
+          title={<>The <span style={{ fontStyle: "italic" }}>welcome-bonus</span> ledger.</>}
+          lede="Spend deadlines, dollar runway, and the points you'll bank when each bonus clears — quietly tracked against the cards you carry."
+        />
 
         {isPageLoading ? (
           <div className="flex flex-col gap-4">

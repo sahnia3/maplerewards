@@ -1,63 +1,112 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import { listCategories, optimize, logSpend } from "@/lib/api";
-import { RecommendationCard } from "@/components/recommendation-card";
-import { CustomSelect, type SelectOption } from "@/components/ui/custom-select";
-import { AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
-import { SkeletonCard } from "@/components/ui/skeleton";
-import { EmptyResults } from "@/components/ui/empty-state";
 import { useSession } from "@/contexts/session-context";
 import type { Category, CardRecommendation } from "@/lib/types";
+import { EditorialCardVisual } from "@/components/editorial/editorial-card";
+import { cardImageUrl } from "@/lib/card-images";
 
-const CATEGORY_ICONS: Record<string, string> = {
-  groceries: "🛒", dining: "🍽️", travel: "✈️", gas: "⛽", transit: "🚇",
-  entertainment: "🎬", streaming: "📺", pharmacy: "💊", "foreign-currency": "💱",
-  "everything-else": "💳", default: "💳",
+/** Heuristic network detection from card name — Visa Infinite > Visa > Mastercard > Amex. */
+function inferNetwork(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("amex") || n.includes("american express") || n.includes("platinum")) return "amex";
+  if (n.includes("visa infinite") || n.includes("infinite privilege") || n.includes("avion")) return "visa infinite";
+  if (n.includes("mastercard") || n.includes(" mc ") || n.endsWith(" mc")) return "mastercard";
+  if (n.includes("visa")) return "visa";
+  return "visa";
+}
+function inferIssuer(name: string): string {
+  const n = name.toLowerCase();
+  if (n.startsWith("td ") || n.includes(" td ")) return "TD";
+  if (n.includes("rbc") || n.includes("avion")) return "RBC";
+  if (n.includes("scotia")) return "Scotia";
+  if (n.includes("cibc") || n.includes("aventura") || n.includes("dividend")) return "CIBC";
+  if (n.includes("bmo")) return "BMO";
+  if (n.includes("amex") || n.includes("american express") || n.includes("cobalt") || n.includes("platinum")) return "Amex";
+  if (n.includes("rogers") || n.includes("mastercard")) return "Rogers";
+  if (n.includes("tangerine")) return "Tangerine";
+  if (n.includes("simplii")) return "Simplii";
+  return "";
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Editorial OptimizerForm.
+ *
+ * Layout per prototype optimizer.jsx:
+ *   • Display-serif title above the form (set by parent page)
+ *   • Category pills with soft tint + accent on active
+ *   • Large mono-stamped amount input
+ *   • Quick-amount chips ($25/50/100/250/500/1000)
+ *   • Toggles: redemption segment, Costco (MC-only) merchant
+ *   • Result row 1 — winner: large display number + serif insight + maple CTA
+ *   • Result rows 2-N — runners-up: editorial table rows
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const QUICK_AMOUNTS = [25, 50, 100, 250, 500, 1000];
+
+// Soft category tints (light editorial palette).
+const CAT_TINTS: Record<string, { hue: string; tint: string; emoji: string }> = {
+  groceries:        { hue: "var(--chart-forest)",  tint: "rgba(36,116,90,0.12)",   emoji: "🛒" },
+  dining:           { hue: "var(--chart-copper)",  tint: "rgba(168,90,40,0.12)",   emoji: "🍽" },
+  travel:           { hue: "var(--chart-sky)",     tint: "rgba(56,107,152,0.12)",  emoji: "✈" },
+  "gas-transit":    { hue: "var(--chart-glacier)", tint: "rgba(95,126,147,0.12)",  emoji: "⛽" },
+  pharmacy:         { hue: "var(--chart-plum)",    tint: "rgba(108,78,121,0.12)",  emoji: "℞" },
+  entertainment:    { hue: "var(--chart-gold)",    tint: "rgba(167,122,34,0.14)",  emoji: "♪" },
+  "streaming-digital": { hue: "var(--chart-teal)", tint: "rgba(46,115,121,0.12)",  emoji: "▷" },
+  "everything-else": { hue: "var(--ink-2)",        tint: "var(--card-fill)",       emoji: "·"  },
 };
+function tintFor(slug: string) {
+  return CAT_TINTS[slug] ?? CAT_TINTS["everything-else"];
+}
 
 export function OptimizerForm() {
   const { ensureSession } = useSession();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categorySlug, setCategorySlug] = useState("");
-  const [spendAmount, setSpendAmount] = useState("");
+  const [amount, setAmount] = useState<string>("");
   const [segment, setSegment] = useState<"base" | "business">("base");
+  const [merchant, setMerchant] = useState<"" | "costco_ca">("");
   const [results, setResults] = useState<CardRecommendation[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [catLoading, setCatLoading] = useState(true);
-  const [logged, setLogged] = useState(false);
-  const [logToast, setLogToast] = useState<string | null>(null);
+  const [loggedIds, setLoggedIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     listCategories()
-      .then(setCategories)
+      .then((data) => {
+        setCategories(data);
+        if (data?.[0]?.slug && !categorySlug) setCategorySlug(data[0].slug);
+      })
       .catch(() => setError("Could not load categories"))
       .finally(() => setCatLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const categoryOptions: SelectOption[] = categories.map((cat) => ({
-    value: cat.slug,
-    label: cat.name,
-    icon: CATEGORY_ICONS[cat.slug] ?? CATEGORY_ICONS.default,
-  }));
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function rank() {
     setError(null);
+    if (!categorySlug) {
+      setError("Pick a category");
+      return;
+    }
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
     setLoading(true);
-    setLogged(false);
+    setLoggedIds(new Set());
     try {
       const sid = await ensureSession();
-      const amount = parseFloat(spendAmount);
-      if (isNaN(amount) || amount <= 0) throw new Error("Enter a valid spend amount");
       const recs = await optimize({
         session_id: sid,
         category_slug: categorySlug,
-        spend_amount: amount,
+        spend_amount: amt,
         redemption_segment: segment,
+        ...(merchant ? { merchant } : {}),
       });
       setResults(recs);
     } catch (err: unknown) {
@@ -68,294 +117,631 @@ export function OptimizerForm() {
   }
 
   async function handleLog(rec: CardRecommendation) {
+    if (loggedIds.has(rec.card_id)) return;
     try {
       const sid = await ensureSession();
       await logSpend(sid, {
         card_id: rec.card_id,
         category_slug: categorySlug,
-        amount: parseFloat(spendAmount),
+        amount: parseFloat(amount),
       });
-      setLogged(true);
-      setLogToast("Spend logged ✓");
-      setTimeout(() => setLogToast(null), 4000);
+      setLoggedIds(prev => new Set(prev).add(rec.card_id));
+      setToast(`Logged: ${rec.card_name}`);
+      setTimeout(() => setToast(null), 3500);
     } catch {
-      setLogToast("Failed to log spend");
-      setTimeout(() => setLogToast(null), 4000);
+      setToast("Failed to log spend");
+      setTimeout(() => setToast(null), 3500);
     }
   }
 
-  const selectedCat = categories.find((c) => c.slug === categorySlug);
+  const t = tintFor(categorySlug);
+  const best = results?.[0];
+  const runners = results ? results.slice(1) : [];
 
   return (
-    <div className="w-full">
-      {/* Form panel */}
+    <div>
+      {/* ── Form panel ───────────────────────────────────────────────── */}
       <div
-        className="rounded-2xl p-6 relative overflow-hidden"
         style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-mid)",
-          boxShadow: "var(--shadow-card)",
+          border: "1px solid var(--rule)",
+          borderRadius: 16,
+          background: "var(--card-fill-strong)",
+          overflow: "hidden",
+          boxShadow: "var(--shadow-1)",
         }}
       >
+        {/* Amount stamp + ranked CTA */}
         <div
-          className="absolute top-0 left-0 right-0 h-px"
           style={{
-            background:
-              "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)",
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            alignItems: "stretch",
+            borderBottom: "1px solid var(--rule)",
           }}
-        />
-
-        <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-            {/* Category — custom select */}
-            <div>
-              <label
-                className="label-xs mb-2.5 block"
-                style={{ color: "var(--text-tertiary)" }}
+        >
+          <label
+            style={{
+              display: "block",
+              padding: "26px 28px 22px",
+              cursor: "text",
+            }}
+          >
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Spend amount</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span
+                className="display"
+                style={{
+                  fontSize: 42,
+                  color: "var(--ink-3)",
+                  lineHeight: 1,
+                }}
               >
-                Category
-              </label>
-              {catLoading ? (
-                <div className="h-11 rounded-xl shimmer" />
-              ) : (
-                <CustomSelect
-                  options={categoryOptions}
-                  value={categorySlug}
-                  onChange={setCategorySlug}
-                  placeholder="Select a category"
-                  icon="🏷️"
-                  searchable={categories.length > 6}
-                />
-              )}
-            </div>
-
-            {/* Amount — styled input */}
-            <div>
-              <label
-                className="label-xs mb-2.5 block"
-                style={{ color: "var(--text-tertiary)" }}
+                $
+              </span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && rank()}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  fontFamily: "var(--font-display)",
+                  fontSize: 56,
+                  letterSpacing: "-0.02em",
+                  color: "var(--ink)",
+                  padding: 0,
+                  width: "100%",
+                  minWidth: 0,
+                }}
+              />
+              <span
+                className="mono"
+                style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.14em", textTransform: "uppercase" }}
               >
-                Spend amount
-              </label>
-              <div className="relative">
-                <span
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] font-medium pointer-events-none select-none"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  $
-                </span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={spendAmount}
-                  onChange={(e) => setSpendAmount(e.target.value)}
-                  className="w-full h-11 pl-7 pr-12 rounded-xl text-[14px] font-medium outline-none input-maple focus-ring"
-                />
-                <span
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 label-xs pointer-events-none"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  CAD
-                </span>
-              </div>
+                CAD
+              </span>
             </div>
+          </label>
+          <button
+            type="button"
+            onClick={rank}
+            disabled={loading || !categorySlug || !amount}
+            className="mono"
+            style={{
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              padding: "0 36px",
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: loading ? "default" : "pointer",
+              transition: "background 200ms",
+              opacity: loading || !categorySlug || !amount ? 0.5 : 1,
+              minWidth: 180,
+            }}
+          >
+            {loading ? "Ranking…" : "Rank cards →"}
+          </button>
+        </div>
 
-            {/* CTA */}
-            <button
-              type="submit"
-              disabled={loading || !categorySlug || !spendAmount}
-              className="h-11 px-6 rounded-xl font-semibold text-[14px] text-white transition-all duration-150 maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100 whitespace-nowrap"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <svg
-                    className="animate-spin w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="3.5"
-                    />
-                    <path
-                      className="opacity-90"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                  Ranking…
-                </span>
-              ) : (
-                "Rank Cards"
-              )}
-            </button>
-          </div>
+        {/* Quick chips */}
+        <div
+          style={{
+            padding: "12px 28px",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            className="mono"
+            style={{
+              fontSize: 10,
+              color: "var(--ink-3)",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              marginRight: 4,
+            }}
+          >
+            Quick
+          </span>
+          {QUICK_AMOUNTS.map((v) => {
+            const active = parseFloat(amount) === v;
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setAmount(String(v))}
+                className="mono"
+                style={{
+                  cursor: "pointer",
+                  border: `1px solid ${active ? t.hue : "var(--rule)"}`,
+                  background: active ? t.hue : "transparent",
+                  color: active ? "#fff" : "var(--ink-2)",
+                  padding: "5px 12px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  letterSpacing: "0.04em",
+                  transition: "all 160ms",
+                }}
+              >
+                ${v}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              setAmount("");
+              setResults(null);
+            }}
+            className="mono"
+            style={{
+              marginLeft: "auto",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 10,
+              color: "var(--ink-3)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+            }}
+          >
+            Reset ↻
+          </button>
+        </div>
 
-          {/* Redemption segment toggle */}
-          <div className="flex items-center gap-3 mt-4">
-            <span
-              className="label-xs"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              Redemption value:
-            </span>
-            <div
-              className="flex rounded-lg overflow-hidden"
-              style={{ border: "1px solid var(--border-mid)" }}
-            >
-              {(["base", "business"] as const).map((seg) => (
+        {/* Toggles row */}
+        <div
+          style={{
+            padding: "12px 28px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            borderTop: "1px solid var(--rule)",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Redemption segment */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="eyebrow">Value:</span>
+            <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden" }}>
+              {(["base", "business"] as const).map((s, i) => (
                 <button
-                  key={seg}
+                  key={s}
                   type="button"
-                  onClick={() => setSegment(seg)}
-                  className="px-3 py-1 text-[12px] font-medium transition-all"
+                  onClick={() => setSegment(s)}
+                  className="mono"
                   style={{
-                    background:
-                      segment === seg
-                        ? "rgba(13,148,136,0.15)"
-                        : "transparent",
-                    color:
-                      segment === seg
-                        ? "#14B8A6"
-                        : "var(--text-tertiary)",
-                    borderLeft:
-                      seg === "business"
-                        ? "1px solid var(--border-mid)"
-                        : "none",
+                    padding: "5px 11px",
+                    fontSize: 11,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    fontWeight: 600,
+                    background: segment === s ? "var(--ink)" : "transparent",
+                    color: segment === s ? "var(--paper)" : "var(--ink-3)",
+                    border: "none",
+                    borderLeft: i > 0 ? "1px solid var(--rule)" : "none",
+                    cursor: "pointer",
                   }}
                 >
-                  {seg === "base" ? "Base" : "Business Class"}
+                  {s === "base" ? "Base" : "Sweet-spot"}
                 </button>
               ))}
             </div>
-            <span
-              className="text-[11px] hidden sm:inline"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              {segment === "business"
-                ? "Sweet-spot redemptions (flights, transfers)"
-                : "Standard redemption rates"}
-            </span>
           </div>
 
-          {error && (
-            <p className="mt-3 text-[13px]" style={{ color: "#14B8A6" }}>
-              {error}
-            </p>
-          )}
-        </form>
+          {/* Merchant constraint */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="eyebrow">Merchant:</span>
+            <button
+              type="button"
+              onClick={() => setMerchant(merchant === "costco_ca" ? "" : "costco_ca")}
+              className="mono"
+              title="Costco Canada accepts Mastercard only — restricts ranking to MC cards in your wallet"
+              style={{
+                padding: "5px 11px",
+                fontSize: 11,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                fontWeight: 600,
+                background: merchant === "costco_ca" ? "var(--accent)" : "transparent",
+                color: merchant === "costco_ca" ? "#fff" : "var(--ink-3)",
+                border: `1px solid ${merchant === "costco_ca" ? "var(--accent)" : "var(--rule)"}`,
+                borderRadius: 8,
+                cursor: "pointer",
+              }}
+            >
+              {merchant === "costco_ca" ? "✓ Costco · MC" : "Costco"}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Results */}
-      <AnimatePresence mode="wait">
-        {loading && (
-          <motion.div
-            key="loading"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="mt-6 flex flex-col gap-3"
-          >
-            {[1, 2, 3].map((i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </motion.div>
-        )}
-
-        {!loading && results !== null && (
-          <motion.div
-            key="results"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-6"
-          >
-            {results.length === 0 ? (
-              <EmptyResults />
-            ) : (
-              <>
-                <div className="flex items-baseline justify-between mb-4 px-1">
-                  <p className="text-[13px] font-semibold text-white">
-                    {results.length} card{results.length !== 1 ? "s" : ""}{" "}
-                    ranked
-                  </p>
-                  <p
-                    className="text-[12px]"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    for ${parseFloat(spendAmount).toFixed(2)} CAD
-                  </p>
-                </div>
-                <AnimatedList className="flex flex-col gap-3">
-                  {results.map((rec, i) => (
-                    <AnimatedItem key={rec.card_id}>
-                      <RecommendationCard
-                        rec={rec}
-                        rank={i + 1}
-                        onLog={i === 0 ? () => handleLog(rec) : undefined}
-                        logged={logged && i === 0}
-                        spendCategory={selectedCat?.name}
-                        spendAmount={parseFloat(spendAmount)}
-                      />
-                    </AnimatedItem>
-                  ))}
-                </AnimatedList>
-                <p
-                  className="text-center text-[12px] mt-5"
-                  style={{ color: "var(--text-tertiary)" }}
+      {/* ── Category pills ─────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 22, marginBottom: 26 }}>
+        {catLoading
+          ? Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ width: 110, height: 36, borderRadius: 999 }} className="shimmer" />
+            ))
+          : categories.map((c) => {
+              const active = categorySlug === c.slug;
+              const ct = tintFor(c.slug);
+              return (
+                <button
+                  key={c.slug}
+                  type="button"
+                  onClick={() => setCategorySlug(c.slug)}
+                  style={{
+                    padding: "10px 18px",
+                    background: active ? ct.hue : ct.tint,
+                    color: active ? "#fff" : ct.hue,
+                    border: `1px solid ${active ? ct.hue : "transparent"}`,
+                    borderRadius: 999,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: active ? 600 : 500,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    transition: "all 200ms cubic-bezier(0.2,0.7,0.2,1)",
+                    transform: active ? "translateY(-1px)" : "translateY(0)",
+                    boxShadow: active ? `0 6px 16px -8px ${ct.hue}` : "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
                 >
-                  Tap &ldquo;Log spend&rdquo; on the best card to track it in{" "}
-                  <Link
-                    href="/insights"
-                    className="text-[#0D9488] hover:underline"
-                  >
-                    Insights
-                  </Link>
-                </p>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  {c.name}
+                </button>
+              );
+            })}
+      </div>
 
-      {/* Toast */}
-      <AnimatePresence>
-        {logToast && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, x: "-50%" }}
-            animate={{ opacity: 1, y: 0, x: "-50%" }}
-            exit={{ opacity: 0, y: 10, x: "-50%" }}
-            className="fixed bottom-24 left-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium shadow-lg"
+      {error && (
+        <div
+          className="mono"
+          style={{
+            fontSize: 12,
+            color: "var(--accent)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            marginBottom: 16,
+          }}
+        >
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* ── Results ───────────────────────────────────────────────── */}
+      {results && results.length === 0 && (
+        <div
+          style={{
+            padding: "48px 32px",
+            textAlign: "center",
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            background: "var(--card-fill)",
+          }}
+        >
+          <span className="eyebrow">No cards match</span>
+          <h3 className="display" style={{ fontSize: 28, margin: "8px 0 6px" }}>
+            Your wallet is empty.
+          </h3>
+          <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", marginBottom: 18, fontSize: 15 }}>
+            Add cards before we can rank them for this purchase.
+          </p>
+          <Link href="/wallet" className="btn btn-primary mono" style={{ letterSpacing: "0.06em", textTransform: "uppercase", fontSize: 11 }}>
+            Build wallet →
+          </Link>
+        </div>
+      )}
+
+      {best && (
+        <>
+          {/* Winner card */}
+          <div
             style={{
-              background: logToast.includes("✓")
-                ? "rgba(52,211,153,0.15)"
-                : "rgba(239,68,68,0.15)",
-              border: logToast.includes("✓")
-                ? "1px solid rgba(52,211,153,0.3)"
-                : "1px solid rgba(239,68,68,0.3)",
-              color: logToast.includes("✓") ? "#34D399" : "#F87171",
-              backdropFilter: "blur(12px)",
+              border: `1px solid ${t.hue}`,
+              borderRadius: 16,
+              background: "var(--card-fill-strong)",
+              padding: "26px 30px",
+              boxShadow: `0 24px 40px -22px ${t.hue}, var(--shadow-1)`,
+              position: "relative",
+              overflow: "hidden",
+              marginBottom: 14,
             }}
           >
-            {logToast}
-            {logToast.includes("✓") && (
-              <Link
-                href="/insights"
-                className="text-[12px] underline ml-1"
-                style={{ color: "#34D399" }}
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                top: -50,
+                right: -50,
+                width: 240,
+                height: 240,
+                borderRadius: "50%",
+                background: t.tint,
+                pointerEvents: "none",
+              }}
+            />
+            <div style={{ position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 6 }}>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: t.hue,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    fontWeight: 600,
+                  }}
+                >
+                  ★ Best card
+                </span>
+                <span
+                  className="mono"
+                  style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.10em" }}
+                >
+                  Rank 1 / {results.length}
+                </span>
+              </div>
+              <div
+                className="optimizer-winner-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                  gap: 24,
+                  alignItems: "start",
+                  marginBottom: 18,
+                }}
               >
-                View →
-              </Link>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                <div style={{ minWidth: 0 }}>
+                  <h3
+                    className="display"
+                    style={{
+                      fontSize: "clamp(28px, 3.5vw, 40px)",
+                      letterSpacing: "-0.015em",
+                      margin: 0,
+                      lineHeight: 1.05,
+                    }}
+                  >
+                    {best.card_name}
+                  </h3>
+                  <p
+                    className="serif"
+                    style={{
+                      fontStyle: "italic",
+                      color: "var(--ink-2)",
+                      fontSize: 15,
+                      marginTop: 6,
+                      marginBottom: 0,
+                      maxWidth: 520,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {best.note ||
+                      `Earns ${best.earn_rate.toFixed(1)}× via ${best.program_name} at an effective ${best.effective_return.toFixed(2)}% return.`}
+                  </p>
+                </div>
+                <div className="optimizer-winner-card" style={{ flexShrink: 0 }}>
+                  <EditorialCardVisual
+                    size="md"
+                    card={{
+                      name: best.card_name,
+                      issuer: inferIssuer(best.card_name),
+                      network: inferNetwork(best.card_name),
+                      imageUrl: cardImageUrl(best.card_name),
+                    }}
+                  />
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                  gap: 0,
+                  border: "1px solid var(--rule)",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  background: "var(--card-fill)",
+                  marginBottom: 18,
+                }}
+              >
+                <Stat label="Cash value" value={`$${best.dollar_value.toFixed(2)}`} accent={t.hue} />
+                <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
+                <Stat label="Effective return" value={`${best.effective_return.toFixed(2)}%`} />
+                <Stat label="Program CPP" value={`${best.program_cpp.toFixed(2)}¢`} />
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {(() => {
+                  const isLogged = loggedIds.has(best.card_id);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleLog(best)}
+                      disabled={isLogged}
+                      className="mono"
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        borderRadius: 12,
+                        background: isLogged ? "var(--gain)" : "var(--ink)",
+                        color: "var(--paper)",
+                        border: "none",
+                        cursor: isLogged ? "default" : "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        transition: "transform 160ms, background 200ms",
+                      }}
+                    >
+                      {isLogged ? "✓ Logged" : "Log this purchase →"}
+                    </button>
+                  );
+                })()}
+                <Link
+                  href={`/cards/${best.card_id}?from=optimizer`}
+                  className="mono"
+                  style={{
+                    padding: "14px 20px",
+                    borderRadius: 12,
+                    background: "transparent",
+                    color: "var(--ink-2)",
+                    border: "1px solid var(--rule)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                  }}
+                >
+                  Card detail
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Runners-up ledger */}
+          {runners.length > 0 && (
+            <div style={{ borderTop: "1px solid var(--ink)", marginTop: 22 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  padding: "16px 4px 14px",
+                }}
+              >
+                <span className="eyebrow">Runners-up</span>
+                <span
+                  className="mono"
+                  style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}
+                >
+                  {runners.length} more in wallet
+                </span>
+              </div>
+              {runners.map((rec, i) => {
+                const isLogged = loggedIds.has(rec.card_id);
+                return (
+                  <div
+                    key={rec.card_id}
+                    className="optimizer-runner-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "40px 1fr 90px 90px 100px 110px",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: "16px 4px",
+                      borderTop: "1px solid var(--rule)",
+                    }}
+                  >
+                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+                      {String(i + 2).padStart(2, "0")}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="display" style={{ fontSize: 18, lineHeight: 1.1, color: "var(--ink)" }}>
+                        {rec.card_name}
+                      </div>
+                      <div className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                        {rec.program_name}
+                        {rec.transfer_partner && <> · transfers via <span style={{ color: "var(--ink-2)" }}>{rec.transfer_partner}</span></>}
+                      </div>
+                    </div>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.04em", textAlign: "right" }}>
+                      {rec.earn_rate.toFixed(1)}×
+                    </div>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", textAlign: "right" }}>
+                      {rec.effective_return.toFixed(2)}%
+                    </div>
+                    <div className="display" style={{ fontSize: 22, color: "var(--ink)", textAlign: "right", fontStyle: "italic" }}>
+                      ${rec.dollar_value.toFixed(2)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleLog(rec)}
+                      disabled={isLogged}
+                      className="mono"
+                      title={isLogged ? "Already logged" : `Log $${parseFloat(amount).toFixed(2)} on ${rec.card_name}`}
+                      style={{
+                        padding: "9px 12px",
+                        borderRadius: 8,
+                        background: isLogged ? "var(--gain)" : "transparent",
+                        color: isLogged ? "#fff" : "var(--ink-2)",
+                        border: `1px solid ${isLogged ? "var(--gain)" : "var(--rule-strong)"}`,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        cursor: isLogged ? "default" : "pointer",
+                        transition: "background 160ms, color 160ms, border-color 160ms",
+                      }}
+                    >
+                      {isLogged ? "✓ Logged" : "Log →"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="mono"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "var(--ink)",
+            color: "var(--paper)",
+            padding: "12px 20px",
+            borderRadius: 10,
+            fontSize: 12,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            boxShadow: "var(--shadow-2)",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div
+      style={{
+        padding: "12px 16px",
+        borderRight: "1px solid var(--rule)",
+        minWidth: 0,
+      }}
+    >
+      <div className="eyebrow" style={{ fontSize: 9, letterSpacing: "0.14em", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div
+        className="mono"
+        style={{ fontSize: 16, color: accent ?? "var(--ink)", letterSpacing: "0.02em", fontWeight: 600 }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

@@ -88,7 +88,7 @@ export function BottomNav() {
               href={href}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors"
               style={{
-                color: active ? "var(--teal-light)" : "var(--text-tertiary)",
+                color: active ? "var(--accent)" : "var(--text-tertiary)",
               }}
             >
               <Icon size={20} strokeWidth={active ? 2.2 : 1.6} />
@@ -107,7 +107,7 @@ export function BottomNav() {
           onClick={() => setMoreOpen(true)}
           className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors"
           style={{
-            color: moreActive ? "var(--teal-light)" : "var(--text-tertiary)",
+            color: moreActive ? "var(--accent)" : "var(--text-tertiary)",
           }}
         >
           <MoreHorizontal size={20} strokeWidth={moreActive ? 2.2 : 1.6} />
@@ -171,8 +171,8 @@ export function BottomNav() {
                 href={href}
                 className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all"
                 style={{
-                  color: active ? "var(--teal-light)" : "var(--text-secondary)",
-                  background: active ? "rgba(13,148,136,0.08)" : "transparent",
+                  color: active ? "var(--accent)" : "var(--text-secondary)",
+                  background: active ? "var(--accent-soft)" : "transparent",
                 }}
               >
                 <Icon size={18} strokeWidth={active ? 2.1 : 1.7} />

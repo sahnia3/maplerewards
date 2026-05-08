@@ -2,33 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Plus, ArrowRight, Wallet, TrendingUp, CreditCard, BarChart3 } from "lucide-react";
-import { WalletCard } from "@/components/wallet-card";
+import { Loader2, Plus, ArrowRight, Trash2, Pencil, Check } from "lucide-react";
 import { AddCardModal } from "@/components/add-card-modal";
+import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
-import { AnimatedCounter, ValueCounter } from "@/components/motion/counter";
-import { AnimatedList, AnimatedItem, AnimatedSection } from "@/components/ui/animated-list";
-import { SkeletonCard } from "@/components/ui/skeleton";
-import { EmptyWallet } from "@/components/ui/empty-state";
-import { StatCard } from "@/components/ui/stat-card";
+import { PageMasthead } from "@/components/editorial/page-masthead";
+import { updateCardBalance, removeCardFromWallet } from "@/lib/api";
+import type { UserCard } from "@/lib/types";
+
+/* Editorial wallet — paper substrate, real card sprites, mono inputs, maple-red CTAs.
+ * Rebuilt from the legacy WalletCard component which used dark-theme tokens. */
 
 export default function WalletPage() {
   const { sessionId } = useSession();
   const { wallet, isLoading: loading, error, totalPoints, refreshWallet } = useWallet();
   const [showAdd, setShowAdd] = useState(false);
-
-  function onRemoved() {
-    refreshWallet();
-  }
-  function onBalanceUpdated() {
-    refreshWallet();
-  }
-  async function onCardAdded() {
-    await refreshWallet();
-    setShowAdd(false);
-  }
 
   // Compute summary stats
   const totalValue = wallet.reduce((sum, uc) => {
@@ -38,238 +27,177 @@ export default function WalletPage() {
   const programs = new Set(wallet.map((uc) => uc.card?.loyalty_program?.name).filter(Boolean));
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient orbs */}
-      <div
-        className="orb w-[500px] h-[300px] top-[-100px] right-[-80px]"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(13,148,136,0.07) 0%, transparent 70%)",
-        }}
-      />
-      <div
-        className="orb w-[300px] h-[200px] top-[100px] left-[-100px]"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(13,148,136,0.04) 0%, transparent 70%)",
-        }}
-      />
-
-      <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
-        {/* ── Page header ────────────────────────────────── */}
-        <AnimatedSection>
-          <div className="flex items-end justify-between mb-6">
-            <div>
-              <p
-                className="label-xs mb-1.5"
-                style={{ color: "var(--text-tertiary)" }}
-              >
-                Your collection
-              </p>
-              <h1 className="title text-white">Wallet</h1>
-            </div>
+    <div className="reveal" style={{ paddingTop: 0 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <PageMasthead
+          eyebrow="Your wallet"
+          eyebrowEnd={`${wallet.length} card${wallet.length === 1 ? "" : "s"} · CAD`}
+          title={<>The <span style={{ fontStyle: "italic" }}>working</span> wallet.</>}
+          lede="Every card you carry, every point you've earned. Edit point balances inline. Maple prices everything in CAD against the categories you actually spend in."
+          cta={
             <button
+              type="button"
               onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 h-10 px-5 rounded-xl font-semibold text-[14px] text-white transition-all maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              Add card
-            </button>
-          </div>
-        </AnimatedSection>
-
-        {/* ── Hero stats (glassmorphism) ────────────────── */}
-        {!loading && wallet.length > 0 && (
-          <AnimatedSection delay={0.05}>
-            <div
-              className="glass-card rounded-2xl p-5 mb-6 relative overflow-hidden"
-            >
-              <div
-                className="absolute top-0 left-6 right-6 h-px"
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)",
-                }}
-              />
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <div
-                    className="label-xs mb-1.5"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    Total Points
-                  </div>
-                  <AnimatedCounter
-                    value={totalPoints}
-                    className="text-[20px] font-bold text-white tracking-tight"
-                  />
-                </div>
-                <div>
-                  <div
-                    className="label-xs mb-1.5"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    Est. Value
-                  </div>
-                  <ValueCounter
-                    value={totalValue}
-                    className="text-[20px] font-bold tracking-tight"
-                    style={{ color: "#4ADE80" }}
-                  />
-                </div>
-                <div>
-                  <div
-                    className="label-xs mb-1.5"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    Cards
-                  </div>
-                  <AnimatedCounter
-                    value={wallet.length}
-                    className="text-[20px] font-bold text-white tracking-tight"
-                  />
-                </div>
-                <div>
-                  <div
-                    className="label-xs mb-1.5"
-                    style={{ color: "var(--text-tertiary)" }}
-                  >
-                    Programs
-                  </div>
-                  <AnimatedCounter
-                    value={programs.size}
-                    className="text-[20px] font-bold text-white tracking-tight"
-                  />
-                </div>
-              </div>
-            </div>
-          </AnimatedSection>
-        )}
-
-        {/* ── Quick actions ──────────────────────────────── */}
-        {!loading && wallet.length > 0 && (
-          <AnimatedSection delay={0.1}>
-            <div className="flex gap-2 mb-6 scroll-x">
-              <Link
-                href="/optimizer"
-                className="pill-btn"
-              >
-                <TrendingUp size={14} />
-                Optimize spend
-              </Link>
-              <Link
-                href="/compare"
-                className="pill-btn"
-              >
-                <BarChart3 size={14} />
-                Compare cards
-              </Link>
-              <Link
-                href="/cards"
-                className="pill-btn"
-              >
-                <CreditCard size={14} />
-                Browse catalog
-              </Link>
-              <Link
-                href="/insights"
-                className="pill-btn"
-              >
-                <Wallet size={14} />
-                View insights
-              </Link>
-            </div>
-          </AnimatedSection>
-        )}
-
-        {/* ── Content ────────────────────────────────────── */}
-        {loading ? (
-          <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        ) : error ? (
-          <AnimatedSection>
-            <div
-              className="rounded-2xl p-8 text-center"
+              className="mono"
               style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid rgba(13,148,136,0.2)",
+                background: "var(--accent)",
+                color: "#fff",
+                padding: "14px 24px",
+                borderRadius: 10,
+                border: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              <p className="text-[14px]" style={{ color: "#14B8A6" }}>
-                {error}
-              </p>
-              <button
-                onClick={() => refreshWallet()}
-                className="mt-4 text-[13px] transition-colors hover:text-white"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                Try again
-              </button>
-            </div>
-          </AnimatedSection>
+              <Plus size={14} /> Add card
+            </button>
+          }
+        />
+
+        {/* ── Stat strip ──────────────────────────────────────────── */}
+        {!loading && wallet.length > 0 && (
+          <div
+            style={{
+              borderTop: "1px solid var(--ink)",
+              borderBottom: "1px solid var(--rule)",
+              padding: "22px 0 26px",
+              marginBottom: 28,
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 0,
+            }}
+            className="wallet-stat-strip"
+          >
+            <Stat label="Total points" value={totalPoints.toLocaleString()} />
+            <Stat label="Est. value" value={`$${Math.round(totalValue).toLocaleString()}`} accent />
+            <Stat label="Cards" value={String(wallet.length)} />
+            <Stat label="Programs" value={String(programs.size)} last />
+          </div>
+        )}
+
+        {/* ── Quick links ──────────────────────────────────────── */}
+        {!loading && wallet.length > 0 && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 32, flexWrap: "wrap" }}>
+            <QuickLink href="/optimizer" label="Optimize next swipe" />
+            <QuickLink href="/insights" label="View insights" />
+            <QuickLink href="/portfolio" label="Annual ledger" />
+            <QuickLink href="/cards" label="Browse register" />
+          </div>
+        )}
+
+        {/* ── Body ─────────────────────────────────────────────── */}
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
+            <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
+          </div>
+        ) : error ? (
+          <div
+            style={{
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "20px 24px",
+              background: "var(--card-fill)",
+              borderLeft: "3px solid var(--accent)",
+            }}
+          >
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => refreshWallet()}
+              className="mono"
+              style={{
+                marginTop: 10,
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                color: "var(--ink-2)",
+                padding: "8px 16px",
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              Try again →
+            </button>
+          </div>
         ) : wallet.length === 0 ? (
-          <AnimatedSection>
-            <EmptyWallet />
-          </AnimatedSection>
+          <EmptyWallet onAdd={() => setShowAdd(true)} />
         ) : (
           <>
-            {/* Section label */}
-            <div className="flex items-center justify-between mb-3 px-1">
-              <p
-                className="text-[13px] font-semibold"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {wallet.length} card{wallet.length !== 1 ? "s" : ""} in your
-                wallet
-              </p>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+              <span className="eyebrow">Wallet · {wallet.length} card{wallet.length === 1 ? "" : "s"}</span>
+              <span className="eyebrow">Tap a balance to edit</span>
             </div>
 
-            {/* Card grid with stagger animation */}
-            <AnimatedList className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+                gap: 16,
+                marginBottom: 36,
+              }}
+              className="wallet-grid"
+            >
               {wallet.map((uc) => (
-                <AnimatedItem key={uc.id}>
-                  <WalletCard
-                    userCard={uc}
-                    sessionId={sessionId!}
-                    onRemoved={onRemoved}
-                    onBalanceUpdated={onBalanceUpdated}
-                  />
-                </AnimatedItem>
+                <WalletRow
+                  key={uc.id}
+                  userCard={uc}
+                  sessionId={sessionId!}
+                  onChanged={refreshWallet}
+                />
               ))}
-            </AnimatedList>
+            </div>
 
-            {/* Optimizer CTA */}
-            <AnimatedSection delay={0.2}>
-              <div
-                className="mt-8 rounded-2xl p-5 flex items-center justify-between gap-4 hover-accent"
+            {/* Bottom CTA */}
+            <div
+              style={{
+                borderTop: "1px solid var(--ink)",
+                borderBottom: "1px solid var(--rule)",
+                padding: "22px 4px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 18,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <span className="eyebrow" style={{ color: "var(--accent)" }}>Ready to optimize?</span>
+                <h3 className="display" style={{ fontSize: 24, margin: "6px 0 0", lineHeight: 1.1, fontStyle: "italic" }}>
+                  Find the best card for your next swipe.
+                </h3>
+              </div>
+              <Link
+                href="/optimizer"
+                className="mono"
                 style={{
-                  background: "rgba(13,148,136,0.05)",
-                  border: "1px solid rgba(13,148,136,0.12)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "14px 24px",
+                  borderRadius: 10,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
                 }}
               >
-                <div>
-                  <p className="text-[14px] font-semibold text-white">
-                    Ready to optimize?
-                  </p>
-                  <p
-                    className="text-[13px] mt-0.5"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    Find the best card for your next purchase.
-                  </p>
-                </div>
-                <Link
-                  href="/optimizer"
-                  className="shrink-0 h-9 px-5 rounded-xl text-[13px] font-semibold text-white maple-bg accent-glow inline-flex items-center gap-1.5 hover:scale-[1.02] transition-transform"
-                >
-                  Optimizer
-                  <ArrowRight size={14} />
-                </Link>
-              </div>
-            </AnimatedSection>
+                Open optimizer <ArrowRight size={14} />
+              </Link>
+            </div>
           </>
         )}
       </div>
@@ -278,10 +206,325 @@ export default function WalletPage() {
         <AddCardModal
           sessionId={sessionId}
           existingCardIds={wallet.map((c) => c.card_id)}
-          onAdded={onCardAdded}
+          onAdded={() => { refreshWallet(); setShowAdd(false); }}
           onClose={() => setShowAdd(false)}
         />
       )}
+
+      <style>{`
+        @media (max-width: 720px) {
+          .wallet-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .wallet-stat-strip > div { border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ── Single wallet row ────────────────────────────────────────────────── */
+
+function WalletRow({
+  userCard,
+  sessionId,
+  onChanged,
+}: {
+  userCard: UserCard;
+  sessionId: string;
+  onChanged: () => void;
+}) {
+  const card = userCard.card;
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(String(userCard.point_balance));
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  async function save() {
+    const bal = parseInt(input, 10);
+    if (isNaN(bal) || bal < 0) { setErrMsg("Invalid balance"); return; }
+    setSaving(true);
+    setErrMsg(null);
+    try {
+      await updateCardBalance(sessionId, userCard.id, bal);
+      onChanged();
+      setEditing(false);
+    } catch { setErrMsg("Update failed"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove() {
+    if (!confirm(`Remove ${card?.name ?? "this card"} from your wallet?`)) return;
+    setRemoving(true);
+    try {
+      await removeCardFromWallet(sessionId, userCard.id);
+      onChanged();
+    } catch { setRemoving(false); setErrMsg("Remove failed"); }
+  }
+
+  const programName = card?.loyalty_program?.name ?? "—";
+  const cpp = card?.loyalty_program?.base_cpp ?? 1;
+  const value = userCard.point_balance * (cpp / 100);
+  const annualFee = userCard.has_annual_fee && userCard.custom_annual_fee != null
+    ? userCard.custom_annual_fee
+    : card?.annual_fee ?? 0;
+
+  return (
+    <article
+      style={{
+        position: "relative",
+        border: "1px solid var(--rule)",
+        borderRadius: 14,
+        background: "var(--card-fill)",
+        padding: 18,
+        boxShadow: "var(--shadow-1)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      {/* Card visual + name + actions */}
+      <div style={{ display: "grid", gridTemplateColumns: "180px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+        <div>
+          <CreditCardVisual card={card} balance={userCard.point_balance} size="sm" />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h3 className="display" style={{ fontSize: 19, margin: 0, lineHeight: 1.15, color: "var(--ink)" }}>
+            {userCard.nickname || card?.name || "Card"}
+          </h3>
+          {userCard.nickname && card?.name && (
+            <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+              {card.name}
+            </p>
+          )}
+          <div className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", marginTop: 4 }}>
+            {card?.issuer} · {programName}
+          </div>
+          <button
+            type="button"
+            onClick={remove}
+            disabled={removing}
+            className="mono"
+            title="Remove from wallet"
+            style={{
+              marginTop: 12,
+              padding: "6px 10px",
+              border: "1px solid var(--rule)",
+              borderRadius: 8,
+              background: "transparent",
+              color: "var(--ink-3)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: removing ? "default" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Trash2 size={11} /> {removing ? "Removing…" : "Remove"}
+          </button>
+        </div>
+      </div>
+
+      {/* Balance row — inline editable */}
+      <div
+        style={{
+          borderTop: "1px solid var(--rule)",
+          paddingTop: 14,
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <span className="eyebrow">Point balance</span>
+        {editing ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+              autoFocus
+              style={{
+                width: 140,
+                padding: "8px 12px",
+                border: "1px solid var(--accent)",
+                borderRadius: 8,
+                fontFamily: "var(--font-mono)",
+                fontSize: 16,
+                color: "var(--ink)",
+                background: "var(--surface)",
+                outline: "none",
+              }}
+            />
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="mono"
+              style={{
+                padding: "8px 12px",
+                background: "var(--accent)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              <Check size={12} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setInput(String(userCard.point_balance)); setEditing(true); }}
+            className="display"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--ink)",
+              fontSize: 28,
+              fontStyle: "italic",
+              cursor: "pointer",
+              padding: 0,
+              display: "inline-flex",
+              alignItems: "baseline",
+              gap: 8,
+            }}
+            title="Tap to edit"
+          >
+            {userCard.point_balance.toLocaleString()}
+            <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em", fontStyle: "normal" }}>
+              pts
+            </span>
+            <Pencil size={11} style={{ color: "var(--ink-3)" }} />
+          </button>
+        )}
+      </div>
+
+      {/* Value + fee row */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 0,
+          borderTop: "1px solid var(--rule)",
+          paddingTop: 12,
+        }}
+      >
+        <div>
+          <span className="eyebrow">Est. value</span>
+          <div className="mono" style={{ fontSize: 16, color: "var(--gain)", fontWeight: 600, marginTop: 4 }}>
+            ${value.toFixed(2)}
+          </div>
+        </div>
+        <div>
+          <span className="eyebrow">Annual fee</span>
+          <div className="mono" style={{ fontSize: 16, color: annualFee > 0 ? "var(--ink)" : "var(--gain)", marginTop: 4 }}>
+            {annualFee > 0 ? `$${annualFee.toFixed(0)}/yr` : "Free"}
+          </div>
+        </div>
+      </div>
+
+      {errMsg && (
+        <p className="mono" style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.06em" }}>
+          ⚠ {errMsg}
+        </p>
+      )}
+    </article>
+  );
+}
+
+/* ── Subcomponents ────────────────────────────────────────────────────── */
+
+function Stat({ label, value, accent, last }: { label: string; value: string; accent?: boolean; last?: boolean }) {
+  return (
+    <div style={{ padding: "0 22px 0 0", borderRight: last ? "none" : "1px solid var(--rule)" }}>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>{label}</div>
+      <div
+        className="display"
+        style={{
+          fontSize: 32,
+          fontStyle: "italic",
+          color: accent ? "var(--accent)" : "var(--ink)",
+          lineHeight: 1,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="mono"
+      style={{
+        padding: "9px 16px",
+        borderRadius: 999,
+        border: "1px solid var(--rule)",
+        background: "var(--card-fill)",
+        color: "var(--ink-2)",
+        textDecoration: "none",
+        fontSize: 11,
+        fontWeight: 500,
+        letterSpacing: "0.04em",
+      }}
+    >
+      {label} →
+    </Link>
+  );
+}
+
+function EmptyWallet({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div
+      style={{
+        borderTop: "1px solid var(--ink)",
+        borderBottom: "1px solid var(--rule)",
+        padding: "60px 0 64px",
+        textAlign: "center",
+      }}
+    >
+      <span className="eyebrow" style={{ color: "var(--accent)" }}>Build a wallet</span>
+      <h3 className="display" style={{ fontSize: "clamp(28px, 4vw, 40px)", margin: "10px 0 0", lineHeight: 1, fontStyle: "italic" }}>
+        No cards yet.
+      </h3>
+      <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 10, marginBottom: 18 }}>
+        Add the cards you carry — Maple models them against your spend in real time.
+      </p>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="mono"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "14px 26px",
+          borderRadius: 10,
+          background: "var(--accent)",
+          color: "#fff",
+          border: "none",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
+      >
+        <Plus size={13} /> Add a card
+      </button>
     </div>
   );
 }
