@@ -77,23 +77,62 @@ export interface TierFeature {
   pro: string | boolean;
 }
 
-export const TIER_FEATURES: TierFeature[] = [
-  { name: "Cards in wallet",            free: "Up to 3",          pro: "Unlimited" },
-  { name: "Spend optimizer",            free: true,                pro: true },
-  { name: "Card catalog",               free: true,                pro: true },
-  { name: "AI chat messages",           free: "1 per month",       pro: "Unlimited" },
-  { name: "AI Research Mode",           free: false,               pro: true },
-  { name: "Insights & spend history",   free: "Last 10 entries",   pro: "Full history" },
-  { name: "Opportunity cost analysis",  free: false,               pro: true },
-  { name: "Monthly trend charts",       free: false,               pro: true },
-  { name: "Portfolio analyzer",         free: false,               pro: true },
-  { name: "Trip planner",               free: false,               pro: true },
-  { name: "CSV data export",            free: false,               pro: true },
-  { name: "Priority recommendations",   free: false,               pro: true },
-  { name: "Feed & articles",            free: true,                pro: true },
-  { name: "Welcome bonus tracking",     free: true,                pro: true },
-  { name: "Card comparison",            free: true,                pro: true },
+export interface TierGroup {
+  name: string;
+  features: TierFeature[];
+}
+
+// Grouped feature comparison for the pricing page. Pro Tools come first because
+// they are the Canadian wedge and the strongest reason to upgrade.
+export const TIER_GROUPS: TierGroup[] = [
+  {
+    name: "Pro Tools — Canadian wedge",
+    features: [
+      { name: "Aeroplan 2026 SQC projector",   free: false, pro: true },
+      { name: "Missed-rewards forensics",      free: false, pro: true },
+      { name: "Credits & renewals calendar",   free: false, pro: true },
+      { name: "Card-value scorecard",          free: false, pro: true },
+      { name: "Buy-points break-even",         free: false, pro: true },
+      { name: "Triple-stack calculator",       free: false, pro: true },
+      { name: "Devaluation alarms",            free: false, pro: true },
+      { name: "Award watcher",                 free: false, pro: true },
+      { name: "Costco-MC routing helper",      free: false, pro: true },
+    ],
+  },
+  {
+    name: "Wallet & analysis",
+    features: [
+      { name: "Cards in wallet",               free: "Up to 3",         pro: "Unlimited" },
+      { name: "Spend optimizer",               free: true,              pro: true },
+      { name: "Insights & spend history",      free: "Last 10 entries", pro: "Full history" },
+      { name: "Portfolio analyzer",            free: false,             pro: true },
+      { name: "Opportunity cost analysis",     free: false,             pro: true },
+      { name: "Monthly trend charts",          free: false,             pro: true },
+      { name: "CSV data export",               free: false,             pro: true },
+    ],
+  },
+  {
+    name: "Travel & advisor",
+    features: [
+      { name: "Trip planner",                  free: false,             pro: true },
+      { name: "AI chat messages",              free: "1 per month",     pro: "Unlimited" },
+      { name: "AI Research Mode",              free: false,             pro: true },
+      { name: "Priority recommendations",      free: false,             pro: true },
+    ],
+  },
+  {
+    name: "Catalog & basics",
+    features: [
+      { name: "Card catalog",                  free: true,              pro: true },
+      { name: "Card comparison",               free: true,              pro: true },
+      { name: "Welcome bonus tracking",        free: true,              pro: true },
+      { name: "Feed & articles",               free: true,              pro: true },
+    ],
+  },
 ];
+
+// Backward-compat flat list (existing imports may still reference it).
+export const TIER_FEATURES: TierFeature[] = TIER_GROUPS.flatMap((g) => g.features);
 
 // Check if a feature requires Pro
 export function isProFeature(key: ProFeatureKey): boolean {
