@@ -225,6 +225,47 @@ func canonicalProgramSlug(slug string) string {
 	return s
 }
 
+// capWithDiversity trims an already-CPP-sorted result list to at most `total`
+// items, keeping at most `perProgram` per loyalty program before filling the
+// rest of the budget by raw CPP order. This prevents one strong program
+// (e.g. United at the BOM-YYZ route) from monopolizing the LLM's view and
+// hiding programs the user can actually transfer to.
+func capWithDiversity(results []model.AwardSearchResult, total, perProgram int) []model.AwardSearchResult {
+	if len(results) <= total {
+		return results
+	}
+	out := make([]model.AwardSearchResult, 0, total)
+	counts := map[string]int{}
+	// Pass 1: keep up to perProgram from each program in CPP order.
+	for _, r := range results {
+		if len(out) >= total {
+			break
+		}
+		if counts[r.Program] < perProgram {
+			out = append(out, r)
+			counts[r.Program]++
+		}
+	}
+	// Pass 2: fill remaining slots with the highest-CPP residue.
+	for _, r := range results {
+		if len(out) >= total {
+			break
+		}
+		// Skip already-picked items by identity (date+program+points unique).
+		duplicate := false
+		for _, kept := range out {
+			if kept.Program == r.Program && kept.Date == r.Date && kept.PointsCost == r.PointsCost {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // summarizeToolResult produces a short human label for the UI status pill.
 // Reads a few well-known shapes (results array, error code, count) and falls
 // back to "Done" for opaque results. Never reveals raw payload.
@@ -333,10 +374,12 @@ func (s *AIService) registerTools() {
 			if err != nil {
 				return errResultJSON("search_failed", err.Error()), nil
 			}
-			// Cap result count to keep token usage tight.
-			if len(results) > 8 {
-				results = results[:8]
-			}
+			// Diversity-aware cap. Awarding only top-N by CPP would leave 8
+			// results all from the same issuer (e.g. all United at 88K) and
+			// hide programs the user can actually access (Aeroplan, Avios,
+			// Flying Blue). Strategy: keep up to 2 per program in CPP order,
+			// then fill remaining slots with the next highest CPP results.
+			results = capWithDiversity(results, 12, 2)
 			// Log the actual results so we can verify what the LLM saw vs what
 			// it claimed in synthesis. Used to debug hallucination cases like
 			// "the LLM said 60K but Apify returned 62.3K".
