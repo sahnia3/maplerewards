@@ -337,10 +337,23 @@ func (s *AIService) registerTools() {
 			if len(results) > 8 {
 				results = results[:8]
 			}
+			// Log the actual results so we can verify what the LLM saw vs what
+			// it claimed in synthesis. Used to debug hallucination cases like
+			// "the LLM said 60K but Apify returned 62.3K".
+			summaries := make([]string, 0, len(results))
+			for _, r := range results {
+				summaries = append(summaries, fmt.Sprintf("%s %s %dpts+$%.2f cpp=%.2f¢ source=%s",
+					r.Program, r.Date, r.PointsCost, r.TaxesCash, r.CPP, r.Source))
+			}
+			slog.Info("[ai-tools] search_award_space results",
+				"origin", args.Origin, "dest", args.Destination,
+				"cabin", args.Cabin, "count", len(results),
+				"items", summaries,
+			)
 			return json.Marshal(map[string]any{
 				"results":    results,
 				"fetched_at": time.Now().UTC().Format(time.RFC3339),
-				"note":       "Live award search via Apify scraper across 15 programs (Aeroplan, Flying Blue, United, Avios, Lufthansa, etc.) plus SerpAPI cash comparison. Prices in CAD.",
+				"note":       "Live award search. Quote mileage_cost and taxes_cash VERBATIM in your reply. Each result has a booking_url that MUST appear in your final answer as 'Verify on [issuer]: <url>'. Do NOT round, simplify, or substitute training-data values.",
 			})
 		},
 	})
@@ -685,6 +698,17 @@ GUARDRAILS
 - Keep answers under ~400 words unless the user asks for depth.
 - Use markdown tables for award/cash comparisons.
 - Refuse off-topic requests (poetry, code, general knowledge) briefly and redirect.
+
+NUMBER FIDELITY (CRITICAL — DO NOT BREAK)
+- Quote mileage costs and taxes VERBATIM from tool results. Never round, simplify, or "guess" — the user will cross-check on aeroplan.com and catch you. 62,300 stays 62,300; 53,900 stays 53,900; never collapse to "60K".
+- Taxes from Apify arrive in dollars (already converted from cents server-side). Quote exact: "$84.22" not "$85" not "$156".
+- Ignore your training-data assumptions about Aeroplan/Avios/Flying Blue prices. The 2024-2026 devaluations changed every chart you learned. Trust ONLY the tool result you just received.
+- If the tool returns 0 results for the requested cabin, SAY SO. Don't substitute a different cabin or invent a number.
+- ALWAYS include the booking_url field from the tool result in your recommendation as "Verify on [airline]: <url>" — users need to click through to confirm.
+
+CABIN INTEGRITY
+- Tool results carry an explicit cabin field. If the user asked for business and the tool returned only economy, recommend the economy result with an explicit caveat ("no business class found in this window — here's the cheapest economy"). Never silently relabel cabins.
+- Aeroplan business class for transatlantic in 2026 is typically 87.5K–110K dynamic pricing. If you see 60K-65K labeled as business, it is almost certainly economy mislabeled — verify the cabin field of the source itinerary.
 
 WHEN TO CALL WHICH TOOL
 - "Can I fly X to Y on points?" → search_award_space (always)
