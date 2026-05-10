@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"maplerewards/internal/cache"
 	"maplerewards/internal/handler"
+	"maplerewards/internal/health"
 	"maplerewards/internal/knowledge"
 	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/repo"
@@ -36,7 +38,18 @@ const devJWTFallback = "dev-jwt-secret-change-me-in-production"
 func main() {
 	_ = godotenv.Load()
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// Dual-writer log: stdout (so terminal still shows live output) plus a
+	// rotating-style file so dump-ai-trace.sh can grep recent activity even
+	// when the process is detached. Path overridable via LOG_FILE — default
+	// /tmp/maple-api.log so it survives reboots only on macOS where /tmp
+	// isn't tmpfs by default.
+	logPath := getEnv("LOG_FILE", "/tmp/maple-api.log")
+	logSinks := []io.Writer{os.Stdout}
+	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		logSinks = append(logSinks, f)
+	}
+	log := slog.New(slog.NewJSONHandler(io.MultiWriter(logSinks...), nil))
+	slog.SetDefault(log)
 
 	// ── Postgres ──────────────────────────────────────────────────────────
 	pool, err := pgxpool.New(context.Background(), mustEnv("DATABASE_URL"))
@@ -143,6 +156,15 @@ func main() {
 			SQC:           sqcSvc,
 		},
 	)
+
+	// Apify smoke-test goroutine. Fires every 6 hours against a known query
+	// (YYZ→LHR business) and warns if the Apify schema drifts again. Catches
+	// the next totalDuration-style breakage before users do.
+	// Uses Background() — the goroutine runs for the full process lifetime and
+	// is killed cleanly when the OS terminates the process on shutdown.
+	if apifySvc.IsAvailable() {
+		health.NewApifySmokeChecker(awardSearchSvc, 6*time.Hour).Start(context.Background())
+	}
 
 	// ── Handlers ──────────────────────────────────────────────────────────
 	cardH := handler.NewCardHandler(cardRepo)

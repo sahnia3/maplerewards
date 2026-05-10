@@ -1,4 +1,4 @@
-.PHONY: dev build test migrate-up migrate-down lint docker-up docker-down setup remote-setup remote-start web-dev
+.PHONY: dev build test migrate-up migrate-down lint docker-up docker-down setup remote-setup remote-start web-dev dump-ai-trace
 
 DATABASE_URL ?= postgres://postgres:password@localhost:5432/maplerewards?sslmode=disable
 
@@ -50,3 +50,10 @@ remote-start:
 	@echo "Claude Code      : http://localhost:7682"
 	@ttyd -p 7681 --writable zsh &
 	@ttyd -p 7682 --writable claude
+
+# ── AI debugging ──────────────────────────────────────────────────────────────
+# Print the most recent AI conversation trace from the API log file.
+# Reads /tmp/maple-api.log by default; override with LOG_FILE=path.
+# Pass --raw to skip markdown formatting.
+dump-ai-trace:
+	@bash scripts/dump-ai-trace.sh $(filter-out $@,$(MAKECMDGOALS))

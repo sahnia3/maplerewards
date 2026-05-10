@@ -31,6 +31,7 @@ export default function TripPlannerPage() {
   const [origin, setOrigin] = useState("YYZ");
   const [destination, setDestination] = useState("CDG");
   const [date, setDate] = useState("");
+  const [flexDays, setFlexDays] = useState<0 | 7 | 14>(7);
   const [cabin, setCabin] = useState<"economy" | "business" | "first">("business");
   const [passengers, setPassengers] = useState(1);
   const [results, setResults] = useState<AwardSearchResult[] | null>(null);
@@ -51,15 +52,51 @@ export default function TripPlannerPage() {
         origin: origin.toUpperCase(),
         destination: destination.toUpperCase(),
         date,
+        flex_days: flexDays,
         cabin,
         passengers,
       });
-      setResults(res);
+      // Mirror the backend's diversity cap (capWithDiversity from
+      // internal/service/ai_tools.go) on the client so the user sees a
+      // representative set of programs instead of 12 rows of one issuer.
+      // Same algorithm: take up to 2 results per program in CPP order, then
+      // fill the remaining slots with the next-best CPP. Total 12.
+      setResults(capWithDiversity(res, 12, 2));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Search failed");
     } finally {
       setLoading(false);
     }
+  }
+
+  // Frontend mirror of capWithDiversity. Rules:
+  //   1. Input is already CPP-sorted by the backend.
+  //   2. Pass 1: keep up to perProgram per program slug (in input order).
+  //   3. Pass 2: fill remaining total slots with the highest-CPP residue.
+  function capWithDiversity(
+    items: AwardSearchResult[],
+    total: number,
+    perProgram: number,
+  ): AwardSearchResult[] {
+    if (items.length <= total) return items;
+    const out: AwardSearchResult[] = [];
+    const counts = new Map<string, number>();
+    for (const r of items) {
+      if (out.length >= total) break;
+      const c = counts.get(r.program) ?? 0;
+      if (c < perProgram) {
+        out.push(r);
+        counts.set(r.program, c + 1);
+      }
+    }
+    for (const r of items) {
+      if (out.length >= total) break;
+      const dup = out.find(
+        (k) => k.program === r.program && k.date === r.date && k.points_cost === r.points_cost,
+      );
+      if (!dup) out.push(r);
+    }
+    return out;
   }
 
   return (
@@ -185,6 +222,33 @@ export default function TripPlannerPage() {
                   color: "var(--ink)",
                 }}
               />
+            </div>
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Flex window</div>
+              <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 42 }}>
+                {([0, 7, 14] as const).map((d, i) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setFlexDays(d)}
+                    className="mono"
+                    style={{
+                      flex: 1,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      background: flexDays === d ? "var(--ink)" : "transparent",
+                      color: flexDays === d ? "var(--paper)" : "var(--ink-3)",
+                      border: "none",
+                      borderLeft: i > 0 ? "1px solid var(--rule)" : "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {d === 0 ? "Exact" : `± ${d}d`}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Cabin</div>
@@ -395,6 +459,23 @@ export default function TripPlannerPage() {
           .
         </p>
       </div>
+      <style jsx global>{`
+        /* Mobile: collapse the 5-column flight row to 2 columns so the price
+         * + CPP cluster wraps below the program name instead of overflowing
+         * the viewport. Threshold 720px catches phones + small tablets. */
+        @media (max-width: 720px) {
+          .flight-row {
+            grid-template-columns: 36px 1fr !important;
+            row-gap: 8px;
+          }
+          .flight-row > :nth-child(3),
+          .flight-row > :nth-child(4),
+          .flight-row > :nth-child(5) {
+            grid-column: 2;
+            text-align: left !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -402,6 +483,11 @@ export default function TripPlannerPage() {
 /* ── FlightRow ────────────────────────────────────────────────────────── */
 function FlightRow({ flight, index }: { flight: AwardSearchResult; index: number }) {
   const isBest = index === 0;
+  // Desktop: 5-column grid (40px | 1fr | 130 | 130 | 110) ≈ 410px fixed-width
+  // forced overflow on mobile. New layout: stack identity + numbers vertically
+  // below 720px viewport via the flight-row class media query at the bottom
+  // of this file. The inline style keeps the desktop grid; the @media block
+  // collapses it to 2-column for mobile so each row stays in one screenful.
   return (
     <div
       style={{
