@@ -304,13 +304,16 @@ html, body { margin: 0; padding: 0; }
   html { -webkit-font-smoothing: antialiased; }
   body {
     background: var(--paper);
-    /* Warm cream substrate + maple-red top-left + pale-gold top-right + cream wash anchor.
-     * No grid. Premium-magazine paper feel. */
+    /* Editorial drench: deep burgundy top-left → warm umber top-right,
+     * cream-revealing middle band so display text on body still reads,
+     * soft maple wash at the bottom for warmth without dragging the
+     * page into darkness. Layered gradient + the grain pseudo-element
+     * below = "grainy gradient" feel like Linear / Apple Card hero. */
     background-image:
-      radial-gradient(ellipse 90% 70% at 0% -10%, rgba(165,31,45,0.30), transparent 58%),
-      radial-gradient(ellipse 60% 50% at 100% 0%, rgba(184,142,60,0.18), transparent 64%),
-      radial-gradient(ellipse 100% 55% at 50% 110%, rgba(184,142,60,0.10), transparent 65%),
-      linear-gradient(180deg, transparent 65%, rgba(26,20,16,0.05) 100%);
+      radial-gradient(ellipse 75% 55% at 12% -5%,  rgba(92, 31, 37, 0.42), transparent 60%),
+      radial-gradient(ellipse 65% 50% at 88% -5%,  rgba(62, 40, 24, 0.22), transparent 65%),
+      radial-gradient(ellipse 60% 35% at 50% 35%,  rgba(165, 31, 45, 0.06), transparent 70%),
+      radial-gradient(ellipse 100% 50% at 50% 110%, rgba(165, 31, 45, 0.20), transparent 70%);
     background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
@@ -318,30 +321,47 @@ html, body { margin: 0; padding: 0; }
     font-variant-numeric: tabular-nums;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
-    /* Body type — bumped per user readability complaint.
-     * 16px / 500 / 1.55 instead of browser-default 16px / 400 / 1.2.
-     * Tailwind's text-[13px]/text-[14px] inline rules override this for
-     * specific labels; this is the floor for any element that doesn't
-     * specify size + weight. */
+    /* Body type — 16px / 500 / 1.55 (was browser default 16px / 400 / 1.2). */
     font-size: 16px;
     font-weight: 500;
     line-height: 1.55;
   }
+
+  /* Grain default-on: every page sits on the grainy substrate, no more
+   * opt-in .grain class required. The blend mode flips per theme so the
+   * noise enhances rather than dirties the canvas. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.10 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    opacity: 0.32;
+    mix-blend-mode: multiply;
+  }
+  [data-theme="dark"] body::before, .dark body::before {
+    mix-blend-mode: screen;
+    opacity: 0.40;
+  }
+
+  /* Make sure page content actually sits above the grain layer. */
+  body > * { position: relative; z-index: 1; }
 }
 
 [data-theme="dark"] body, .dark body {
   background: var(--paper);
-  /* Warm dark substrate. Maple at top-left, soft gold mid-right for warmth,
-   * deep bronze wash anchoring the bottom. Reads like editorial paper at
-   * night, not a tech dashboard. */
+  /* Dark register editorial drench: deeper burgundy top-left, warm
+   * bronze top-right, soft maple bottom anchor. Same layered shape as
+   * light, deeper alphas so the brand sings against the warm near-black
+   * substrate. Grain (body::before) flips to screen-blend in dark mode. */
   background-image:
-    radial-gradient(ellipse 90% 65% at -5% -15%, rgba(216,67,83,0.36), transparent 60%),
-    radial-gradient(ellipse 55% 50% at 100% 30%, rgba(236,200,104,0.08), transparent 65%),
-    radial-gradient(ellipse 100% 55% at 50% 115%, rgba(165,31,45,0.22), transparent 65%),
-    radial-gradient(ellipse 100% 60% at 50% 50%, rgba(19,16,12,0.55), transparent 72%);
-  /* Bump body weight one notch + tighten letter-spacing slightly to
-   * compensate for the perceived-weight drop of light type on dark
-   * (impeccable typography rule: fix all three axes). */
+    radial-gradient(ellipse 85% 65% at 8% -8%,   rgba(216, 67, 83, 0.40), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 92% -5%,  rgba(184, 142, 60, 0.16), transparent 65%),
+    radial-gradient(ellipse 60% 35% at 50% 40%,  rgba(216, 67, 83, 0.06), transparent 70%),
+    radial-gradient(ellipse 100% 55% at 50% 115%, rgba(165, 31, 45, 0.28), transparent 70%);
+  /* Light type on dark needs all three compensation axes per
+   * impeccable typography rule. */
   font-weight: 450;
   letter-spacing: 0.005em;
 }
