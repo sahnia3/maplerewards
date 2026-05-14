@@ -466,6 +466,23 @@ input[type="number"]::-webkit-inner-spin-button {
   transition: color 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Feed lead — image lifts + signature shadow on hover, so the hero
+ * article reads as the main affordance not just a static photo. */
+.feed-lead:hover .feed-lead-img {
+  box-shadow: var(--shadow-accent-glow), var(--shadow-2);
+  transform: translateY(-3px);
+}
+
+/* Feed list rows — title recolors to maple on hover (paired with the
+ * existing background warmth shift) so the ledger reads as scannable
+ * editorial work, not a generic blog list. */
+.feed-row h3 {
+  transition: color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.feed-row:hover h3 {
+  color: var(--accent);
+}
+
 /* ── Fintech command center ─────────────────────────────────────────────── */
 .fintech-command {
   display: grid;

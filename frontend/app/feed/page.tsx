@@ -33,6 +33,69 @@ export default function FeedPage() {
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        {/* Editorial banner — aerial Canadian boreal at golden hour */}
+        <figure
+          style={{
+            position: "relative",
+            margin: "0 0 36px",
+            borderRadius: 14,
+            overflow: "hidden",
+            border: "1px solid var(--rule)",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/hero-aerial-canada.png"
+            alt=""
+            aria-hidden
+            loading="eager"
+            style={{
+              display: "block",
+              width: "100%",
+              aspectRatio: "21 / 9",
+              objectFit: "cover",
+            }}
+          />
+          {/* Bottom ink gradient + caption */}
+          <div
+            style={{
+              position: "absolute",
+              inset: "auto 0 0 0",
+              padding: "60px 24px 18px",
+              background:
+                "linear-gradient(to top, rgba(26,20,16,0.78) 0%, rgba(26,20,16,0.45) 45%, transparent 100%)",
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 16,
+              color: "var(--cream, #FBF7EE)",
+            }}
+          >
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                opacity: 0.9,
+              }}
+            >
+              Dispatch · From the canopy
+            </span>
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                opacity: 0.65,
+              }}
+            >
+              Vol. 1 · {new Date().getFullYear()}
+            </span>
+          </div>
+        </figure>
+
         <PageMasthead
           eyebrow="Feed"
           eyebrowEnd={`${ARTICLES.length} essays · CAD`}
@@ -57,7 +120,7 @@ export default function FeedPage() {
                 style={{
                   padding: "6px 14px",
                   borderRadius: 999,
-                  border: `1px solid ${active ? "var(--accent)" : "var(--rule)"}`,
+                  border: `1px solid ${active ? "var(--accent)" : "var(--rule-strong)"}`,
                   background: active ? "var(--accent)" : "transparent",
                   color: active ? "#fff" : "var(--ink-2)",
                   fontSize: 11,
@@ -65,6 +128,11 @@ export default function FeedPage() {
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                   cursor: "pointer",
+                  /* Active pill carries the signature glow so the current
+                   * filter reads as a deliberate brand moment. */
+                  boxShadow: active ? "var(--shadow-accent-glow)" : "none",
+                  transition:
+                    "background 220ms cubic-bezier(0.16, 1, 0.3, 1), color 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1)",
                 }}
               >
                 {c.label}
@@ -95,6 +163,7 @@ export default function FeedPage() {
                 const t = e.currentTarget;
                 if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(lead.slug); }
               }}
+              className="feed-lead-img"
               style={{
                 display: "block",
                 width: "100%",
@@ -103,6 +172,8 @@ export default function FeedPage() {
                 marginTop: 22,
                 borderRadius: 14,
                 boxShadow: "var(--shadow-1)",
+                transition:
+                  "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
               }}
             />
             <div style={{ paddingTop: 24 }}>
