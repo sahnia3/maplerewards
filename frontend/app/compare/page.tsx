@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, Scale } from "lucide-react";
 import { listCategories, optimize } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import { AnimatedSection } from "@/components/ui/animated-list";
@@ -10,6 +10,9 @@ import { SkeletonChart } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Category, CardRecommendation } from "@/lib/types";
 
+/* Category emojis live as content (scannable category markers in a data
+ * surface), not UI chrome. The empty state + segment toggle below use
+ * Lucide icons; only the per-category data column carries emoji. */
 const CAT_ICONS: Record<string, string> = {
   groceries: "🛒", dining: "🍽️", travel: "✈️", gas: "⛽", transit: "🚇",
   entertainment: "🎬", streaming: "📺", pharmacy: "💊", "foreign-currency": "💱",
@@ -91,17 +94,23 @@ export default function ComparePage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <div
-        className="orb w-[500px] h-[300px] top-[-80px] right-[-100px]"
-        style={{ background: "radial-gradient(ellipse, rgba(139,92,246,0.07) 0%, transparent 70%)" }}
-      />
-
       <div className="relative max-w-5xl mx-auto px-6 pt-8 pb-24">
         {/* Header */}
         <AnimatedSection>
-          <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>Side-by-side</p>
-          <h1 className="title text-white mb-2">Card Comparison</h1>
-          <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
+          <p className="eyebrow" style={{ color: "var(--accent)", marginBottom: 10 }}>Side-by-side</p>
+          <h1
+            className="display"
+            style={{
+              fontSize: "clamp(32px, 4.5vw, 44px)",
+              lineHeight: 1.05,
+              letterSpacing: "-0.015em",
+              color: "var(--ink)",
+              margin: 0,
+            }}
+          >
+            Card <span style={{ fontStyle: "italic" }}>comparison</span>
+          </h1>
+          <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8 }}>
             Set spend amounts per category and compare every card in your wallet.
           </p>
         </AnimatedSection>
@@ -109,15 +118,23 @@ export default function ComparePage() {
         {/* Controls */}
         <AnimatedSection delay={0.05}>
           <div
-            className="rounded-2xl p-5 mt-6 mb-6 relative"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-mid)", boxShadow: "var(--shadow-card)" }}
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--rule-strong)",
+              borderRadius: 14,
+              padding: 22,
+              marginTop: 24,
+              marginBottom: 24,
+              boxShadow: "var(--shadow-1)",
+              position: "relative",
+            }}
           >
-            <div className="absolute top-0 left-0 right-0 h-px rounded-t-2xl"
-              style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)" }} />
-
             {/* Per-category spend inputs */}
-            <div className="mb-4">
-              <label className="label-xs mb-3 block" style={{ color: "var(--text-tertiary)" }}>
+            <div style={{ marginBottom: 16 }}>
+              <label
+                className="eyebrow"
+                style={{ color: "var(--ink-3)", display: "block", marginBottom: 12 }}
+              >
                 Monthly spend per category
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -125,16 +142,26 @@ export default function ComparePage() {
                   <div key={cat.slug} className="flex items-center gap-2">
                     <span className="text-base shrink-0">{CAT_ICONS[cat.slug] ?? "💳"}</span>
                     <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] pointer-events-none" style={{ color: "var(--text-tertiary)" }}>$</span>
+                      <span
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 mono pointer-events-none"
+                        style={{ fontSize: 12, color: "var(--ink-3)" }}
+                      >
+                        $
+                      </span>
                       <input
                         type="number" min="0" step="1"
                         value={spendAmounts[cat.slug] || ""}
                         onChange={(e) => updateSpend(cat.slug, e.target.value)}
                         placeholder="0"
-                        className="w-full h-8 pl-6 pr-2 rounded-lg text-[12px] font-medium outline-none input-maple focus-ring"
+                        className="w-full h-8 pl-6 pr-2 rounded-lg text-[12px] font-medium outline-none input-maple"
                       />
                     </div>
-                    <span className="text-[11px] shrink-0 w-[60px] truncate" style={{ color: "var(--text-tertiary)" }}>{cat.name}</span>
+                    <span
+                      className="mono shrink-0"
+                      style={{ fontSize: 11, width: 60, color: "var(--ink-3)", letterSpacing: "0.04em" }}
+                    >
+                      {cat.name}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -143,34 +170,55 @@ export default function ComparePage() {
             {/* Redemption segment + CTA */}
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="label-xs" style={{ color: "var(--text-tertiary)" }}>Redemption:</span>
-                <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-mid)" }}>
+                <span className="eyebrow" style={{ color: "var(--ink-3)" }}>Redemption:</span>
+                <div
+                  className="flex rounded-lg overflow-hidden"
+                  style={{ border: "1px solid var(--rule-strong)" }}
+                >
                   {(["base", "business"] as const).map((seg) => (
-                    <button key={seg} type="button" onClick={() => setSegment(seg)}
-                      className="px-3 py-1 text-[12px] font-medium transition-all"
+                    <button
+                      key={seg} type="button" onClick={() => setSegment(seg)}
+                      className="mono"
                       style={{
-                        background: segment === seg ? "var(--info-soft-2)" : "transparent",
-                        color: segment === seg ? "var(--info-text)" : "var(--text-tertiary)",
-                        borderLeft: seg === "business" ? "1px solid var(--border-mid)" : "none",
+                        padding: "6px 14px",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        background: segment === seg ? "var(--accent-wash)" : "transparent",
+                        color: segment === seg ? "var(--accent)" : "var(--ink-3)",
+                        borderLeft: seg === "business" ? "1px solid var(--rule-strong)" : "none",
+                        cursor: segment === seg ? "default" : "pointer",
+                        transition:
+                          "background 220ms cubic-bezier(0.16, 1, 0.3, 1), color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
                       }}
-                    >{seg === "base" ? "Base" : "Business Class"}</button>
+                    >
+                      {seg === "base" ? "Base" : "Business"}
+                    </button>
                   ))}
                 </div>
               </div>
-              <button onClick={handleCompare} disabled={loading || catLoading}
-                className="h-10 px-6 rounded-xl font-semibold text-[14px] text-white maple-bg accent-glow hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30 transition-all"
+              <button
+                onClick={handleCompare}
+                disabled={loading || catLoading}
+                className="btn btn-primary"
+                style={{ height: 40, fontSize: 13 }}
               >
                 {loading ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3.5" />
-                      <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Loader2 size={14} className="animate-spin" />
                     Comparing…
                   </span>
                 ) : "Compare all categories"}
               </button>
-              {error && <p className="text-[13px]" style={{ color: "var(--info-text)" }}>{error}</p>}
+              {error && (
+                <p
+                  className="serif"
+                  style={{ fontSize: 13, fontStyle: "italic", color: "var(--accent)", margin: 0 }}
+                >
+                  {error}
+                </p>
+              )}
             </div>
           </div>
         </AnimatedSection>
@@ -187,7 +235,7 @@ export default function ComparePage() {
         {!hasResults && !loading && (
           <AnimatedSection delay={0.1}>
             <EmptyState
-              icon="⚖️"
+              icon={Scale}
               title="Compare across every category"
               description="Set your monthly spend amounts and hit Compare — we'll show you the best card for each category in one view."
             />
@@ -201,22 +249,66 @@ export default function ComparePage() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="rounded-2xl p-5 mb-5"
-              style={{ background: "linear-gradient(135deg, var(--info-soft), rgba(79,70,229,0.03))", border: "1px solid var(--info-soft-2)" }}
+              style={{
+                position: "relative",
+                background: "var(--surface)",
+                border: "1px solid var(--accent)",
+                borderRadius: 14,
+                padding: 22,
+                marginBottom: 20,
+                boxShadow: "var(--shadow-accent-glow), var(--shadow-1)",
+                overflow: "hidden",
+              }}
             >
-              <h2 className="text-[14px] font-semibold text-white mb-3">Best card per category</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {bestPerCategory.map(({ category, bestCard }) => (
-                  <div key={category.slug} className="flex items-center gap-2 px-3 py-2 rounded-xl hover-glow"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-                  >
-                    <span className="text-base">{CAT_ICONS[category.slug] ?? "💳"}</span>
-                    <div className="min-w-0">
-                      <div className="text-[12px] font-medium text-white truncate">{bestCard.card_name}</div>
-                      <div className="text-[11px]" style={{ color: "var(--info-text)" }}>{fmtPct(bestCard.effective_return)}</div>
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse 70% 60% at 100% 0%, var(--accent-glow), transparent 65%)",
+                  pointerEvents: "none",
+                }}
+              />
+              <div style={{ position: "relative" }}>
+                <h2
+                  className="eyebrow"
+                  style={{ color: "var(--accent)", marginBottom: 14, letterSpacing: "0.18em" }}
+                >
+                  Best card per category
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  {bestPerCategory.map(({ category, bestCard }) => (
+                    <div
+                      key={category.slug}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--rule)",
+                      }}
+                    >
+                      <span className="text-base">{CAT_ICONS[category.slug] ?? "💳"}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          className="display"
+                          style={{ fontSize: 12, color: "var(--ink)", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {bestCard.card_name}
+                        </div>
+                        <div
+                          className="mono"
+                          style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.02em", marginTop: 2 }}
+                        >
+                          {fmtPct(bestCard.effective_return)}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </motion.div>
           )}
@@ -229,15 +321,35 @@ export default function ComparePage() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-x-auto rounded-2xl"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+              className="overflow-x-auto"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--rule-strong)",
+                borderRadius: 14,
+                boxShadow: "var(--shadow-1)",
+              }}
             >
-              <table className="w-full text-left border-collapse" style={{ minWidth: "600px" }}>
+              <table className="w-full text-left border-collapse" style={{ minWidth: 600 }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid var(--border-dim)" }}>
-                    <th className="px-5 py-3.5 text-[12px] font-semibold sticky left-0 z-10" style={{ color: "var(--text-tertiary)", width: "180px", background: "var(--bg-elevated)" }}>Category</th>
+                  <tr style={{ borderBottom: "1px solid var(--rule-strong)" }}>
+                    <th
+                      className="eyebrow sticky left-0 z-10"
+                      style={{
+                        padding: "14px 20px",
+                        color: "var(--ink-3)",
+                        width: 180,
+                        background: "var(--surface-2)",
+                        textAlign: "left",
+                      }}
+                    >
+                      Category
+                    </th>
                     {allCards.map((name) => (
-                      <th key={name} className="px-4 py-3.5 text-[12px] font-semibold text-center" style={{ color: "var(--text-tertiary)" }}>
+                      <th
+                        key={name}
+                        className="eyebrow"
+                        style={{ padding: "14px 16px", color: "var(--ink-3)", textAlign: "center" }}
+                      >
                         {name.length > 22 ? name.slice(0, 20) + "…" : name}
                       </th>
                     ))}
@@ -250,19 +362,29 @@ export default function ComparePage() {
                     const amt = parseFloat(spendAmounts[cat.slug] || "0");
                     const isEven = rowIdx % 2 === 0;
                     return (
-                      <tr key={cat.slug}
-                        className="transition-colors hover:!bg-white/[0.03]"
+                      <tr
+                        key={cat.slug}
                         style={{
-                          borderBottom: "1px solid var(--border-dim)",
-                          background: isEven ? "transparent" : "rgba(255,255,255,0.015)",
+                          borderBottom: "1px solid var(--rule)",
+                          background: isEven ? "transparent" : "var(--surface-2)",
                         }}
                       >
-                        <td className="px-5 py-4 sticky left-0 z-10" style={{ background: isEven ? "var(--bg-elevated)" : "rgba(17,20,32,1)" }}>
+                        <td
+                          className="sticky left-0 z-10"
+                          style={{ padding: "16px 20px", background: isEven ? "var(--surface)" : "var(--surface-2)" }}
+                        >
                           <div className="flex items-center gap-2">
                             <span className="text-base">{CAT_ICONS[cat.slug] ?? "💳"}</span>
                             <div>
-                              <span className="text-[13px] font-medium text-white">{cat.name}</span>
-                              <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{fmtCAD(amt)}</div>
+                              <div className="display" style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.2 }}>
+                                {cat.name}
+                              </div>
+                              <div
+                                className="mono"
+                                style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.02em", marginTop: 2 }}
+                              >
+                                {fmtCAD(amt)}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -270,19 +392,48 @@ export default function ComparePage() {
                           const rec = recs.find((r) => r.card_name === cardName);
                           const isBest = rec && rec.effective_return === topReturn && topReturn > 0;
                           return (
-                            <td key={cardName} className="px-4 py-4 text-center">
+                            <td key={cardName} style={{ padding: "16px", textAlign: "center" }}>
                               {rec ? (
-                                <div className="flex flex-col items-center gap-0.5">
-                                  <span className="text-[14px] font-bold" style={{ color: isBest ? "#4ADE80" : "var(--text-primary)" }}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                                  <span
+                                    className="display"
+                                    style={{
+                                      fontSize: 16,
+                                      color: isBest ? "var(--gain)" : "var(--ink)",
+                                      lineHeight: 1,
+                                      fontWeight: 600,
+                                    }}
+                                  >
                                     {fmtPct(rec.effective_return)}
                                   </span>
-                                  <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{fmtCAD(rec.dollar_value)}</span>
+                                  <span
+                                    className="mono"
+                                    style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.02em" }}
+                                  >
+                                    {fmtCAD(rec.dollar_value)}
+                                  </span>
                                   {isBest && (
-                                    <span className="label-xs px-1.5 py-0.5 rounded mt-0.5" style={{ background: "rgba(74,222,128,0.12)", color: "#4ADE80" }}>best</span>
+                                    <span
+                                      className="mono"
+                                      style={{
+                                        marginTop: 4,
+                                        padding: "1px 8px",
+                                        borderRadius: 999,
+                                        fontSize: 9,
+                                        fontWeight: 600,
+                                        letterSpacing: "0.10em",
+                                        textTransform: "uppercase",
+                                        background: "var(--gain-soft)",
+                                        border: "1px solid var(--gain-soft)",
+                                        color: "var(--gain)",
+                                      }}
+                                    >
+                                      Best
+                                    </span>
                                   )}
                                 </div>
                               ) : (
-                                <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                                <span style={{ color: "var(--ink-3)" }}>—</span>
                               )}
                             </td>
                           );
