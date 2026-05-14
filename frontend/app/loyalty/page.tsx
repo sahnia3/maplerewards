@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trophy } from "lucide-react";
 import { listPrograms } from "@/lib/api";
 import type { LoyaltyProgram } from "@/lib/types";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -51,16 +52,20 @@ function ProgramTypeIcon({ type }: { type: LoyaltyProgram["program_type"] }) {
   }
 }
 
+/* Per-type tone uses semantic tokens that work in both registers — no more
+ * hard-coded #F59E0B / #10B981 / #A78BFA that read as neon on cream paper.
+ * Airlines lean info-teal, hotels lean gold (transfer-partner premium),
+ * cashback leans gain-green, banks lean primary-forest. */
 function typeColor(type: LoyaltyProgram["program_type"]): { bg: string; border: string; text: string } {
   switch (type) {
     case "airline":
-      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info-text)" };
+      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info)" };
     case "hotel":
-      return { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.22)", text: "#F59E0B" };
+      return { bg: "var(--gold-tint)", border: "var(--gold-soft)", text: "var(--gold)" };
     case "cashback":
-      return { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.22)", text: "#10B981" };
+      return { bg: "var(--gain-soft)", border: "var(--gain-soft)", text: "var(--gain)" };
     default:
-      return { bg: "rgba(139,92,246,0.10)", border: "rgba(139,92,246,0.22)", text: "#A78BFA" };
+      return { bg: "var(--primary-soft)", border: "var(--primary-soft)", text: "var(--primary)" };
   }
 }
 
@@ -107,35 +112,36 @@ export default function LoyaltyPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient orbs */}
-      <div
-        className="orb w-[400px] h-[280px] top-[-60px] right-[-40px]"
-        style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
-      />
-      <div
-        className="orb w-[250px] h-[250px] top-[300px] left-[0%]"
-        style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
-      />
-
       <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
 
-        {/* Header */}
+        {/* Header — editorial register; no orbs, the body radials handle ambience. */}
         <div className="flex items-end justify-between mb-8 fade-up">
           <div>
-            <p className="label-xs mb-1.5" style={{ color: "var(--text-tertiary)" }}>Points & miles</p>
-            <h1 className="title text-white">Loyalty Programs</h1>
+            <p className="eyebrow" style={{ color: "var(--accent)", marginBottom: 10 }}>Points & miles</p>
+            <h1
+              className="display"
+              style={{
+                fontSize: "clamp(32px, 4.5vw, 44px)",
+                lineHeight: 1.05,
+                letterSpacing: "-0.015em",
+                color: "var(--ink)",
+                margin: 0,
+              }}
+            >
+              Loyalty <span style={{ fontStyle: "italic" }}>programs</span>
+            </h1>
             {!loading && programs.length > 0 && (
-              <p className="text-[14px] mt-1" style={{ color: "var(--text-secondary)" }}>
+              <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8 }}>
                 {programs.length} program{programs.length !== 1 ? "s" : ""} tracked
               </p>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs — editorial register, maple-accent active state. */}
         <div
           className="flex gap-0 mb-6 fade-up-1 overflow-x-auto"
-          style={{ borderBottom: "1px solid var(--border-dim)" }}
+          style={{ borderBottom: "1px solid var(--rule)" }}
         >
           {TABS.map((tab) => {
             const count =
@@ -147,10 +153,10 @@ export default function LoyaltyPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className="flex items-center gap-1.5 px-4 py-3 text-[13px] font-medium transition-all whitespace-nowrap"
+                className="flex items-center gap-1.5 px-4 py-3 text-[13px] font-semibold transition-all whitespace-nowrap"
                 style={{
-                  color: isActive ? "white" : "var(--text-tertiary)",
-                  borderBottom: isActive ? "2px solid #0D9488" : "2px solid transparent",
+                  color: isActive ? "var(--accent)" : "var(--ink-2)",
+                  borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
                   background: "transparent",
                   marginBottom: -1,
                 }}
@@ -158,10 +164,14 @@ export default function LoyaltyPage() {
                 {tab.label}
                 {!loading && count > 0 && (
                   <span
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    className="mono"
                     style={{
-                      background: isActive ? "var(--info-soft-2)" : "rgba(255,255,255,0.06)",
-                      color: isActive ? "var(--info-text)" : "var(--text-tertiary)",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: "1px 7px",
+                      borderRadius: 999,
+                      background: isActive ? "var(--accent-wash)" : "var(--surface-2)",
+                      color: isActive ? "var(--accent)" : "var(--ink-3)",
                     }}
                   >
                     {count}
@@ -181,14 +191,17 @@ export default function LoyaltyPage() {
           </div>
         ) : error ? (
           <div
-            className="rounded-2xl p-10 text-center fade-up-2"
+            className="fade-up-2"
             style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--info-border)",
-              borderRadius: 12,
+              background: "var(--card-fill)",
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "32px 28px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
             }}
           >
-            <p className="text-[14px]" style={{ color: "var(--info-text)" }}>{error}</p>
+            <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--accent)", margin: 0 }}>{error}</p>
             <button
               onClick={() => {
                 setLoading(true);
@@ -197,26 +210,62 @@ export default function LoyaltyPage() {
                   .catch(() => setError("Could not load loyalty programs"))
                   .finally(() => setLoading(false));
               }}
-              className="mt-4 text-[13px] transition-colors"
-              style={{ color: "var(--text-secondary)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "white")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+              className="mono"
+              style={{
+                marginTop: 16,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                color: "var(--ink-2)",
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                padding: "8px 16px",
+                borderRadius: 8,
+                cursor: "pointer",
+                transition: "border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--rule-strong)"; e.currentTarget.style.color = "var(--ink-2)"; }}
             >
               Try again
             </button>
           </div>
         ) : filtered.length === 0 ? (
           <div
-            className="rounded-2xl p-14 text-center fade-up-2"
+            className="fade-up-2"
             style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-dim)",
-              borderRadius: 12,
+              background: "var(--card-fill)",
+              border: "1px solid var(--rule)",
+              borderRadius: 14,
+              padding: "44px 28px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
             }}
           >
-            <div className="text-5xl mb-4">🏆</div>
-            <h2 className="text-[17px] font-semibold text-white mb-2">No programs found</h2>
-            <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 999,
+                margin: "0 auto 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--surface-2)",
+                border: "1px solid var(--rule)",
+                color: "var(--ink-3)",
+              }}
+            >
+              <Trophy size={22} strokeWidth={1.5} />
+            </div>
+            <h2
+              className="display"
+              style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}
+            >
+              No programs found
+            </h2>
+            <p className="serif" style={{ fontSize: 14, color: "var(--ink-2)", marginTop: 8, fontStyle: "italic", lineHeight: 1.55 }}>
               {activeTab === "all"
                 ? "No loyalty programs are available yet."
                 : `No ${activeTab} programs available yet.`}
@@ -230,23 +279,42 @@ export default function LoyaltyPage() {
                 <a
                   key={program.id}
                   href={`/loyalty/${program.slug}`}
-                  className="lift group flex flex-col gap-4 p-5 no-underline cursor-pointer"
+                  className="lift group flex flex-col gap-4 p-5 no-underline cursor-pointer fade-up-2"
                   style={{
-                    background: "var(--bg-elevated)",
-                    border: "1px solid var(--border-dim)",
-                    borderRadius: 12,
-                    boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+                    position: "relative",
+                    background: "var(--surface)",
+                    border: "1px solid var(--rule-strong)",
+                    borderRadius: 14,
+                    boxShadow: "var(--shadow-1)",
                     animationDelay: `${i * 0.04}s`,
+                    overflow: "hidden",
+                    transition:
+                      "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = colors.border;
-                    e.currentTarget.style.background = colors.bg;
+                    e.currentTarget.style.borderColor = colors.text;
+                    e.currentTarget.style.boxShadow = "var(--shadow-2)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "var(--border-dim)";
-                    e.currentTarget.style.background = "var(--bg-elevated)";
+                    e.currentTarget.style.borderColor = "var(--rule-strong)";
+                    e.currentTarget.style.boxShadow = "var(--shadow-1)";
+                    e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
+                  {/* Top accent stripe — color-coded per program type, makes
+                   * the catalog scannable as a row of categories. */}
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 3,
+                      background: colors.text,
+                    }}
+                  />
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
                       {/* Icon */}
@@ -263,8 +331,13 @@ export default function LoyaltyPage() {
 
                       {/* Name + currency */}
                       <div className="min-w-0">
-                        <p className="text-[14px] font-semibold text-white truncate">{program.name}</p>
-                        <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--text-secondary)" }}>
+                        <p
+                          className="display"
+                          style={{ fontSize: 16, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}
+                        >
+                          {program.name}
+                        </p>
+                        <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
                           {program.currency_name}
                         </p>
                       </div>
@@ -273,8 +346,17 @@ export default function LoyaltyPage() {
                     {/* Value badge */}
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <div
-                        className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                        style={{ background: "var(--info-soft)", border: "1px solid var(--info-border)", color: "var(--info-text)" }}
+                        className="mono"
+                        style={{
+                          padding: "3px 10px",
+                          borderRadius: 999,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.04em",
+                          background: "var(--accent-wash)",
+                          border: "1px solid var(--accent-soft)",
+                          color: "var(--accent)",
+                        }}
                       >
                         {(program.base_cpp * 100).toFixed(1)}¢/pt
                       </div>
@@ -285,8 +367,17 @@ export default function LoyaltyPage() {
                   {/* Footer row */}
                   <div className="flex items-center justify-between">
                     <span
-                      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full capitalize"
+                      className="mono"
                       style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
                         background: colors.bg,
                         border: `1px solid ${colors.border}`,
                         color: colors.text,
@@ -297,8 +388,8 @@ export default function LoyaltyPage() {
                       {program.program_type}
                     </span>
                     <span
-                      className="text-[12px] font-medium group-hover:translate-x-0.5 transition-transform inline-block"
-                      style={{ color: colors.text }}
+                      className="mono group-hover:translate-x-0.5 transition-transform inline-block"
+                      style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: colors.text }}
                     >
                       View details →
                     </span>
