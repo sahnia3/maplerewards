@@ -10,11 +10,12 @@ import { createCheckoutSession } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { Button } from "@/components/ui/button";
+import { Term } from "@/components/term";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Pricing — editorial treatment
  *
- * Leads with the Canadian wedge (Aeroplan SQC, missed-rewards forensics) which
+ * Leads with the Canadian advantage (Aeroplan SQC, missed-rewards forensics) which
  * is the only reason a Canadian rewards-collector picks MapleRewards over a
  * US app like MaxRewards or AwardWallet. The redesign aligns this page with
  * the rest of the editorial system: warm cream surface, maple-red accent,
@@ -26,13 +27,13 @@ const PRO_TOOL_PITCH: { kicker: string; title: string; lede: string }[] = [
     kicker: "2026 Aeroplan SQC",
     title: "Project status with confidence",
     lede:
-      "Maple is the only Canadian app that turns the new Status Qualifying Credits framework into a forecast — current tier, gap to the next, and the cheapest card to close it.",
+      "Maple is the only Canadian app that turns the new Status Qualifying Credits framework into a forecast. Current tier, gap to the next, and the cheapest card to close it.",
   },
   {
     kicker: "Missed-rewards forensics",
     title: "See what each swipe cost you",
     lede:
-      "Every spend re-ranked against your current wallet. The dollar gap is exactly what the optimal card would have earned — itemised by category and by purchase.",
+      "Every spend re-ranked against your current wallet. The dollar gap is exactly what the optimal card would have earned, itemised by category and by purchase.",
   },
   {
     kicker: "Credits & renewals",
@@ -44,20 +45,27 @@ const PRO_TOOL_PITCH: { kicker: string; title: string; lede: string }[] = [
     kicker: "Card-value scorecard",
     title: "The honest answer to which cards earn their fee",
     lede:
-      "Insurance, lounge, concierge, FX savings, multipliers, credit bundles — all priced and netted against the annual fee. No more vibes.",
+      "Insurance, lounge, concierge, FX savings, multipliers, credit bundles. All priced and netted against the annual fee. No more guesswork.",
   },
 ];
+
+type IntervalKey = "monthly" | "annual" | "lifetime";
 
 function PricingContent() {
   const { isPro, isAuthenticated } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [annual, setAnnual] = useState(true);
+  const [interval, setInterval] = useState<IntervalKey>("annual");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const plan = annual ? PRICING.annual : PRICING.monthly;
+  const plan =
+    interval === "monthly"
+      ? PRICING.monthly
+      : interval === "annual"
+      ? PRICING.annual
+      : PRICING.lifetime;
 
   // Stripe redirect feedback
   useEffect(() => {
@@ -77,12 +85,12 @@ function PricingContent() {
     setLoading(true);
     setError(null);
     try {
-      const session = await createCheckoutSession(annual ? "annual" : "monthly");
+      const session = await createCheckoutSession(interval);
       window.location.href = session.url;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       if (msg.includes("billing is not configured") || msg.includes("stripe not configured")) {
-        setError("Billing is in beta. All Pro features are currently free — no card needed.");
+        setError("Billing is in beta. All Pro features are currently free. No card needed.");
       } else {
         setError(msg);
       }
@@ -101,8 +109,46 @@ function PricingContent() {
               The <span style={{ fontStyle: "italic", color: "var(--accent)" }}>Canadian</span> rewards desk.
             </>
           }
-          lede="Built for Aeroplan, Air Miles, Scene+, Amex MR Canada, RBC Avion. The Pro tier ships an SQC projector and missed-rewards forensics that no US app even attempts — that's the entire pitch."
+          lede={
+            <>
+              Built for <Term k="aeroplan" />, Air Miles, <Term k="scene-plus" />, <Term k="amex-mr" /> Canada, RBC Avion. The Pro tier ships an <Term k="sqc" /> projector and missed-rewards forensics that no US app even attempts. That&rsquo;s the entire pitch.
+            </>
+          }
         />
+
+        {/* Beta-free banner — surfaced above the tier cards, calm. */}
+        <div
+          role="status"
+          style={{
+            marginTop: 18,
+            padding: "14px 18px",
+            borderRadius: 12,
+            border: "1px solid var(--rule-strong)",
+            background: "var(--card-fill-strong)",
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            className="mono"
+            style={{
+              fontSize: 10,
+              padding: "3px 9px",
+              borderRadius: 999,
+              background: "var(--accent-soft)",
+              color: "var(--accent)",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open beta
+          </span>
+          <span className="serif" style={{ fontSize: 15, color: "var(--ink-2)", lineHeight: 1.4 }}>
+            Pro features are free during open beta. No card needed. We&rsquo;ll email you when pricing turns on.
+          </span>
+        </div>
 
         {/* Status banners */}
         {successMsg && (
@@ -151,11 +197,14 @@ function PricingContent() {
               background: "var(--surface)",
             }}
           >
-            <IntervalButton active={!annual} onClick={() => setAnnual(false)}>
+            <IntervalButton active={interval === "monthly"} onClick={() => setInterval("monthly")}>
               Monthly
             </IntervalButton>
-            <IntervalButton active={annual} onClick={() => setAnnual(true)}>
+            <IntervalButton active={interval === "annual"} onClick={() => setInterval("annual")}>
               Annual <span style={{ color: "var(--gain)", marginLeft: 8 }}>save 37%</span>
+            </IntervalButton>
+            <IntervalButton active={interval === "lifetime"} onClick={() => setInterval("lifetime")}>
+              Lifetime <span style={{ color: "var(--accent)", marginLeft: 8 }}>founding</span>
             </IntervalButton>
           </div>
         </div>
@@ -178,8 +227,8 @@ function PricingContent() {
             <p className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", marginTop: 6 }}>
               FOREVER · NO CARD REQUIRED
             </p>
-            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, marginTop: 14, lineHeight: 1.5 }}>
-              Optimizer, card catalog, three wallet slots, one AI chat per month. Useful for getting your bearings.
+            <p className="serif" style={{ color: "var(--ink-2)", fontSize: 14, marginTop: 14, lineHeight: 1.5 }}>
+              A real product, not a demo. Free covers the optimizer for every category, the full card catalog with side-by-side comparison, and welcome-bonus tracking on three cards.
             </p>
 
             <ul style={{ listStyle: "none", padding: 0, margin: "20px 0 0" }}>
@@ -215,30 +264,41 @@ function PricingContent() {
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
                   padding: "4px 10px",
-                  border: "1px solid var(--accent)",
+                  border: "1px solid var(--gold)",
                   borderRadius: 999,
-                  color: "var(--accent)",
+                  color: "var(--gold)",
+                  background: "var(--gold-tint)",
+                  fontWeight: 600,
                 }}
               >
-                Canada-first
+                Recommended
               </span>
             </div>
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 6 }}>
               <span className="display" style={{ fontSize: 56, lineHeight: 1, color: "var(--ink)" }}>
-                ${(annual ? PRICING.annual.monthlyEquivalent : PRICING.monthly.price).toFixed(2)}
+                {interval === "monthly" && `$${PRICING.monthly.price.toFixed(2)}`}
+                {interval === "annual" && `$${PRICING.annual.monthlyEquivalent.toFixed(2)}`}
+                {interval === "lifetime" && `$${PRICING.lifetime.price}`}
               </span>
               <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
-                /MO {annual ? "BILLED ANNUALLY" : ""}
+                {interval === "monthly" && "/MO"}
+                {interval === "annual" && "/MO BILLED ANNUALLY"}
+                {interval === "lifetime" && "ONCE"}
               </span>
             </div>
-            {annual && (
+            {interval === "annual" && (
               <p className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", marginTop: 6 }}>
                 {`$${PRICING.annual.price} per year · ${PRICING.annual.savings} off monthly`}
               </p>
             )}
-            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, marginTop: 14, lineHeight: 1.5 }}>
-              Aeroplan SQC projection, missed-rewards forensics, credit calendar, card-value scorecard, plus everything in Free without limits. The Canadian wedge in one subscription.
+            {interval === "lifetime" && (
+              <p className="mono" style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.06em", marginTop: 6 }}>
+                {PRICING.lifetime.note}
+              </p>
+            )}
+            <p className="serif" style={{ color: "var(--ink-2)", fontSize: 14, marginTop: 14, lineHeight: 1.5 }}>
+              Aeroplan SQC projection, missed-rewards forensics, credit calendar, card-value scorecard, plus everything in Free without limits. The Canadian advantage in one subscription.
             </p>
 
             <ul style={{ listStyle: "none", padding: 0, margin: "20px 0 0" }}>
@@ -271,7 +331,7 @@ function PricingContent() {
                   loading={loading}
                   style={{ width: "100%" }}
                 >
-                  {loading ? "Redirecting" : `Subscribe · ${plan.label}`}
+                  {loading ? "Redirecting" : `Start Pro · ${plan.label}`}
                 </Button>
               )}
               <p className="mono" style={{ fontSize: 9, marginTop: 10, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase", textAlign: "center" }}>
@@ -298,7 +358,7 @@ function PricingContent() {
               <Link href="/pro-tools" style={{ color: "var(--accent)", textDecoration: "underline" }}>
                 /pro-tools
               </Link>
-              {" "}— they are unlocked the moment Pro is active.
+              . They go live the moment Pro is active.
             </p>
           </header>
 
@@ -378,6 +438,29 @@ function PricingContent() {
           </div>
         </section>
 
+        {/* ROI anchor — placeholder until cohort data lands */}
+        {/* placeholder until cohort data lands */}
+        <aside
+          style={{
+            marginTop: 28,
+            padding: "20px 22px",
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            background: "var(--card-fill-strong)",
+            textAlign: "center",
+          }}
+        >
+          <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}>
+            What Pro pays back
+          </div>
+          <p
+            className="serif"
+            style={{ margin: 0, fontSize: 17, color: "var(--ink)", lineHeight: 1.45, maxWidth: 640, marginLeft: "auto", marginRight: "auto" }}
+          >
+            Pro users typically identify <span style={{ color: "var(--accent)", fontWeight: 600 }}>$250 to $1,400</span> in recoverable rewards in their first 90 days. The subscription pays for itself once.
+          </p>
+        </aside>
+
         <LeafDivider />
 
         {/* FAQ */}
@@ -400,7 +483,7 @@ function PricingContent() {
               },
               {
                 q: "Do I need an account for the free tier?",
-                a: "No. The optimizer, card catalog, and comparison work without one. Sign up to save your wallet and unlock the missed-rewards forensics.",
+                a: "No. The optimizer, card catalog, and comparison work without one. Sign up to save your wallet and open the missed-rewards forensics.",
               },
               {
                 q: "Why not US apps like MaxRewards or CardPointers?",
@@ -446,7 +529,11 @@ function PricingContent() {
         {!isPro && (
           <div style={{ marginTop: 56, textAlign: "center" }}>
             <Button variant="primary" size="lg" onClick={handleCheckout} loading={loading}>
-              {loading ? "Redirecting" : `Subscribe to Pro · ${annual ? PRICING.annual.label : PRICING.monthly.label}`}
+              {loading
+                ? "Redirecting"
+                : interval === "lifetime"
+                ? `Get lifetime Pro · ${PRICING.lifetime.label}`
+                : `Get Pro · ${plan.label}`}
             </Button>
             <p className="mono" style={{ fontSize: 10, marginTop: 12, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
               30-day refund · Cancel anytime · Stripe checkout
@@ -469,7 +556,9 @@ function PaperTile({ children, accent = false }: { children: React.ReactNode; ac
         background: "var(--card-fill-strong)",
         borderRadius: 14,
         padding: "26px 24px",
-        boxShadow: accent ? "var(--shadow-2)" : "var(--shadow-1)",
+        /* Accent tile carries the signature maple glow + a heavier resting shadow
+         * so it stands out from Free without changing grid alignment. */
+        boxShadow: accent ? "var(--shadow-accent-glow), var(--shadow-2)" : "var(--shadow-1)",
         overflow: "hidden",
       }}
     >
@@ -479,7 +568,7 @@ function PaperTile({ children, accent = false }: { children: React.ReactNode; ac
           position: "absolute",
           inset: 0,
           background: accent
-            ? "radial-gradient(ellipse 70% 45% at 100% 0%, var(--accent-soft), transparent 65%)"
+            ? "radial-gradient(ellipse 80% 50% at 100% 0%, var(--accent-glow), transparent 65%), radial-gradient(ellipse 60% 40% at 0% 100%, var(--gold-soft), transparent 60%)"
             : "transparent",
           pointerEvents: "none",
         }}
@@ -614,7 +703,22 @@ function ComparisonRow({
         {feature.name}
       </span>
       <ComparisonCell value={feature.free} />
-      <ComparisonCell value={feature.pro} accent />
+      {/* Pro column gets a soft maple wash so the eye reads the tier-of-interest
+       * as the user scans. Stays subtle on both striped and unstriped rows. */}
+      <div style={{ position: "relative" }}>
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: "-12px -18px",
+            background: "var(--accent-wash)",
+            pointerEvents: "none",
+          }}
+        />
+        <div style={{ position: "relative" }}>
+          <ComparisonCell value={feature.pro} accent />
+        </div>
+      </div>
     </div>
   );
 }
