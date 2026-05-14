@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { listCategories, optimize, logSpend } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import type { Category, CardRecommendation } from "@/lib/types";
@@ -341,7 +342,7 @@ export function OptimizerForm() {
           </div>
 
           {/* Merchant constraint */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="eyebrow">Merchant:</span>
             <button
               type="button"
@@ -363,6 +364,17 @@ export function OptimizerForm() {
             >
               {merchant === "costco_ca" ? "✓ Costco · MC" : "Costco"}
             </button>
+            <span
+              className="serif"
+              style={{
+                fontSize: 11,
+                fontStyle: "italic",
+                color: "var(--ink-3)",
+                lineHeight: 1.3,
+              }}
+            >
+              Costco CA accepts Mastercard only — toggle to filter your wallet down to MC cards.
+            </span>
           </div>
         </div>
       </div>
@@ -446,6 +458,31 @@ export function OptimizerForm() {
         </div>
       )}
 
+      {best && categorySlug === "groceries" && inferNetwork(best.card_name) === "amex" && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            gap: 14,
+            padding: "16px 18px",
+            border: "1px solid var(--accent)",
+            background: "var(--accent-soft)",
+            borderRadius: 12,
+            marginBottom: 14,
+          }}
+          className="serif"
+        >
+          <span aria-hidden style={{ fontSize: 18, lineHeight: 1.2 }}>⚠</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
+              Heads up — Amex blackout
+            </div>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", fontStyle: "italic", lineHeight: 1.45 }}>
+              {best.card_name} doesn&rsquo;t work at Costco, Loblaws, No Frills, Superstore, Shoppers, T&amp;T, or any other store in the Loblaws empire — they&rsquo;re Mastercard/Visa only. Best for groceries at Metro, Sobeys, IGA, Whole Foods. Pair with a Tangerine or Costco MC for the rest.
+            </div>
+          </div>
+        </div>
+      )}
       {best && (
         <>
           {/* Winner card */}
@@ -634,9 +671,20 @@ export function OptimizerForm() {
               {runners.map((rec, i) => {
                 const isLogged = loggedIds.has(rec.card_id);
                 return (
-                  <div
+                  /* Staggered reveal: 60ms gap between rows + ease-out-expo
+                   * easing matches the rest of the system. Framer Motion
+                   * automatically respects prefers-reduced-motion when the
+                   * user has it set. */
+                  <motion.div
                     key={rec.card_id}
                     className="optimizer-runner-row"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      ease: [0.16, 1, 0.3, 1],
+                      delay: i * 0.06,
+                    }}
                     style={{
                       display: "grid",
                       gridTemplateColumns: "40px 1fr 90px 90px 100px 110px",
@@ -689,7 +737,7 @@ export function OptimizerForm() {
                     >
                       {isLogged ? "✓ Logged" : "Log →"}
                     </button>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
