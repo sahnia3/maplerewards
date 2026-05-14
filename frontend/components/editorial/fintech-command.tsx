@@ -40,7 +40,10 @@ export function FintechCommand({
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(ellipse 70% 80% at 100% 0%, rgba(165,31,45,0.22), transparent 58%)",
+              /* Wave 3: bumped maple radial alpha 0.22 → 0.40 + secondary gold
+               * glow bottom-left so the primary panel reads as the brand
+               * moment it was always supposed to be. */
+              "radial-gradient(ellipse 75% 80% at 100% 0%, rgba(165,31,45,0.40), transparent 60%), radial-gradient(ellipse 50% 45% at 0% 100%, rgba(184,142,60,0.16), transparent 65%)",
             pointerEvents: "none",
           }}
         />
