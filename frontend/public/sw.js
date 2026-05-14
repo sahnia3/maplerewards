@@ -10,7 +10,7 @@
  * by bumping the suffix below.
  */
 
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const SHELL_CACHE = `mr-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `mr-static-${CACHE_VERSION}`;
 
