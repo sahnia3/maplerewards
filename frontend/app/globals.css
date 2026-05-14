@@ -214,19 +214,22 @@
   --text-tertiary:  var(--ink-3);
 }
 
-/* ── DARK ────────────────────────────────────────────────────────────────── */
+/* ── DARK — WARM editorial register, not cool tech ─────────────────────────
+ * The cold blue-black substrate (#0B1118) made the product look like a
+ * generic dashboard. Dark mode is now the warm dark version of the cream
+ * paper: same warmth, inverted lightness. Ink tones match. */
 [data-theme="dark"], .dark {
-  --bone:         #070B10;
-  --paper:        #0B1118;
-  --ink:          #EEF2F5;
-  --ink-2:        #C9D0D8;
-  --ink-3:        #8B96A5;
-  --ink-4:        #596473;
-  --rule:         rgba(238, 242, 245, 0.10);
-  --rule-strong:  rgba(238, 242, 245, 0.24);
-  --surface:      #121A24;
-  --surface-2:    #1A2430;
-  --surface-3:    #05070A;
+  --bone:         #0A0806;
+  --paper:        #13100C;   /* warm near-black, slight bronze undertone */
+  --ink:          #F2EDE3;   /* warm off-white, paired with paper */
+  --ink-2:        #D4CCBE;   /* warm secondary */
+  --ink-3:        #9A8F7E;   /* warm tertiary (matches light-mode register) */
+  --ink-4:        #6A6151;
+  --rule:         rgba(242, 237, 227, 0.10);
+  --rule-strong:  rgba(242, 237, 227, 0.24);
+  --surface:      #1C1814;   /* warm dark surface */
+  --surface-2:    #26211A;   /* warm dark surface +1 */
+  --surface-3:    #08060A;
 
   --primary:      #77A59D;
   --primary-2:    #4F8178;
@@ -267,9 +270,9 @@
   --chart-forest:  #4ED39B;
   --chart-lime:    #C8D47A;
 
-  --card-fill:        rgba(238, 242, 245, 0.04);
-  --card-fill-strong: rgba(238, 242, 245, 0.06);
-  --sidebar-fill:     linear-gradient(180deg, rgba(238,242,245,0.04), rgba(238,242,245,0.02)), var(--paper);
+  --card-fill:        rgba(242, 237, 227, 0.04);   /* warm to match the new ink */
+  --card-fill-strong: rgba(242, 237, 227, 0.06);
+  --sidebar-fill:     linear-gradient(180deg, rgba(242,237,227,0.04), rgba(242,237,227,0.02)), var(--paper);
 
   --shadow-1:    0 1px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-2:    0 1px 0 rgba(0,0,0,0.5), 0 12px 30px rgba(0,0,0,0.4);
@@ -282,7 +285,7 @@
   --foreground: var(--ink);
   --card: var(--surface);
   --popover: var(--surface-2);
-  --input: rgba(238, 242, 245, 0.07);
+  --input: rgba(242, 237, 227, 0.07);
 
   /* Legacy aliases */
   --bg-base:     var(--paper);
@@ -320,13 +323,19 @@ html, body { margin: 0; padding: 0; }
 
 [data-theme="dark"] body, .dark body {
   background: var(--paper);
-  /* NO GRID. Pure dark substrate + chic maple-red diffusion. */
+  /* Warm dark substrate. Maple at top-left, soft gold mid-right for warmth,
+   * deep bronze wash anchoring the bottom. Reads like editorial paper at
+   * night, not a tech dashboard. */
   background-image:
-    radial-gradient(ellipse 95% 65% at -5% -15%, rgba(216,67,83,0.32), transparent 60%),
-    radial-gradient(ellipse 55% 50% at 90% 50%, rgba(216,67,83,0.16), transparent 65%),
-    radial-gradient(ellipse 50% 45% at 100% -10%, rgba(119,165,157,0.12), transparent 62%),
-    radial-gradient(ellipse 100% 55% at 50% 115%, rgba(165,31,45,0.20), transparent 65%),
-    radial-gradient(ellipse 100% 60% at 50% 50%, rgba(7,11,16,0.45), transparent 72%);
+    radial-gradient(ellipse 90% 65% at -5% -15%, rgba(216,67,83,0.36), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 100% 30%, rgba(236,200,104,0.08), transparent 65%),
+    radial-gradient(ellipse 100% 55% at 50% 115%, rgba(165,31,45,0.22), transparent 65%),
+    radial-gradient(ellipse 100% 60% at 50% 50%, rgba(19,16,12,0.55), transparent 72%);
+  /* Bump body weight one notch + tighten letter-spacing slightly to
+   * compensate for the perceived-weight drop of light type on dark
+   * (impeccable typography rule: fix all three axes). */
+  font-weight: 450;
+  letter-spacing: 0.005em;
 }
 
 /* ── Grain overlay ────────────────────────────────────────────────────────── */
@@ -352,11 +361,16 @@ html, body { margin: 0; padding: 0; }
   letter-spacing: -0.01em;
   line-height: 0.96;
   color: var(--ink);
+  /* Even out heading line lengths — the browser picks better break points
+   * (impeccable typography rule). */
+  text-wrap: balance;
 }
 .serif {
   font-family: var(--font-display);
   font-weight: 400;
   color: var(--ink-2);
+  /* Reduce orphans + ragged endings in italic lede / serif body prose. */
+  text-wrap: pretty;
 }
 .mono {
   font-family: var(--font-mono);
@@ -369,7 +383,7 @@ html, body { margin: 0; padding: 0; }
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
-  font-weight: 500;
+  font-weight: 600;   /* bumped 500 → 600 — fixes readability on dark + light at 10px */
 }
 .sans { font-family: var(--font-sans); }
 
@@ -416,7 +430,9 @@ input[type="number"]::-webkit-inner-spin-button {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
-.btn:active { transform: translateY(0); }
+/* Emil rule: buttons must feel responsive to press. scale(0.97) on :active
+ * gives the tactile feedback that translateY alone never quite achieves. */
+.btn:active { transform: translateY(0) scale(0.97); }
 .btn:disabled,
 .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
@@ -737,9 +753,15 @@ input[type="number"]::-webkit-inner-spin-button {
   border: 1px solid var(--rule);
   background: transparent;
   color: var(--ink-3);
-  transition: all 0.18s ease;
+  /* Specify exact properties — `transition: all` animates layout reflows
+   * + paint properties that pill-btn never sets (Emil rule). */
+  transition: border-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              background 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pill-btn:hover { border-color: var(--ink); color: var(--ink); }
+.pill-btn:active { transform: scale(0.97); }
 .pill-btn.active {
   background: var(--accent-soft);
   border-color: var(--accent);
