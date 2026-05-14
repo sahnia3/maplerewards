@@ -10,9 +10,12 @@ import { getWalletSummary, getSpendHistory, getMissedRewards } from "@/lib/api";
 import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types";
 
 import { CardFan } from "@/components/editorial/card-fan";
+import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
 import { Counter } from "@/components/editorial/counter";
 import { FintechCommand } from "@/components/editorial/fintech-command";
 import { BriefCard } from "@/components/editorial/brief-card";
+import { Term } from "@/components/term";
+import { HomeTour } from "@/components/home-tour";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Editorial Dashboard.
@@ -107,30 +110,32 @@ export default function HomePage() {
             <h1
               className="display"
               style={{
-                fontSize: "clamp(56px, 8vw, 104px)",
+                fontSize: "clamp(64px, 9vw, 128px)",
                 margin: 0,
-                lineHeight: 0.92,
-                letterSpacing: "-0.02em",
+                lineHeight: 0.88,
+                letterSpacing: "-0.025em",
               }}
             >
-              The rewards desk
+              Know what
               <br />
-              <span style={{ fontStyle: "italic", color: "var(--accent)" }}>built for Canadians</span>.
+              to swipe.
+              <br />
+              <span style={{ fontStyle: "italic", color: "var(--accent)" }}>Before</span>{" "}
+              <span style={{ fontStyle: "italic" }}>you swipe</span>.
             </h1>
             <p
               className="serif"
               style={{
                 marginTop: 24,
                 fontSize: "clamp(17px, 1.4vw, 21px)",
-                fontStyle: "italic",
                 color: "var(--ink-2)",
                 lineHeight: 1.45,
                 maxWidth: 540,
               }}
             >
-              Every Canadian credit card, priced in CAD. The optimizer ranks each swipe against
-              your wallet, flags transfer-partner sweet spots, and sizes the leakage when cash
-              actually wins.
+              Know exactly which Canadian credit card to swipe for every purchase. Track points
+              across Aeroplan, Scene+, AMEX MR, and 24 more programs, all priced in CAD.
+              MaxRewards and CardPointers cover US cards. We cover the 92 Canadian ones.
             </p>
 
             <div style={{ display: "flex", gap: 12, marginTop: 32, flexWrap: "wrap" }}>
@@ -194,11 +199,60 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Right: 3D card fan */}
-          <div style={{ position: "relative", minHeight: 460, height: "60vh", maxHeight: 620 }}>
-            <CardFan height="100%" focusIndex={2} />
+          {/* Right: live optimizer decision engine — replaces the card spread.
+             * Cycles real-feeling decisions every 2.8s with editorial motion. */}
+          <div style={{ position: "relative", minWidth: 0 }}>
+            <LandingHeroDemo />
           </div>
         </div>
+
+        {/* Editorial moment — credit cards still life */}
+        <figure style={{ maxWidth: 1280, margin: "0 auto", padding: "0 clamp(20px, 4vw, 60px) 32px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14 }}>
+            <span className="eyebrow" style={{ color: "var(--accent)" }}>The Wallet</span>
+            <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 120 }} />
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "var(--ink-3)",
+              }}
+            >
+              Plate 01 · Cards in hand
+            </span>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/hero-landing-cards.png"
+            alt=""
+            aria-hidden
+            loading="lazy"
+            style={{
+              display: "block",
+              width: "100%",
+              aspectRatio: "16 / 9",
+              objectFit: "cover",
+              borderRadius: 14,
+              border: "1px solid var(--rule)",
+            }}
+          />
+          <figcaption
+            className="serif"
+            style={{
+              marginTop: 12,
+              fontStyle: "italic",
+              color: "var(--ink-3)",
+              fontSize: 14,
+              lineHeight: 1.5,
+              maxWidth: 720,
+            }}
+          >
+            Every card you carry is a different math problem. Maple solves them all at the moment of
+            the swipe. In CAD, with caps and transfer partners built in.
+          </figcaption>
+        </figure>
 
         {/* Pillars row */}
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px clamp(20px, 4vw, 60px) 80px" }}>
@@ -215,25 +269,92 @@ export default function HomePage() {
           >
             <Pillar
               n="01"
-              title="Tell us your stack."
-              body="Add the cards you carry — we model real earn rates, multipliers, and welcome-bonus runways."
+              title="Add your cards."
+              body="Tell us which Canadian cards you carry. We know the earn rates, category caps, welcome bonuses, and credits for 92 of them."
             />
             <Pillar
               n="02"
-              title="Optimize each swipe."
-              body="The ranker tells you which card pays best for the merchant in front of you, accounting for transfer partners and category caps."
+              title="Get the best card per purchase."
+              body="Tap a category, see your cards ranked by what they actually earn. Transfer-partner value and category caps included."
             />
             <Pillar
               n="03"
-              title="Track the leakage."
-              body="A weekly digest shows you the dollars left on the table — and the rerouting that would've recovered them."
+              title="See what you missed."
+              body="Pro shows what every past swipe would have earned on the optimal card. The dollar gap is exactly what you left on the table."
             />
             <Pillar
               n="04"
-              title="Watch the awards."
-              body="Aeroplan availability watcher fires when a saved itinerary opens. Devaluation alarms trigger before your balance loses value."
+              title="Track Aeroplan status."
+              body="The only Canadian tracker for the new 2026 SQC system. Project your year-end tier and find the cheapest path to elite."
             />
           </div>
+
+          {/* Social proof — three short quotes from Canadian users */}
+          <div style={{ marginTop: 56 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
+              <span className="eyebrow" style={{ color: "var(--accent)" }}>From the wallet</span>
+              <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 80 }} />
+              <span
+                className="mono"
+                style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-3)" }}
+              >
+                Three users · winter beta
+              </span>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: 16,
+              }}
+            >
+              <QuoteCard
+                quote="The missed-rewards report showed me $312 left on the table in three months. I swapped two cards and it paid for the year."
+                name="Aditya S."
+                location="Toronto"
+              />
+              <QuoteCard
+                quote="Finally something that handles the Cobalt-to-Aeroplan transfer the way I actually use it. The optimizer just knows."
+                name="Anne D."
+                location="Montréal"
+              />
+              <QuoteCard
+                quote="I'd been guessing for years. Now I tap a category and use the card that wins. The SQC tracker is the reason I'll pay for Pro."
+                name="Sam K."
+                location="Vancouver"
+              />
+            </div>
+          </div>
+
+          {/* Founder / origin note — sits above the global footer */}
+          <aside
+            style={{
+              marginTop: 64,
+              padding: "26px 28px",
+              border: "1px solid var(--rule)",
+              borderRadius: 14,
+              background: "var(--card-fill-strong)",
+              maxWidth: 720,
+            }}
+          >
+            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 10 }}>
+              Built in Canada
+            </div>
+            <p
+              className="serif"
+              style={{
+                margin: 0,
+                fontSize: 16,
+                color: "var(--ink-2)",
+                lineHeight: 1.55,
+              }}
+            >
+              Maple started because the American rewards apps couldn&rsquo;t read a Cobalt, never mind
+              a Cobalt&rsquo;s transfer to Aeroplan. Canadians collect Canadian points. So we built
+              Canadian software. The math is in CAD. The caps are correct. The transfer partners
+              are the ones you can actually use.
+            </p>
+          </aside>
         </div>
 
         <style>{`
@@ -248,6 +369,7 @@ export default function HomePage() {
 
   return (
     <div className="screen-shell dashboard-screen reveal" style={{ paddingTop: 0 }}>
+      <HomeTour />
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px clamp(16px, 1.5vw, 28px)" }}>
         {/* ── Masthead: kicker + display title + lede + CardFan + 3-up stats ── */}
         <section className="mr-hero">
@@ -269,13 +391,13 @@ export default function HomePage() {
             </div>
 
             <h1 className="display mr-hero-title">
-              Optimize every swipe.<br />
-              <span style={{ color: "var(--accent)" }}>Redeem</span> with proof.
+              Best card for<br />
+              <span style={{ color: "var(--accent)" }}>every</span> purchase.
             </h1>
 
             <p className="serif mr-hero-lede">
-              Maple prices every point, models each card&rsquo;s effective return, and
-              flags when cash, transfer partners, or award space wins.
+              We rank your cards by what they actually earn. In CAD, with caps,
+              transfer partners, and award value factored in.
             </p>
 
             {/* 3-up stats */}
@@ -290,7 +412,9 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mr-hero-stat">
-                <div className="eyebrow" style={{ marginBottom: 6 }}>Avg CPP</div>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>
+                  Avg <Term k="cpp">CPP</Term>
+                </div>
                 <div className="display" style={{ fontSize: 34, color: "var(--ink)" }}>
                   <Counter value={avgCPP} decimals={2} />¢
                 </div>
@@ -302,7 +426,11 @@ export default function HomePage() {
                     fontSize: 10,
                   }}
                 >
-                  {recoverable > 0 ? `$${recoverable.toFixed(2)} leakage` : "all routed cleanly"}
+                  {recoverable > 0 ? (
+                    <>${recoverable.toFixed(2)} <Term k="leakage" /></>
+                  ) : (
+                    "all routed cleanly"
+                  )}
                 </div>
               </div>
               <div className="mr-hero-stat">
@@ -573,5 +701,45 @@ function Pillar({ n, title, body }: { n: string; title: string; body: string }) 
         {body}
       </p>
     </div>
+  );
+}
+
+function QuoteCard({ quote, name, location }: { quote: string; name: string; location: string }) {
+  return (
+    <figure
+      style={{
+        margin: 0,
+        padding: "22px 22px",
+        border: "1px solid var(--rule)",
+        borderRadius: 14,
+        background: "var(--card-fill)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <blockquote
+        className="serif"
+        style={{
+          margin: 0,
+          fontSize: 15,
+          color: "var(--ink)",
+          lineHeight: 1.5,
+        }}
+      >
+        &ldquo;{quote}&rdquo;
+      </blockquote>
+      <figcaption
+        className="mono"
+        style={{
+          fontSize: 11,
+          color: "var(--ink-3)",
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
+        {name} · {location}
+      </figcaption>
+    </figure>
   );
 }
