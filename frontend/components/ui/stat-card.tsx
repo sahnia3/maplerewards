@@ -25,65 +25,82 @@ export function StatCard({
   accent = false,
   className = "",
 }: StatCardProps) {
+  const trendPositive = trend ? trend.value >= 0 : true;
+
   return (
     <div
-      className={`rounded-2xl p-4 relative overflow-hidden hover-glow ${className}`}
+      className={`rounded-2xl p-5 relative overflow-hidden ${className}`}
       style={{
         background: accent
-          ? "linear-gradient(135deg, var(--info-soft) 0%, rgba(79,70,229,0.03) 100%)"
-          : "var(--bg-elevated)",
+          ? "linear-gradient(135deg, var(--accent-wash) 0%, transparent 75%), var(--surface)"
+          : "var(--surface)",
         border: accent
-          ? "1px solid var(--info-border)"
-          : "1px solid var(--border-dim)",
+          ? "1px solid var(--accent)"
+          : "1px solid var(--rule-strong)",
+        boxShadow: accent ? "var(--shadow-accent-glow)" : "var(--shadow-1)",
+        transition:
+          "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      {accent && (
-        <div
-          className="absolute top-0 left-4 right-4 h-px"
-          style={{
-            background:
-              "linear-gradient(90deg, transparent, var(--info-border), transparent)",
-          }}
-        />
-      )}
-
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="label-xs mb-2" style={{ color: "var(--text-tertiary)" }}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div
+            className="font-mono uppercase mb-2"
+            style={{
+              fontSize: "10px",
+              letterSpacing: "0.14em",
+              color: "var(--ink-3)",
+              fontWeight: 500,
+            }}
+          >
             {label}
           </div>
+
           <AnimatedCounter
             value={value}
             prefix={prefix}
             suffix={suffix}
             decimals={decimals}
             duration={1.0}
-            className="text-[22px] font-bold tracking-tight text-white"
+            className="font-display tracking-tight"
+            style={{
+              fontSize: "clamp(24px, 2.5vw, 32px)",
+              lineHeight: 1.04,
+              color: "var(--ink)",
+              display: "block",
+            }}
           />
+
           {trend && (
             <div
-              className="flex items-center gap-1 mt-1.5 text-[12px] font-medium"
+              className="inline-flex items-center gap-1 mt-3 px-2 py-0.5 rounded-full"
               style={{
-                color: trend.value >= 0 ? "#4ADE80" : "#F87171",
+                fontSize: "11px",
+                fontWeight: 600,
+                fontFamily: "var(--font-mono)",
+                letterSpacing: "0.02em",
+                color: trendPositive ? "var(--gain)" : "var(--loss)",
+                background: trendPositive ? "var(--gain-soft)" : "var(--accent-wash)",
+                border: `1px solid ${
+                  trendPositive ? "var(--gain-soft)" : "var(--accent-soft)"
+                }`,
               }}
             >
-              <span>{trend.value >= 0 ? "↑" : "↓"}</span>
+              <span aria-hidden>{trendPositive ? "↑" : "↓"}</span>
               <span>
                 {Math.abs(trend.value).toFixed(1)}% {trend.label}
               </span>
             </div>
           )}
         </div>
+
         {icon && (
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg"
+            className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
             style={{
-              background: accent
-                ? "var(--info-soft-2)"
-                : "rgba(255,255,255,0.04)",
-              border: accent
-                ? "1px solid var(--info-border)"
-                : "1px solid var(--border-dim)",
+              background: accent ? "var(--accent-wash)" : "var(--surface-2)",
+              border: `1px solid ${accent ? "var(--accent-soft)" : "var(--rule)"}`,
+              color: accent ? "var(--accent)" : "var(--ink-2)",
             }}
           >
             {icon}
