@@ -318,6 +318,14 @@ html, body { margin: 0; padding: 0; }
     font-variant-numeric: tabular-nums;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
+    /* Body type — bumped per user readability complaint.
+     * 16px / 500 / 1.55 instead of browser-default 16px / 400 / 1.2.
+     * Tailwind's text-[13px]/text-[14px] inline rules override this for
+     * specific labels; this is the floor for any element that doesn't
+     * specify size + weight. */
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.55;
   }
 }
 

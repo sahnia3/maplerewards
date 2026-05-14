@@ -2,29 +2,56 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, ArrowLeftRight, AlertTriangle } from "lucide-react";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { getCardDetail } from "@/lib/api";
 import type { CardDetail, MultiplierRow, TransferPartner } from "@/lib/types";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { WelcomeOfferBadge } from "@/components/welcome-offer-badge";
 
 type TabKey = "overview" | "earn-rates" | "transfer-partners";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
-  { key: "earn-rates", label: "Earn Rates" },
-  { key: "transfer-partners", label: "Transfer Partners" },
+  { key: "earn-rates", label: "Earn rates" },
+  { key: "transfer-partners", label: "Transfer partners" },
 ];
 
-function InfoRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+/* ── Subcomponents ─────────────────────────────────────────────────────── */
+
+function InfoRow({
+  label,
+  value,
+  highlight,
+  isLast,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  isLast?: boolean;
+}) {
   return (
     <div
-      className="flex items-center justify-between py-3 px-4"
-      style={{ borderBottom: "1px solid var(--border-dim)" }}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "baseline",
+        padding: "18px 22px",
+        borderBottom: isLast ? "none" : "1px solid var(--rule)",
+        gap: 16,
+      }}
     >
-      <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>{label}</span>
+      <span className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)" }}>
+        {label}
+      </span>
       <span
-        className="text-[13px] font-semibold"
-        style={{ color: highlight ? "var(--accent)" : "white" }}
+        className="display"
+        style={{
+          fontSize: 18,
+          color: highlight ? "var(--accent)" : "var(--ink)",
+          letterSpacing: "-0.005em",
+          textAlign: "right",
+        }}
       >
         {value}
       </span>
@@ -33,38 +60,68 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
 }
 
 function EarnRateRow({ row, isLast }: { row: MultiplierRow; isLast: boolean }) {
+  /* Earn-rate tone: 3x+ reads as the brand reward (maple), 2x as a
+   * supporting prize (gold), 1x as baseline. Semantic tokens, not neon. */
+  const tone =
+    row.earn_rate >= 3 ? "var(--accent)" : row.earn_rate >= 2 ? "var(--gold)" : "var(--ink)";
+
   return (
     <div
-      className="flex items-center gap-4 py-3 px-4"
-      style={{ borderBottom: isLast ? "none" : "1px solid var(--border-dim)" }}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "center",
+        gap: 18,
+        padding: "16px 22px",
+        borderBottom: isLast ? "none" : "1px solid var(--rule)",
+      }}
     >
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium card-detail-text">{row.category_name}</p>
+      <div style={{ minWidth: 0 }}>
+        <p className="display" style={{ fontSize: 15, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+          {row.category_name}
+        </p>
         {row.notes && (
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>{row.notes}</p>
+          <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 4, lineHeight: 1.4 }}>
+            {row.notes}
+          </p>
         )}
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         {row.cap_amount != null && (
           <span
-            className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+            className="mono"
             style={{
-              background: "rgba(245,158,11,0.10)",
-              border: "1px solid rgba(245,158,11,0.2)",
-              color: "#F59E0B",
+              padding: "3px 10px",
+              borderRadius: 999,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              background: "var(--gold-tint)",
+              border: "1px solid var(--gold-soft)",
+              color: "var(--gold)",
             }}
           >
-            Cap ${row.cap_amount.toLocaleString()}{row.cap_period ? `/${row.cap_period}` : ""} <InfoTooltip term="spend-cap" />
+            Cap ${row.cap_amount.toLocaleString()}{row.cap_period ? `/${row.cap_period}` : ""}
           </span>
         )}
         <span
-          className="text-[14px] font-bold"
-          style={{ color: row.earn_rate >= 3 ? "var(--accent)" : row.earn_rate >= 2 ? "#F59E0B" : "white" }}
+          className="display"
+          style={{
+            fontSize: 22,
+            fontStyle: "italic",
+            color: tone,
+            letterSpacing: "-0.01em",
+            lineHeight: 1,
+          }}
         >
-          {row.earn_rate}x
+          {row.earn_rate}×
         </span>
-        <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        <span
+          className="mono"
+          style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}
+        >
           {row.earn_type}
         </span>
       </div>
@@ -76,36 +133,69 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
   const program = partner.to_program;
   return (
     <div
-      className="p-4 rounded-xl"
       style={{
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border-dim)",
-        borderRadius: 10,
+        position: "relative",
+        background: "var(--surface)",
+        border: "1px solid var(--rule-strong)",
+        borderRadius: 14,
+        padding: 18,
+        boxShadow: "var(--shadow-1)",
+        overflow: "hidden",
+        transition: "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* Top accent stripe in info tone */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          background: "var(--info)",
+        }}
+      />
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "var(--info-soft)", border: "1px solid var(--info-border)" }}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--info-soft)",
+              border: "1px solid var(--info-border)",
+              color: "var(--info)",
+              flexShrink: 0,
+            }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" className="w-4 h-4">
-              <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <ArrowLeftRight size={16} strokeWidth={1.8} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold card-detail-text truncate">{program?.name ?? "Unknown"}</p>
-            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+          <div style={{ minWidth: 0 }}>
+            <p className="display" style={{ fontSize: 15, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+              {program?.name ?? "Unknown"}
+            </p>
+            <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 3 }}>
               {program?.currency_name ?? "Points"}
             </p>
           </div>
         </div>
 
         <span
-          className="text-[13px] font-bold px-2.5 py-1 rounded-lg flex-shrink-0"
+          className="mono"
           style={{
-            background: "var(--info-soft)",
-            border: "1px solid var(--info-border)",
+            flexShrink: 0,
+            padding: "4px 12px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            background: "var(--accent-wash)",
+            border: "1px solid var(--accent-soft)",
             color: "var(--accent)",
           }}
         >
@@ -113,23 +203,21 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div
-          className="px-3 py-2 rounded-lg"
-          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-dim)" }}
-        >
-          <p className="label-xs mb-0.5" style={{ color: "var(--text-tertiary)" }}>Processing</p>
-          <p className="text-[12px] font-semibold card-detail-text">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderTop: "1px solid var(--rule)", paddingTop: 12 }}>
+        <div>
+          <p className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, marginBottom: 4 }}>
+            Processing
+          </p>
+          <p className="display" style={{ fontSize: 14, color: "var(--ink)", lineHeight: 1.1 }}>
             {partner.processing_days === 0 ? "Instant" : `${partner.processing_days} day${partner.processing_days !== 1 ? "s" : ""}`}
           </p>
         </div>
         {program?.base_cpp != null && (
-          <div
-            className="px-3 py-2 rounded-lg"
-            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-dim)" }}
-          >
-            <p className="label-xs mb-0.5" style={{ color: "var(--text-tertiary)" }}>Dest. CPP</p>
-            <p className="text-[12px] font-semibold card-detail-text">
+          <div style={{ borderLeft: "1px solid var(--rule)", paddingLeft: 14 }}>
+            <p className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, marginBottom: 4 }}>
+              Dest. CPP
+            </p>
+            <p className="display" style={{ fontSize: 14, color: "var(--accent)", lineHeight: 1.1, fontStyle: "italic" }}>
               {(program.base_cpp * 100).toFixed(1)}¢/pt
             </p>
           </div>
@@ -138,8 +226,16 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
 
       {partner.notes && (
         <p
-          className="mt-2.5 text-[11px] leading-snug"
-          style={{ color: "var(--text-tertiary)" }}
+          className="serif"
+          style={{
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: "1px solid var(--rule)",
+            fontSize: 12,
+            fontStyle: "italic",
+            color: "var(--ink-3)",
+            lineHeight: 1.5,
+          }}
         >
           {partner.notes}
         </p>
@@ -150,35 +246,30 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
 
 function DetailSkeleton() {
   return (
-    <div className="max-w-3xl mx-auto px-6 pt-8 pb-24">
-      {/* Back */}
-      <div className="h-4 w-24 rounded shimmer mb-8" />
-
-      {/* Card visual */}
-      <div className="flex flex-col sm:flex-row gap-6 mb-8">
-        <div style={{ width: 380, height: 239, borderRadius: 18 }} className="shimmer flex-shrink-0" />
-        <div className="flex-1">
-          <div className="h-6 w-48 rounded shimmer mb-3" />
-          <div className="h-4 w-32 rounded shimmer mb-2" />
-          <div className="h-5 w-20 rounded-full shimmer" />
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+      <div className="h-4 w-32 rounded shimmer mb-8" />
+      <div style={{ display: "flex", gap: 24, marginBottom: 32, flexWrap: "wrap" }}>
+        <div style={{ width: 320, height: 200, borderRadius: 14, flexShrink: 0 }} className="shimmer" />
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div className="h-3 w-24 rounded shimmer mb-3" />
+          <div className="h-10 w-72 rounded shimmer mb-4" />
+          <div style={{ display: "flex", gap: 8 }}>
+            <div className="h-7 w-16 rounded-full shimmer" />
+            <div className="h-7 w-20 rounded-full shimmer" />
+            <div className="h-7 w-24 rounded-full shimmer" />
+          </div>
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="flex gap-4 mb-6" style={{ borderBottom: "1px solid var(--border-dim)" }}>
-        {[80, 70, 110].map((w, i) => (
-          <div key={i} className="pb-3" style={{ width: w, height: 16 }}>
-            <div className="h-4 rounded shimmer" />
-          </div>
+      <div style={{ display: "flex", gap: 20, marginBottom: 24, borderBottom: "1px solid var(--rule)", paddingBottom: 10 }}>
+        {[88, 96, 130].map((w, i) => (
+          <div key={i} className="h-4 rounded shimmer" style={{ width: w }} />
         ))}
       </div>
-
-      {/* Content */}
-      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border-dim)" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--rule-strong)", borderRadius: 14, padding: 4 }}>
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex items-center justify-between py-3 px-4" style={{ borderBottom: "1px solid var(--border-dim)" }}>
-            <div className="h-3.5 w-32 rounded shimmer" />
-            <div className="h-3.5 w-20 rounded shimmer" />
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "16px 18px", borderBottom: i < 4 ? "1px solid var(--rule)" : "none" }}>
+            <div className="h-4 w-32 rounded shimmer" />
+            <div className="h-4 w-24 rounded shimmer" />
           </div>
         ))}
       </div>
@@ -186,19 +277,19 @@ function DetailSkeleton() {
   );
 }
 
+/* ── Page ──────────────────────────────────────────────────────────────── */
+
 export default function CardDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const cardId = params?.id as string;
-  /* Where to return to. ?from=optimizer => /optimizer, otherwise default to /cards. */
+
   const fromHint = searchParams?.get("from");
-  const backHref = fromHint === "optimizer" ? "/optimizer"
-    : fromHint === "wallet" ? "/wallet"
-    : "/cards";
-  const backLabel = fromHint === "optimizer" ? "Back to optimizer"
-    : fromHint === "wallet" ? "Back to wallet"
-    : "Back to register";
+  const backHref =
+    fromHint === "optimizer" ? "/optimizer" : fromHint === "wallet" ? "/wallet" : "/cards";
+  const backLabel =
+    fromHint === "optimizer" ? "Back to optimizer" : fromHint === "wallet" ? "Back to wallet" : "Back to register";
   const goBack = () => router.push(backHref);
 
   const [detail, setDetail] = useState<CardDetail | null>(null);
@@ -227,191 +318,183 @@ export default function CardDetailPage() {
       .finally(() => setLoading(false));
   }, [cardId]);
 
-  if (loading) {
-    return (
-      <div className="relative min-h-screen overflow-hidden">
-        <div
-          className="orb w-[400px] h-[260px] top-[-60px] right-[-30px]"
-          style={{ background: "radial-gradient(ellipse, var(--info-soft) 0%, transparent 70%)" }}
-        />
-        <DetailSkeleton />
-      </div>
-    );
-  }
+  if (loading) return <DetailSkeleton />;
 
-  if (notFound) {
+  if (notFound || (error && !detail)) {
     return (
-      <div className="relative min-h-screen flex items-center justify-center">
-        <div className="text-center px-6">
-          <div className="text-6xl mb-6">404</div>
-          <h1 className="text-[22px] font-bold card-detail-text mb-2">Card not found</h1>
-          <p className="text-[14px] mb-6" style={{ color: "var(--text-secondary)" }}>
-            This card doesn&apos;t exist or has been removed.
-          </p>
-          <button
-            onClick={goBack}
-            className="h-10 px-6 rounded-xl font-semibold text-[14px] card-detail-text maple-bg accent-glow"
-          >
-            Go back
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !detail) {
-    return (
-      <div className="relative min-h-screen flex items-center justify-center">
-        <div className="text-center px-6">
-          <p className="text-[14px] mb-4" style={{ color: "var(--accent)" }}>
-            {error ?? "Something went wrong"}
-          </p>
-          <button
-            onClick={goBack}
-            className="h-10 px-6 rounded-xl font-semibold text-[14px] card-detail-text"
+      <div className="reveal" style={{ paddingTop: 0 }}>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "60px clamp(20px, 4vw, 60px)" }}>
+          <BackButton onClick={goBack} label={backLabel} />
+          <div
             style={{
               background: "var(--card-fill)",
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "48px 32px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
+              marginTop: 32,
             }}
           >
-            Go back
-          </button>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 999,
+                margin: "0 auto 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--accent-wash)",
+                border: "1px solid var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              <AlertTriangle size={24} strokeWidth={1.5} />
+            </div>
+            <h2 className="display" style={{ fontSize: 28, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.1 }}>
+              {notFound ? "Card not found" : "Something went wrong"}
+            </h2>
+            <p className="serif" style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-2)", marginTop: 10, lineHeight: 1.55, maxWidth: 380, marginLeft: "auto", marginRight: "auto" }}>
+              {notFound
+                ? "This card doesn't exist in the register, or it has been removed."
+                : error ?? "Something went wrong loading the card."}
+            </p>
+            <button onClick={goBack} className="btn btn-primary" style={{ marginTop: 24, fontSize: 12, height: 40 }}>
+              {backLabel}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
+
+  if (!detail) return <DetailSkeleton />;
 
   const { card, multipliers, transfer_partners, value_range_low, value_range_high } = detail;
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <BackButton onClick={goBack} label={backLabel} />
 
-        {/* Back navigation */}
-        <button
-          onClick={goBack}
-          className="mono"
+        {/* Hero: card art + masthead. Accent radial backdrop ties it into the
+            editorial brand moments used on pricing + pro-tools. */}
+        <section
           style={{
-            display: "inline-flex",
+            position: "relative",
+            display: "grid",
+            gridTemplateColumns: "minmax(280px, 360px) 1fr",
+            gap: 36,
             alignItems: "center",
-            gap: 6,
-            marginBottom: 24,
-            fontSize: 11,
-            color: "var(--ink-3)",
-            letterSpacing: "0.10em",
-            textTransform: "uppercase",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
+            padding: "36px 0 32px",
+            marginBottom: 28,
+            borderBottom: "1px solid var(--rule)",
           }}
+          className="card-detail-hero fade-up"
         >
-          ← {backLabel}
-        </button>
-
-        {/* Card visual + header */}
-        <div className="flex flex-col sm:flex-row gap-6 mb-8 fade-up">
-          <div className="flex-shrink-0">
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: "-20px -40px",
+              background:
+                "radial-gradient(ellipse 60% 70% at 0% 50%, var(--accent-glow), transparent 60%), radial-gradient(ellipse 40% 50% at 100% 100%, var(--gold-soft), transparent 65%)",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+          <div style={{ position: "relative", zIndex: 1 }}>
             <CreditCardVisual card={card} size="lg" />
           </div>
 
-          <div className="flex flex-col justify-center gap-2">
-            <p className="label-xs" style={{ color: "var(--text-tertiary)" }}>{card.issuer}</p>
-            <h1 className="text-[22px] font-bold card-detail-text leading-tight">{card.name}</h1>
+          <div style={{ position: "relative", zIndex: 1, minWidth: 0 }}>
+            <p className="eyebrow" style={{ color: "var(--accent)", marginBottom: 12 }}>
+              {card.issuer}
+            </p>
+            <h1
+              className="display"
+              style={{
+                fontSize: "clamp(36px, 4.5vw, 52px)",
+                margin: 0,
+                lineHeight: 0.98,
+                letterSpacing: "-0.015em",
+              }}
+            >
+              {card.name}
+            </h1>
 
-            {/* Badges row */}
-            <div className="flex flex-wrap gap-2 mt-1">
-              <span
-                className="px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wide"
-                style={{
-                  background: "var(--card-fill)",
-                  border: "1px solid var(--border-mid)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                {card.network}
-              </span>
-
+            {/* Pill row: network · annual fee · CPP range */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+              <Pill tone="ink">{card.network.toUpperCase()}</Pill>
               {card.annual_fee === 0 ? (
-                <span
-                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                  style={{
-                    background: "rgba(16,185,129,0.10)",
-                    border: "1px solid rgba(16,185,129,0.22)",
-                    color: "#10B981",
-                  }}
-                >
-                  No annual fee
-                </span>
+                <Pill tone="gain">No annual fee</Pill>
               ) : (
-                <span
-                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                  style={{
-                    background: "rgba(245,158,11,0.10)",
-                    border: "1px solid rgba(245,158,11,0.22)",
-                    color: "#F59E0B",
-                  }}
-                >
-                  ${card.annual_fee}/yr
-                </span>
+                <Pill tone="gold">${card.annual_fee}/yr</Pill>
               )}
-
               {value_range_high > 0 && (
-                <span
-                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                  style={{
-                    background: "var(--info-soft)",
-                    border: "1px solid var(--info-border)",
-                    color: "var(--accent)",
-                  }}
-                >
+                <Pill tone="accent">
                   {(value_range_low * 100).toFixed(1)}–{(value_range_high * 100).toFixed(1)}¢/pt
-                </span>
+                </Pill>
               )}
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Tabs */}
         <div
-          className="flex mb-6 fade-up-1 overflow-x-auto"
-          style={{ borderBottom: "1px solid var(--border-dim)" }}
+          className="fade-up-1"
+          style={{
+            display: "flex",
+            gap: 4,
+            marginBottom: 24,
+            overflowX: "auto",
+            borderBottom: "1px solid var(--rule)",
+          }}
         >
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;
-            // Show badge counts
             const badgeCount =
               tab.key === "earn-rates"
                 ? multipliers.length
                 : tab.key === "transfer-partners"
-                ? transfer_partners.length
-                : null;
+                  ? transfer_partners.length
+                  : null;
             return (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className="flex items-center gap-1.5 px-4 py-3 text-[13px] font-medium transition-all whitespace-nowrap"
+                className="mono"
                 style={{
-                  color: isActive ? "white" : "var(--text-tertiary)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "12px 18px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  color: isActive ? "var(--accent)" : "var(--ink-3)",
                   background: "transparent",
+                  border: "none",
+                  borderBottom: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
                   marginBottom: -1,
                   cursor: "pointer",
-                  borderTop: "none",
-                  borderLeft: "none",
-                  borderRight: "none",
-                  borderBottomStyle: "solid",
-                  borderBottomWidth: 2,
-                  borderBottomColor: isActive ? "#0D9488" : "transparent",
-                  padding: "12px 16px",
+                  whiteSpace: "nowrap",
+                  transition: "color 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
                 }}
               >
                 {tab.label}
                 {badgeCount != null && badgeCount > 0 && (
                   <span
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    className="mono"
                     style={{
-                      background: isActive ? "var(--info-soft-2)" : "var(--card-fill)",
-                      color: isActive ? "var(--accent)" : "var(--text-tertiary)",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: "1px 7px",
+                      borderRadius: 999,
+                      background: isActive ? "var(--accent-wash)" : "var(--surface-2)",
+                      color: isActive ? "var(--accent)" : "var(--ink-3)",
                     }}
                   >
                     {badgeCount}
@@ -424,120 +507,97 @@ export default function CardDetailPage() {
 
         {/* Tab content */}
         <div className="fade-up-2">
-
-          {/* Overview Tab */}
           {activeTab === "overview" && (
             <div
-              className="rounded-xl overflow-hidden"
               style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-dim)",
-                borderRadius: 12,
-                boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+                background: "var(--surface)",
+                border: "1px solid var(--rule-strong)",
+                borderRadius: 14,
+                overflow: "hidden",
+                boxShadow: "var(--shadow-1)",
               }}
             >
-              <InfoRow label="Annual Fee" value={card.annual_fee === 0 ? "No annual fee" : `$${card.annual_fee} CAD/year`} />
+              <InfoRow
+                label="Annual fee"
+                value={card.annual_fee === 0 ? "No annual fee" : `$${card.annual_fee} CAD/year`}
+              />
               {card.welcome_bonus_points > 0 && (
                 <>
                   <InfoRow
-                    label="Welcome Bonus"
+                    label="Welcome bonus"
                     value={`${card.welcome_bonus_points.toLocaleString()} points`}
                     highlight
                   />
                   <InfoRow
-                    label="Minimum Spend"
+                    label="Minimum spend"
                     value={`$${card.welcome_bonus_min_spend.toLocaleString()} in ${card.welcome_bonus_months} months`}
                   />
+                  {card.welcome_bonus_offer_expires_at && (
+                    <div style={{ padding: "10px 22px 14px" }}>
+                      <WelcomeOfferBadge expiresAt={card.welcome_bonus_offer_expires_at} variant="banner" />
+                    </div>
+                  )}
                 </>
               )}
-              <InfoRow
-                label="Loyalty Program"
-                value={card.loyalty_program?.name ?? "—"}
-              />
-              <InfoRow
-                label="Point Currency"
-                value={card.loyalty_program?.currency_name ?? "—"}
-              />
+              <InfoRow label="Loyalty program" value={card.loyalty_program?.name ?? "—"} />
+              <InfoRow label="Point currency" value={card.loyalty_program?.currency_name ?? "—"} />
               {value_range_low > 0 && value_range_high > 0 && (
                 <InfoRow
-                  label="Point Value Range"
+                  label="Point value range"
                   value={`${(value_range_low * 100).toFixed(1)}¢ – ${(value_range_high * 100).toFixed(1)}¢ per point`}
                 />
               )}
-              <div
-                className="flex items-center justify-between py-3 px-4"
-              >
-                <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>Network</span>
-                <span
-                  className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase"
-                  style={{
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid var(--border-mid)",
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  {card.network}
-                </span>
-              </div>
+              <InfoRow label="Network" value={card.network.toUpperCase()} isLast />
             </div>
           )}
 
-          {/* Earn Rates Tab */}
           {activeTab === "earn-rates" && (
             multipliers.length === 0 ? (
               <div
-                className="rounded-xl p-10 text-center"
                 style={{
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-dim)",
-                  borderRadius: 12,
+                  background: "var(--card-fill)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 14,
+                  padding: "40px 28px",
+                  textAlign: "center",
+                  boxShadow: "var(--shadow-1)",
                 }}
               >
-                <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
+                <p className="serif" style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-2)" }}>
                   No earn rate data available for this card.
                 </p>
               </div>
             ) : (
               <div>
                 {/* Legend */}
-                <div className="flex items-center gap-4 mb-4 px-1">
-                  <InfoTooltip term="earn-rate" />
+                <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 16, padding: "0 4px", flexWrap: "wrap" }}>
                   {[
-                    { label: "3x+", color: "var(--accent)", bg: "var(--info-soft)" },
-                    { label: "2x", color: "#F59E0B", bg: "rgba(245,158,11,0.1)" },
-                    { label: "1x", color: "white", bg: "var(--card-fill)" },
+                    { label: "3×+", color: "var(--accent)" },
+                    { label: "2×", color: "var(--gold)" },
+                    { label: "1×", color: "var(--ink-3)" },
                   ].map((item) => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ background: item.color }}
-                      />
-                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{item.label}</span>
+                    <div key={item.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: item.color }} />
+                      <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                        {item.label}
+                      </span>
                     </div>
                   ))}
-                  <span className="text-[11px] ml-auto" style={{ color: "var(--text-tertiary)" }}>
+                  <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                     {multipliers.length} categories
                   </span>
+                  <InfoTooltip term="earn-rate" />
                 </div>
 
                 <div
-                  className="rounded-xl overflow-hidden"
                   style={{
-                    background: "var(--bg-elevated)",
-                    border: "1px solid var(--border-dim)",
-                    borderRadius: 12,
-                    boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+                    background: "var(--surface)",
+                    border: "1px solid var(--rule-strong)",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    boxShadow: "var(--shadow-1)",
                   }}
                 >
-                  {/* Table header */}
-                  <div
-                    className="flex items-center gap-4 py-2.5 px-4"
-                    style={{ borderBottom: "1px solid var(--border-dim)", background: "rgba(255,255,255,0.02)" }}
-                  >
-                    <p className="label-xs flex-1" style={{ color: "var(--text-tertiary)" }}>Category</p>
-                    <p className="label-xs" style={{ color: "var(--text-tertiary)" }}>Rate</p>
-                  </div>
-
                   {multipliers.map((row, i) => (
                     <EarnRateRow key={`${row.category_slug}-${i}`} row={row} isLast={i === multipliers.length - 1} />
                   ))}
@@ -546,37 +606,60 @@ export default function CardDetailPage() {
             )
           )}
 
-          {/* Transfer Partners Tab */}
           {activeTab === "transfer-partners" && (
             transfer_partners.length === 0 ? (
               <div
-                className="rounded-xl p-10 text-center"
                 style={{
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border-dim)",
-                  borderRadius: 12,
+                  background: "var(--card-fill)",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 14,
+                  padding: "40px 28px",
+                  textAlign: "center",
+                  boxShadow: "var(--shadow-1)",
                 }}
               >
                 <div
-                  className="w-12 h-12 rounded-xl mb-4 mx-auto flex items-center justify-center"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border-dim)" }}
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 999,
+                    margin: "0 auto 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--rule)",
+                    color: "var(--ink-3)",
+                  }}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" className="w-6 h-6">
-                    <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3" strokeLinecap="round" />
-                  </svg>
+                  <ArrowLeftRight size={22} strokeWidth={1.5} />
                 </div>
-                <p className="text-[14px] font-medium card-detail-text mb-1">No transfer partners</p>
-                <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+                <h3 className="display" style={{ fontSize: 20, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+                  No transfer partners
+                </h3>
+                <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.55 }}>
                   This card doesn&apos;t support points transfers.
                 </p>
               </div>
             ) : (
               <div>
-                <p className="text-[13px] mb-4 px-1 flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+                <p
+                  className="serif"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 14,
+                    fontStyle: "italic",
+                    color: "var(--ink-2)",
+                    marginBottom: 16,
+                    paddingLeft: 4,
+                  }}
+                >
                   {transfer_partners.length} transfer partner{transfer_partners.length !== 1 ? "s" : ""} available
                   <InfoTooltip term="transfer-partners" />
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
                   {transfer_partners.map((partner) => (
                     <TransferPartnerCard key={partner.id} partner={partner} />
                   ))}
@@ -587,5 +670,64 @@ export default function CardDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Small helpers ─────────────────────────────────────────────────────── */
+
+function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginBottom: 8,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.10em",
+        textTransform: "uppercase",
+        color: "var(--ink-3)",
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+        transition: "color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--ink-3)")}
+    >
+      <ChevronLeft size={14} strokeWidth={2} /> {label}
+    </button>
+  );
+}
+
+function Pill({ children, tone }: { children: React.ReactNode; tone: "accent" | "gain" | "gold" | "ink" }) {
+  const styles: Record<typeof tone, { bg: string; border: string; color: string }> = {
+    accent: { bg: "var(--accent-wash)", border: "var(--accent-soft)", color: "var(--accent)" },
+    gain: { bg: "var(--gain-soft)", border: "var(--gain-soft)", color: "var(--gain)" },
+    gold: { bg: "var(--gold-tint)", border: "var(--gold-soft)", color: "var(--gold)" },
+    ink: { bg: "var(--surface-2)", border: "var(--rule)", color: "var(--ink-2)" },
+  };
+  const s = styles[tone];
+  return (
+    <span
+      className="mono"
+      style={{
+        padding: "5px 12px",
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.10em",
+        textTransform: "uppercase",
+        background: s.bg,
+        border: `1px solid ${s.border}`,
+        color: s.color,
+      }}
+    >
+      {children}
+    </span>
   );
 }
