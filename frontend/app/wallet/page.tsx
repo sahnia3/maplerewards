@@ -3,21 +3,24 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2, Plus, ArrowRight, Trash2, Pencil, Check } from "lucide-react";
-import { AddCardModal } from "@/components/add-card-modal";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { PageMasthead } from "@/components/editorial/page-masthead";
+import { CSVImportPanel } from "@/components/csv-import-panel";
 import { updateCardBalance, removeCardFromWallet } from "@/lib/api";
 import type { UserCard } from "@/lib/types";
 
 /* Editorial wallet — paper substrate, real card sprites, mono inputs, maple-red CTAs.
- * Rebuilt from the legacy WalletCard component which used dark-theme tokens. */
+ *
+ * /wallet is the *manage existing* surface. The single canonical "browse + add"
+ * flow lives at /cards (which carries its own wallet rail at the top). The
+ * masthead CTA + EmptyWallet CTA both navigate there to eliminate the
+ * duplicate add-card UX that confused users on first run. */
 
 export default function WalletPage() {
   const { sessionId } = useSession();
   const { wallet, isLoading: loading, error, totalPoints, refreshWallet } = useWallet();
-  const [showAdd, setShowAdd] = useState(false);
 
   // Compute summary stats
   const totalValue = wallet.reduce((sum, uc) => {
@@ -35,28 +38,26 @@ export default function WalletPage() {
           title={<>The <span style={{ fontStyle: "italic" }}>working</span> wallet.</>}
           lede="Every card you carry, every point you've earned. Edit point balances inline. Maple prices everything in CAD against the categories you actually spend in."
           cta={
-            <button
-              type="button"
-              onClick={() => setShowAdd(true)}
+            <Link
+              href="/cards"
               className="mono"
               style={{
                 background: "var(--accent)",
                 color: "#fff",
                 padding: "14px 24px",
                 borderRadius: 10,
-                border: "none",
                 fontSize: 12,
                 fontWeight: 600,
                 letterSpacing: "0.10em",
                 textTransform: "uppercase",
-                cursor: "pointer",
+                textDecoration: "none",
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
               }}
             >
               <Plus size={14} /> Add card
-            </button>
+            </Link>
           }
         />
 
@@ -131,7 +132,7 @@ export default function WalletPage() {
             </button>
           </div>
         ) : wallet.length === 0 ? (
-          <EmptyWallet onAdd={() => setShowAdd(true)} />
+          <EmptyWallet />
         ) : (
           <>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
@@ -198,18 +199,15 @@ export default function WalletPage() {
                 Open optimizer <ArrowRight size={14} />
               </Link>
             </div>
+
+            {/* Statement import — bulk path to backfill spend_entries from a
+             * downloaded CSV without waiting for the Plaid/Flinks contract. */}
+            <div style={{ marginTop: 28 }}>
+              <CSVImportPanel />
+            </div>
           </>
         )}
       </div>
-
-      {showAdd && sessionId && (
-        <AddCardModal
-          sessionId={sessionId}
-          existingCardIds={wallet.map((c) => c.card_id)}
-          onAdded={() => { refreshWallet(); setShowAdd(false); }}
-          onClose={() => setShowAdd(false)}
-        />
-      )}
 
       <style>{`
         @media (max-width: 720px) {
@@ -256,7 +254,10 @@ function WalletRow({
     if (!confirm(`Remove ${card?.name ?? "this card"} from your wallet?`)) return;
     setRemoving(true);
     try {
-      await removeCardFromWallet(sessionId, userCard.id);
+      // Backend keys deletes by catalog card_id (DELETE /wallet/:sid/cards/:cardID
+      // → user_cards WHERE user_id=$1 AND card_id=$2). Sending the wallet-row id
+      // here silently no-ops, which was the bug behind "remove doesn't work".
+      await removeCardFromWallet(sessionId, userCard.card_id);
       onChanged();
     } catch { setRemoving(false); setErrMsg("Remove failed"); }
   }
@@ -270,9 +271,10 @@ function WalletRow({
 
   return (
     <article
+      className="wallet-row"
       style={{
         position: "relative",
-        border: "1px solid var(--rule)",
+        border: "1px solid var(--rule-strong)",
         borderRadius: 14,
         background: "var(--card-fill)",
         padding: 18,
@@ -280,6 +282,8 @@ function WalletRow({
         display: "flex",
         flexDirection: "column",
         gap: 14,
+        transition:
+          "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       {/* Card visual + name + actions */}
@@ -288,7 +292,10 @@ function WalletRow({
           <CreditCardVisual card={card} balance={userCard.point_balance} size="sm" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <h3 className="display" style={{ fontSize: 19, margin: 0, lineHeight: 1.15, color: "var(--ink)" }}>
+          <h3
+            className="display wallet-card-name"
+            style={{ fontSize: 19, margin: 0, lineHeight: 1.15, color: "var(--ink)" }}
+          >
             {userCard.nickname || card?.name || "Card"}
           </h3>
           {userCard.nickname && card?.name && (
@@ -486,7 +493,7 @@ function QuickLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function EmptyWallet({ onAdd }: { onAdd: () => void }) {
+function EmptyWallet() {
   return (
     <div
       style={{
@@ -503,9 +510,8 @@ function EmptyWallet({ onAdd }: { onAdd: () => void }) {
       <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 10, marginBottom: 18 }}>
         Add the cards you carry — Maple models them against your spend in real time.
       </p>
-      <button
-        type="button"
-        onClick={onAdd}
+      <Link
+        href="/cards"
         className="mono"
         style={{
           display: "inline-flex",
@@ -514,17 +520,16 @@ function EmptyWallet({ onAdd }: { onAdd: () => void }) {
           padding: "14px 26px",
           borderRadius: 10,
           background: "var(--accent)",
+          textDecoration: "none",
           color: "#fff",
-          border: "none",
           fontSize: 12,
           fontWeight: 600,
           letterSpacing: "0.10em",
           textTransform: "uppercase",
-          cursor: "pointer",
         }}
       >
         <Plus size={13} /> Add a card
-      </button>
+      </Link>
     </div>
   );
 }
