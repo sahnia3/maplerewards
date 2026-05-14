@@ -186,6 +186,7 @@ export default function InsightsPage() {
                 value={`$${(missed?.total_gap ?? 0).toFixed(2)}`}
                 sub={`${missed?.missed_count ?? 0} txns mis-routed`}
                 subColor={(missed?.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--ink-3)"}
+                accent={(missed?.total_gap ?? 0) > 0}
               />
             </section>
 
@@ -300,11 +301,16 @@ function KPI({
   value,
   sub,
   subColor,
+  accent = false,
 }: {
   label: string;
   value: string;
   sub?: string;
   subColor?: string;
+  /* When true, the value reads as a brand moment — maple color +
+   * gradient underline. Used for the Recoverable cell when there's
+   * money on the table. */
+  accent?: boolean;
 }) {
   return (
     <div
@@ -312,16 +318,43 @@ function KPI({
         padding: "22px 24px",
         borderRight: "1px solid var(--rule)",
         minWidth: 0,
+        position: "relative",
       }}
     >
       <div className="eyebrow" style={{ marginBottom: 10 }}>{label}</div>
-      <div className="display" style={{ fontSize: 36, lineHeight: 1, color: "var(--ink)", letterSpacing: "-0.005em" }}>
-        {value}
+      <div style={{ position: "relative", display: "inline-block" }}>
+        <div
+          className="display"
+          style={{
+            fontSize: accent ? 40 : 36,
+            lineHeight: 1,
+            color: accent ? "var(--accent)" : "var(--ink)",
+            letterSpacing: "-0.01em",
+            fontStyle: accent ? "italic" : "normal",
+          }}
+        >
+          {value}
+        </div>
+        {accent && (
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: 0,
+              right: "-4px",
+              bottom: -4,
+              height: 4,
+              background:
+                "linear-gradient(90deg, var(--accent) 0%, var(--accent-glow) 70%, transparent 100%)",
+              borderRadius: 2,
+            }}
+          />
+        )}
       </div>
       {sub && (
         <div
           className="mono"
-          style={{ marginTop: 8, fontSize: 11, color: subColor ?? "var(--ink-3)", letterSpacing: "0.04em" }}
+          style={{ marginTop: accent ? 14 : 8, fontSize: 11, color: subColor ?? "var(--ink-3)", letterSpacing: "0.04em" }}
         >
           {sub}
         </div>
