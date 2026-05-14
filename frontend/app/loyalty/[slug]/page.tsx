@@ -2,19 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeftRight, ChevronLeft } from "lucide-react";
 import { getProgramDetail } from "@/lib/api";
 import type { ProgramDetailResponse, TransferPartner } from "@/lib/types";
 
+/* Per-type tone uses semantic tokens that work in both registers.
+ * Same mapping as the loyalty index for consistency: airline=info-teal,
+ * hotel=gold, cashback=gain-green, bank=primary-forest. */
 function typeColor(type: string): { bg: string; border: string; text: string } {
   switch (type) {
     case "airline":
-      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info-text)" };
+      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info)" };
     case "hotel":
-      return { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.22)", text: "#F59E0B" };
+      return { bg: "var(--gold-tint)", border: "var(--gold-soft)", text: "var(--gold)" };
     case "cashback":
-      return { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.22)", text: "#10B981" };
+      return { bg: "var(--gain-soft)", border: "var(--gain-soft)", text: "var(--gain)" };
     default:
-      return { bg: "rgba(139,92,246,0.10)", border: "rgba(139,92,246,0.22)", text: "#A78BFA" };
+      return { bg: "var(--primary-soft)", border: "var(--primary-soft)", text: "var(--primary)" };
+  }
+}
+
+/* Sweet-spot tag tone — semantic, not arbitrary hex. */
+type TagTone = "best" | "info" | "tip" | "warn";
+function tagColors(tone: TagTone) {
+  switch (tone) {
+    case "best":
+      return { bg: "var(--gain-soft)", border: "var(--gain-soft)", text: "var(--gain)" };
+    case "info":
+      return { bg: "var(--info-soft)", border: "var(--info-border)", text: "var(--info)" };
+    case "warn":
+      return { bg: "var(--gold-tint)", border: "var(--gold-soft)", text: "var(--gold)" };
+    default:
+      return { bg: "var(--accent-wash)", border: "var(--accent-soft)", text: "var(--accent)" };
   }
 }
 
@@ -65,16 +84,21 @@ function TransferCard({
   if (!prog) return null;
   const colors = typeColor(prog.program_type ?? "bank");
   const ratio = partner.transfer_ratio ?? 1;
+  const ratioFavorable = ratio >= 1;
 
   return (
     <div
-      className="flex items-center gap-4 p-4 rounded-xl"
       style={{
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border-dim)",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: 14,
+        borderRadius: 12,
+        background: "var(--surface)",
+        border: "1px solid var(--rule-strong)",
+        boxShadow: "var(--shadow-1)",
       }}
     >
-      {/* Icon */}
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{ background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
@@ -82,24 +106,29 @@ function TransferCard({
         <TypeIcon type={prog.program_type ?? "bank"} />
       </div>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-semibold text-white truncate">{prog.name}</p>
-        <p className="text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+        <p className="display" style={{ fontSize: 14, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+          {prog.name}
+        </p>
+        <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 3 }}>
           {prog.currency_name}
           {partner.minimum_transfer > 0 && ` · Min ${partner.minimum_transfer.toLocaleString()} pts`}
           {partner.processing_days > 0 && ` · ${partner.processing_days}d transfer`}
         </p>
       </div>
 
-      {/* Ratio badge */}
-      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
         <div
-          className="px-2.5 py-1 rounded-full text-[12px] font-bold"
+          className="mono"
           style={{
-            background: ratio >= 1 ? "rgba(52,211,153,0.12)" : "rgba(245,158,11,0.12)",
-            border: ratio >= 1 ? "1px solid rgba(52,211,153,0.25)" : "1px solid rgba(245,158,11,0.25)",
-            color: ratio >= 1 ? "#34D399" : "#F59E0B",
+            padding: "3px 10px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            background: ratioFavorable ? "var(--gain-soft)" : "var(--gold-tint)",
+            border: `1px solid ${ratioFavorable ? "var(--gain-soft)" : "var(--gold-soft)"}`,
+            color: ratioFavorable ? "var(--gain)" : "var(--gold)",
           }}
         >
           {direction === "out"
@@ -107,10 +136,78 @@ function TransferCard({
             : `${(1 / ratio).toFixed(2)}:1`}
         </div>
         {partner.notes && (
-          <p className="text-[11px] text-right max-w-[140px]" style={{ color: "var(--text-tertiary)" }}>
+          <p
+            className="mono"
+            style={{ fontSize: 10, color: "var(--ink-3)", textAlign: "right", maxWidth: 160, letterSpacing: "0.04em" }}
+          >
             {partner.notes}
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SweetSpotRow({
+  title,
+  desc,
+  value,
+  tag,
+  tone,
+  valueColor,
+  isLast,
+}: {
+  title: string;
+  desc: string;
+  value: string;
+  tag: string;
+  tone: TagTone;
+  valueColor: string;
+  isLast: boolean;
+}) {
+  const tc = tagColors(tone);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 16,
+        paddingBottom: 14,
+        marginBottom: isLast ? 0 : 14,
+        borderBottom: isLast ? "none" : "1px solid var(--rule)",
+      }}
+    >
+      <div className="flex-1 min-w-0">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+          <p className="display" style={{ fontSize: 14, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+            {title}
+          </p>
+          <span
+            className="mono"
+            style={{
+              padding: "2px 8px",
+              borderRadius: 999,
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              background: tc.bg,
+              border: `1px solid ${tc.border}`,
+              color: tc.text,
+            }}
+          >
+            {tag}
+          </span>
+        </div>
+        <p className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.45 }}>
+          {desc}
+        </p>
+      </div>
+      <div
+        className="mono"
+        style={{ fontSize: 13, fontWeight: 600, color: valueColor, flexShrink: 0, letterSpacing: "0.02em" }}
+      >
+        {value}
       </div>
     </div>
   );
@@ -157,20 +254,60 @@ export default function ProgramDetailPage() {
         <div className="max-w-3xl mx-auto px-6 pt-8">
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-2 mb-8 text-[13px] transition-colors"
-            style={{ color: "var(--text-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "white")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 28,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              transition: "color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--ink-3)")}
           >
-            ← Back
+            <ChevronLeft size={14} strokeWidth={2} /> Back
           </button>
           <div
-            className="rounded-2xl p-14 text-center"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--info-border)" }}
+            style={{
+              background: "var(--card-fill)",
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "44px 28px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
+            }}
           >
-            <div className="text-4xl mb-4">⚠️</div>
-            <h2 className="text-[17px] font-semibold text-white mb-2">Program Not Found</h2>
-            <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 999,
+                margin: "0 auto 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--accent-wash)",
+                border: "1px solid var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              <AlertTriangle size={22} strokeWidth={1.5} />
+            </div>
+            <h2
+              className="display"
+              style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}
+            >
+              Program not found
+            </h2>
+            <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.55 }}>
               {error ?? "This loyalty program could not be loaded."}
             </p>
           </div>
@@ -187,71 +324,202 @@ export default function ProgramDetailPage() {
   const businessCpp = baseCpp * 2.2;
   const firstCpp = baseCpp * 3.5;
 
+  // Per-type sweet-spot data, semantic tone codes (no more arbitrary hex).
+  const airlineSpots = [
+    {
+      title: "Partner Business Class",
+      desc: "Book partner airlines in business class for up to 3–5¢/pt. Search early for Saver space.",
+      value: `~${(firstCpp * 100).toFixed(1)}¢/pt`,
+      tag: "Best value",
+      tone: "best" as TagTone,
+    },
+    {
+      title: "Stopovers & Open-Jaws",
+      desc: "Many airline programs allow free stopovers — add a free city to your itinerary.",
+      value: "Free bonus",
+      tag: "Tip",
+      tone: "info" as TagTone,
+    },
+    {
+      title: "Economy Award Space",
+      desc: "Domestic and short-haul economy redemptions offer solid value at lower point costs.",
+      value: `~${(baseCpp * 1.5 * 100).toFixed(1)}¢/pt`,
+      tag: "Easy to book",
+      tone: "tip" as TagTone,
+    },
+  ];
+
+  const hotelSpots = [
+    {
+      title: "5th Night Free",
+      desc: "Book 5 consecutive nights with points — the 5th night is free, boosting value by 20%.",
+      value: "+20% value",
+      tag: "Pro tip",
+      tone: "best" as TagTone,
+    },
+    {
+      title: "Off-Peak & Category Sweet Spots",
+      desc: "Category 1–3 properties and off-peak dates offer the best points-per-night value.",
+      value: `~${(businessCpp * 100).toFixed(1)}¢/pt`,
+      tag: "Best CPP",
+      tone: "warn" as TagTone,
+    },
+    {
+      title: "Points + Cash",
+      desc: "Hybrid redemptions let you use fewer points and pay partial cash — good for lower-value nights.",
+      value: "Flexible",
+      tag: "Option",
+      tone: "tip" as TagTone,
+    },
+  ];
+
+  const bankSpots = [
+    {
+      title: "Transfer to Airline Partners",
+      desc:
+        transfer_out.length > 0
+          ? `This program transfers to ${transfer_out.length} airline/hotel program${transfer_out.length !== 1 ? "s" : ""}. Use partner miles for highest CPP.`
+          : "Flexible bank points can often be transferred to airline programs for maximum value.",
+      value: transfer_out.length > 0 ? `${transfer_out.length} partners` : "Flexible",
+      tag: "Highest CPP",
+      tone: "best" as TagTone,
+    },
+    {
+      title: "Statement Credits & Travel",
+      desc: "Redeem against travel charges on your statement — simple and reliable at base CPP.",
+      value: `${(baseCpp * 100).toFixed(1)}¢/pt`,
+      tag: "Easy",
+      tone: "info" as TagTone,
+    },
+    {
+      title: "Gift Cards & Merchandise",
+      desc: "Lower CPP but no expiry risk. Best for points you can't use for travel.",
+      value: "Sub-optimal",
+      tag: "Last resort",
+      tone: "warn" as TagTone,
+    },
+  ];
+
+  const spots =
+    program.program_type === "airline"
+      ? airlineSpots
+      : program.program_type === "hotel"
+        ? hotelSpots
+        : bankSpots;
+
+  const valueTiles = [
+    { label: "Base / Statement", cpp: baseCpp },
+    { label: "Economy Flights", cpp: baseCpp * 1.5 },
+    { label: "Business Class", cpp: businessCpp },
+  ];
+
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient orb */}
-      <div
-        className="orb w-[500px] h-[300px] top-[-80px] left-1/2 -translate-x-1/2"
-        style={{ background: `radial-gradient(ellipse, ${colors.bg.replace("0.10", "0.06")} 0%, transparent 70%)` }}
-      />
-
       <div className="relative max-w-3xl mx-auto px-6 pt-8 pb-24">
         {/* Back button */}
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 mb-6 text-[13px] transition-colors"
-          style={{ color: "var(--text-secondary)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "white")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+          className="mono"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 24,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.10em",
+            textTransform: "uppercase",
+            color: "var(--ink-3)",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            transition: "color 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--ink-3)")}
         >
-          ← Back to programs
+          <ChevronLeft size={14} strokeWidth={2} /> Back to programs
         </button>
 
         {/* Header */}
-        <div className="flex items-start gap-4 mb-8 fade-up">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 32 }} className="fade-up">
           <div
             className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
             style={{ background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
           >
             <TypeIcon type={program.program_type} />
           </div>
-          <div>
-            <h1 className="title text-white mb-1">{program.name}</h1>
-            <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
+          <div style={{ minWidth: 0 }}>
+            <h1
+              className="display"
+              style={{
+                fontSize: "clamp(32px, 4.5vw, 44px)",
+                lineHeight: 1.05,
+                letterSpacing: "-0.015em",
+                color: "var(--ink)",
+                margin: 0,
+              }}
+            >
+              {program.name}
+            </h1>
+            <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 6 }}>
               {program.currency_name}
             </p>
             <span
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full capitalize mt-2"
-              style={{ background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                marginTop: 10,
+                padding: "3px 10px",
+                borderRadius: 999,
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                background: colors.bg,
+                border: `1px solid ${colors.border}`,
+                color: colors.text,
+              }}
             >
               {program.program_type}
             </span>
           </div>
         </div>
 
-        {/* Value stats */}
+        {/* Value tiles — display-typography, no emoji */}
         <div className="grid grid-cols-3 gap-3 mb-8 fade-up-1">
-          {[
-            { label: "Base / Statement", cpp: baseCpp, icon: "💳" },
-            { label: "Economy Flights", cpp: baseCpp * 1.5, icon: "✈️" },
-            { label: "Business Class", cpp: businessCpp, icon: "🌟" },
-          ].map(({ label, cpp, icon }) => (
+          {valueTiles.map(({ label, cpp }) => (
             <div
               key={label}
-              className="rounded-2xl p-4 text-center"
               style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-dim)",
+                background: "var(--surface)",
+                border: "1px solid var(--rule-strong)",
+                borderRadius: 14,
+                padding: "18px 16px",
+                textAlign: "center",
+                boxShadow: "var(--shadow-1)",
               }}
             >
-              <div className="text-2xl mb-2">{icon}</div>
-              <div className="text-[18px] font-bold text-white">{(cpp * 100).toFixed(1)}¢</div>
-              <div className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>
+              <div className="display" style={{ fontSize: 26, color: "var(--ink)", lineHeight: 1, letterSpacing: "-0.01em" }}>
+                {(cpp * 100).toFixed(1)}¢
+              </div>
+              <div
+                className="mono"
+                style={{
+                  marginTop: 8,
+                  fontSize: 9,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-3)",
+                  fontWeight: 500,
+                }}
+              >
                 per point
               </div>
               <div
-                className="text-[11px] font-medium mt-1.5"
-                style={{ color: "var(--text-secondary)" }}
+                className="serif"
+                style={{ marginTop: 6, fontSize: 12, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.3 }}
               >
                 {label}
               </div>
@@ -261,199 +529,48 @@ export default function ProgramDetailPage() {
 
         {/* Redemption sweet spots */}
         <div className="mb-8 fade-up-2">
-          <h2 className="text-[13px] font-semibold mb-3" style={{ color: "var(--text-tertiary)" }}>
-            REDEMPTION SWEET SPOTS
+          <h2
+            className="eyebrow"
+            style={{ color: "var(--ink-3)", marginBottom: 14, letterSpacing: "0.18em" }}
+          >
+            Redemption sweet spots
           </h2>
           <div
-            className="rounded-2xl p-5"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--rule-strong)",
+              borderRadius: 14,
+              padding: 22,
+              boxShadow: "var(--shadow-1)",
+            }}
           >
+            {spots.map((s, i) => (
+              <SweetSpotRow
+                key={s.title}
+                title={s.title}
+                desc={s.desc}
+                value={s.value}
+                tag={s.tag}
+                tone={s.tone}
+                valueColor={colors.text}
+                isLast={i === spots.length - 1}
+              />
+            ))}
             {program.program_type === "airline" && (
-              <div className="space-y-3">
-                {[
-                  {
-                    title: "Partner Business Class",
-                    desc: "Book partner airlines in business class for up to 3–5¢/pt. Search early for Saver space.",
-                    value: `~${(firstCpp * 100).toFixed(1)}¢/pt`,
-                    tag: "Best value",
-                    tagColor: "#34D399",
-                    tagBg: "rgba(52,211,153,0.12)",
-                    tagBorder: "rgba(52,211,153,0.25)",
-                  },
-                  {
-                    title: "Stopovers & Open-Jaws",
-                    desc: "Many airline programs allow free stopovers — add a free city to your itinerary.",
-                    value: "Free bonus",
-                    tag: "Tip",
-                    tagColor: "var(--info-text)",
-                    tagBg: "var(--info-soft)",
-                    tagBorder: "var(--info-border)",
-                  },
-                  {
-                    title: "Economy Award Space",
-                    desc: "Domestic and short-haul economy redemptions offer solid value at lower point costs.",
-                    value: `~${(baseCpp * 1.5 * 100).toFixed(1)}¢/pt`,
-                    tag: "Easy to book",
-                    tagColor: "#A78BFA",
-                    tagBg: "rgba(139,92,246,0.12)",
-                    tagBorder: "rgba(139,92,246,0.25)",
-                  },
-                ].map(({ title, desc, value, tag, tagColor, tagBg, tagBorder }) => (
-                  <div
-                    key={title}
-                    className="flex items-start gap-4 pb-3"
-                    style={{ borderBottom: "1px solid var(--border-dim)" }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="text-[14px] font-semibold text-white">{title}</p>
-                        <span
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: tagBg, border: `1px solid ${tagBorder}`, color: tagColor }}
-                        >
-                          {tag}
-                        </span>
-                      </div>
-                      <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                        {desc}
-                      </p>
-                    </div>
-                    <div
-                      className="text-[13px] font-bold flex-shrink-0"
-                      style={{ color: colors.text }}
-                    >
-                      {value}
-                    </div>
-                  </div>
-                ))}
-                <p className="text-[11px] pt-1" style={{ color: "var(--text-tertiary)" }}>
-                  ℹ️ CPP estimates are based on typical redemptions — actual value depends on availability and routes.
-                </p>
-              </div>
-            )}
-
-            {program.program_type === "hotel" && (
-              <div className="space-y-3">
-                {[
-                  {
-                    title: "5th Night Free",
-                    desc: "Book 5 consecutive nights with points — the 5th night is free, boosting value by 20%.",
-                    value: "+20% value",
-                    tag: "Pro tip",
-                    tagColor: "#34D399",
-                    tagBg: "rgba(52,211,153,0.12)",
-                    tagBorder: "rgba(52,211,153,0.25)",
-                  },
-                  {
-                    title: "Off-Peak & Category Sweet Spots",
-                    desc: "Category 1–3 properties and off-peak dates offer the best points-per-night value.",
-                    value: `~${(businessCpp * 100).toFixed(1)}¢/pt`,
-                    tag: "Best CPP",
-                    tagColor: "#F59E0B",
-                    tagBg: "rgba(245,158,11,0.12)",
-                    tagBorder: "rgba(245,158,11,0.25)",
-                  },
-                  {
-                    title: "Points + Cash",
-                    desc: "Hybrid redemptions let you use fewer points and pay partial cash — good for lower-value nights.",
-                    value: "Flexible",
-                    tag: "Option",
-                    tagColor: "#A78BFA",
-                    tagBg: "rgba(139,92,246,0.12)",
-                    tagBorder: "rgba(139,92,246,0.25)",
-                  },
-                ].map(({ title, desc, value, tag, tagColor, tagBg, tagBorder }) => (
-                  <div
-                    key={title}
-                    className="flex items-start gap-4 pb-3"
-                    style={{ borderBottom: "1px solid var(--border-dim)" }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="text-[14px] font-semibold text-white">{title}</p>
-                        <span
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: tagBg, border: `1px solid ${tagBorder}`, color: tagColor }}
-                        >
-                          {tag}
-                        </span>
-                      </div>
-                      <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                        {desc}
-                      </p>
-                    </div>
-                    <div
-                      className="text-[13px] font-bold flex-shrink-0"
-                      style={{ color: colors.text }}
-                    >
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {(program.program_type === "bank" || program.program_type === "cashback") && (
-              <div className="space-y-3">
-                {[
-                  {
-                    title: "Transfer to Airline Partners",
-                    desc: transfer_out.length > 0
-                      ? `This program transfers to ${transfer_out.length} airline/hotel program${transfer_out.length !== 1 ? "s" : ""}. Use partner miles for highest CPP.`
-                      : "Flexible bank points can often be transferred to airline programs for maximum value.",
-                    value: transfer_out.length > 0 ? `${transfer_out.length} partners` : "Flexible",
-                    tag: "Highest CPP",
-                    tagColor: "#34D399",
-                    tagBg: "rgba(52,211,153,0.12)",
-                    tagBorder: "rgba(52,211,153,0.25)",
-                  },
-                  {
-                    title: "Statement Credits & Travel",
-                    desc: "Redeem against travel charges on your statement — simple and reliable at base CPP.",
-                    value: `${(baseCpp * 100).toFixed(1)}¢/pt`,
-                    tag: "Easy",
-                    tagColor: "var(--info-text)",
-                    tagBg: "var(--info-soft)",
-                    tagBorder: "var(--info-border)",
-                  },
-                  {
-                    title: "Gift Cards & Merchandise",
-                    desc: "Lower CPP but no expiry risk. Best for points you can't use for travel.",
-                    value: "Sub-optimal",
-                    tag: "Last resort",
-                    tagColor: "#F59E0B",
-                    tagBg: "rgba(245,158,11,0.12)",
-                    tagBorder: "rgba(245,158,11,0.25)",
-                  },
-                ].map(({ title, desc, value, tag, tagColor, tagBg, tagBorder }) => (
-                  <div
-                    key={title}
-                    className="flex items-start gap-4 pb-3"
-                    style={{ borderBottom: "1px solid var(--border-dim)" }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="text-[14px] font-semibold text-white">{title}</p>
-                        <span
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: tagBg, border: `1px solid ${tagBorder}`, color: tagColor }}
-                        >
-                          {tag}
-                        </span>
-                      </div>
-                      <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                        {desc}
-                      </p>
-                    </div>
-                    <div
-                      className="text-[13px] font-bold flex-shrink-0"
-                      style={{ color: colors.text }}
-                    >
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <p
+                className="serif"
+                style={{
+                  fontSize: 11,
+                  fontStyle: "italic",
+                  color: "var(--ink-3)",
+                  marginTop: 14,
+                  paddingTop: 14,
+                  borderTop: "1px solid var(--rule)",
+                  lineHeight: 1.5,
+                }}
+              >
+                CPP estimates are based on typical redemptions — actual value depends on availability and routes.
+              </p>
             )}
           </div>
         </div>
@@ -461,10 +578,13 @@ export default function ProgramDetailPage() {
         {/* Transfer Partners OUT */}
         {transfer_out.length > 0 && (
           <div className="mb-8 fade-up-3">
-            <h2 className="text-[13px] font-semibold mb-3" style={{ color: "var(--text-tertiary)" }}>
-              TRANSFER TO ({transfer_out.length})
+            <h2
+              className="eyebrow"
+              style={{ color: "var(--ink-3)", marginBottom: 14, letterSpacing: "0.18em" }}
+            >
+              Transfer to · {transfer_out.length}
             </h2>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {transfer_out.map((p) => (
                 <TransferCard key={p.id} partner={p} direction="out" />
               ))}
@@ -475,10 +595,13 @@ export default function ProgramDetailPage() {
         {/* Transfer Partners IN */}
         {transfer_in.length > 0 && (
           <div className="mb-8 fade-up-4">
-            <h2 className="text-[13px] font-semibold mb-3" style={{ color: "var(--text-tertiary)" }}>
-              TRANSFER FROM ({transfer_in.length})
+            <h2
+              className="eyebrow"
+              style={{ color: "var(--ink-3)", marginBottom: 14, letterSpacing: "0.18em" }}
+            >
+              Transfer from · {transfer_in.length}
             </h2>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {transfer_in.map((p) => (
                 <TransferCard key={p.id} partner={p} direction="in" />
               ))}
@@ -489,12 +612,37 @@ export default function ProgramDetailPage() {
         {/* No transfer partners */}
         {transfer_out.length === 0 && transfer_in.length === 0 && (
           <div
-            className="rounded-2xl p-8 text-center mb-8 fade-up-3"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-dim)" }}
+            className="fade-up-3"
+            style={{
+              background: "var(--card-fill)",
+              border: "1px solid var(--rule)",
+              borderRadius: 14,
+              padding: "36px 28px",
+              textAlign: "center",
+              marginBottom: 28,
+              boxShadow: "var(--shadow-1)",
+            }}
           >
-            <div className="text-3xl mb-3">🔄</div>
-            <p className="text-[14px] font-medium text-white mb-1">No transfer partners</p>
-            <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 999,
+                margin: "0 auto 16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--surface-2)",
+                border: "1px solid var(--rule)",
+                color: "var(--ink-3)",
+              }}
+            >
+              <ArrowLeftRight size={22} strokeWidth={1.5} />
+            </div>
+            <p className="display" style={{ fontSize: 18, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+              No transfer partners
+            </p>
+            <p className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)", marginTop: 6, lineHeight: 1.5 }}>
               This program does not currently have any linked transfer partners.
             </p>
           </div>
@@ -502,15 +650,24 @@ export default function ProgramDetailPage() {
 
         {/* Booking portal link */}
         <div
-          className="rounded-xl px-5 py-4 flex items-center justify-between fade-up-4"
+          className="fade-up-4"
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--surface)",
+            border: "1px solid var(--rule-strong)",
+            borderRadius: 14,
+            padding: "18px 22px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            boxShadow: "var(--shadow-1)",
           }}
         >
-          <div>
-            <p className="text-[13px] font-semibold text-white">Ready to book?</p>
-            <p className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+          <div style={{ minWidth: 0 }}>
+            <p className="display" style={{ fontSize: 15, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+              Ready to book?
+            </p>
+            <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 4 }}>
               Check availability on the official {program.name} portal.
             </p>
           </div>
@@ -518,7 +675,8 @@ export default function ProgramDetailPage() {
             href={`https://www.google.com/search?q=${encodeURIComponent(program.name + " book award")}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 h-9 px-4 rounded-lg font-semibold text-[13px] text-white maple-bg accent-glow flex-shrink-0"
+            className="btn btn-primary"
+            style={{ fontSize: 12, height: 38, padding: "0 18px", textDecoration: "none" }}
           >
             Book →
           </a>
