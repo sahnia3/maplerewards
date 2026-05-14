@@ -11,6 +11,7 @@ import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types
 
 import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
+import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proof";
 import { Counter } from "@/components/editorial/counter";
 import { FintechCommand } from "@/components/editorial/fintech-command";
 import { BriefCard } from "@/components/editorial/brief-card";
@@ -92,11 +93,13 @@ export default function HomePage() {
           style={{
             maxWidth: 1280,
             margin: "0 auto",
-            padding: "60px clamp(20px, 4vw, 60px) 40px",
+            padding: "clamp(60px, 8vh, 120px) clamp(20px, 4vw, 60px) clamp(40px, 6vh, 80px)",
             display: "grid",
             gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)",
-            gap: 40,
+            gap: 48,
             alignItems: "center",
+            minHeight: "92vh",
+            position: "relative",
           }}
           className="landing-grid"
         >
@@ -206,53 +209,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Editorial moment — credit cards still life */}
-        <figure style={{ maxWidth: 1280, margin: "0 auto", padding: "0 clamp(20px, 4vw, 60px) 32px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14 }}>
-            <span className="eyebrow" style={{ color: "var(--accent)" }}>The Wallet</span>
-            <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 120 }} />
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "var(--ink-3)",
-              }}
-            >
-              Plate 01 · Cards in hand
-            </span>
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/hero-landing-cards.png"
-            alt=""
-            aria-hidden
-            loading="lazy"
-            style={{
-              display: "block",
-              width: "100%",
-              aspectRatio: "16 / 9",
-              objectFit: "cover",
-              borderRadius: 14,
-              border: "1px solid var(--rule)",
-            }}
-          />
-          <figcaption
-            className="serif"
-            style={{
-              marginTop: 12,
-              fontStyle: "italic",
-              color: "var(--ink-3)",
-              fontSize: 14,
-              lineHeight: 1.5,
-              maxWidth: 720,
-            }}
-          >
-            Every card you carry is a different math problem. Maple solves them all at the moment of
-            the swipe. In CAD, with caps and transfer partners built in.
-          </figcaption>
-        </figure>
+        {/* Kinetic proof moment — replaces the Plate 01 photograph.
+           * Big italic editorial number that counts up on scroll-in. The
+           * number IS the visual; no illustration needed. */}
+        <LandingKineticProof />
 
         {/* Pillars row */}
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px clamp(20px, 4vw, 60px) 80px" }}>
