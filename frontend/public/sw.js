@@ -1,92 +1,45 @@
-/* MapleRewards service worker — offline shell + cache-first static assets.
+/* MapleRewards service worker — DEV KILL-SWITCH.
  *
- * Strategy:
- *   - HTML navigations: network-first with a 3s timeout, fall back to the
- *     cached app shell so the user sees something usable when offline.
- *   - Static assets (icons, fonts, /_next/static): cache-first.
- *   - API requests (/api/v1): network-only — points/CPP need to be live.
+ * Previously this SW cached static assets aggressively (cache-first on
+ * /_next/static/*) which made dev iteration painful: each new commit's
+ * CSS got intercepted by the SW returning a stale earlier build, so the
+ * user kept seeing the broken UI even after fixes landed.
  *
- * Versioned cache name lets us invalidate everything at once on a deploy
- * by bumping the suffix below.
+ * This version does the opposite: it unregisters itself on first run,
+ * wipes every Maple cache, and forces every controlled client to
+ * reload. After this version takes effect once, the SW is fully gone
+ * for that browser until something explicitly re-registers it.
+ *
+ * If/when offline support is reintroduced for production, give the new
+ * SW a different filename (e.g. /sw-v2.js) so this kill-switch keeps
+ * doing its job for users still on the old path.
  */
 
-const CACHE_VERSION = "v6";
-const SHELL_CACHE = `mr-shell-${CACHE_VERSION}`;
-const STATIC_CACHE = `mr-static-${CACHE_VERSION}`;
-
-const SHELL_URLS = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png"];
-
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting()),
-  );
+  // Take over from any existing SW immediately so the unregister path
+  // runs ASAP rather than waiting for tabs to close.
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    Promise.all([
-      caches.keys().then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => !k.endsWith(CACHE_VERSION))
-            .map((k) => caches.delete(k)),
-        ),
-      ),
-      self.clients.claim(),
-    ]),
-  );
+  event.waitUntil((async () => {
+    // 1. Nuke every cache we ever created.
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+
+    // 2. Unregister ourselves so the browser stops calling this SW.
+    await self.registration.unregister();
+
+    // 3. Force every controlled client (open tab) to reload with fresh
+    //    assets from the dev server. Without this they'd keep showing
+    //    the old broken state until the user manually refreshes.
+    const clients = await self.clients.matchAll({ type: "window" });
+    for (const client of clients) {
+      client.navigate(client.url);
+    }
+  })());
 });
 
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-
-  const url = new URL(req.url);
-
-  // API requests: always network. Don't cache CPP/points data.
-  if (url.pathname.startsWith("/api/v1") || url.hostname.includes("localhost") && url.port === "8080") {
-    return;
-  }
-
-  // Same-origin static assets: cache-first.
-  if (url.origin === self.location.origin && /\.(png|jpg|jpeg|svg|webp|woff2?|css|js)$/.test(url.pathname)) {
-    event.respondWith(cacheFirst(req, STATIC_CACHE));
-    return;
-  }
-
-  // HTML navigations: network-first with shell fallback.
-  if (req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html")) {
-    event.respondWith(networkFirst(req, SHELL_CACHE));
-    return;
-  }
-});
-
-async function cacheFirst(req, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(req);
-  if (cached) return cached;
-  try {
-    const fresh = await fetch(req);
-    if (fresh.ok) cache.put(req, fresh.clone());
-    return fresh;
-  } catch (e) {
-    return cached || Response.error();
-  }
-}
-
-async function networkFirst(req, cacheName) {
-  const cache = await caches.open(cacheName);
-  try {
-    const fresh = await Promise.race([
-      fetch(req),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
-    ]);
-    if (fresh && fresh.ok) cache.put(req, fresh.clone());
-    return fresh;
-  } catch (e) {
-    const cached = await cache.match(req);
-    if (cached) return cached;
-    // Final fallback: the shell page
-    return cache.match("/");
-  }
-}
+/* No fetch handler — once unregistered, requests bypass the SW
+ * entirely. Until unregister completes, network is the default
+ * because we don't intercept. */
