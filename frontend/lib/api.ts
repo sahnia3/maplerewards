@@ -16,7 +16,7 @@ import type {
   RecommendRequest,
 } from "./types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 
 // ── Auth token accessor ──────────────────────────────────────────────────────
 // AuthProvider wires both: a getter for the current access token, and an
@@ -90,7 +90,7 @@ export async function getCSRFToken(): Promise<string> {
 
 export { CSRF_HEADER };
 
-async function request<T>(path: string, init?: RequestInit, retryOn401 = true): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, retryOn401 = true): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string>),
@@ -854,10 +854,173 @@ export async function listFeedArticles(category: FeedCategory = "all"): Promise<
   return request<FeedArticle[]>(`/feed/articles${qs}`);
 }
 
+// ── Aeroplan June 1 devaluation projection (Pro) ─────────────────────────────
+
+export interface AeroplanProjection {
+  program: "aeroplan";
+  effective_date: string;     // "2026-06-01"
+  days_until: number;          // can be negative once the date passes
+  balance: number;
+  cpp: number;                 // cents per point
+  value_today: number;         // CAD
+  value_after: number;         // CAD after hike
+  exposure: number;            // CAD
+  headline: string;
+  burn_fraction: number;       // assumption (~0.30)
+  hike_percent: number;        // assumption (~0.171)
+}
+
+export async function getAeroplanJune2026Projection(
+  sessionId: string,
+): Promise<AeroplanProjection> {
+  return request<AeroplanProjection>(
+    `/wallet/${sessionId}/devaluation/aeroplan-june-2026`,
+  );
+}
+
+// ── Welcome-Bonus Mission Control (Pro) ──────────────────────────────────────
+
+export interface MissionItem {
+  id: string;
+  user_id: string;
+  card_id: string;
+  card_name?: string;
+  card_issuer?: string;
+  activated_at: string;
+  deadline_at: string;
+  min_spend: number;
+  current_spend: number;
+  bonus_points: number;
+  is_completed: boolean;
+  progress: number;
+  days_left: number;
+  days_elapsed: number;
+  days_total: number;
+  daily_velocity_cad: number;
+  required_daily_cad: number;
+  projected_total_cad: number;
+  projected_shortfall_cad: number;
+  will_miss: boolean;
+  will_miss_by_cad: number;
+  severity: "on-track" | "tight" | "critical" | "missed";
+  recommendation: string;
+}
+
+export interface MissionReport {
+  items: MissionItem[];
+  total_active: number;
+  total_at_risk_points: number;
+  total_required_daily_cad: number;
+}
+
+export async function getWelcomeBonusMission(
+  sessionId: string,
+): Promise<MissionReport> {
+  return request<MissionReport>(`/wallet/${sessionId}/welcome-bonus-mission`);
+}
+
+// ── Transfer-bonus promos (public) ───────────────────────────────────────────
+
+export interface TransferBonusEvent {
+  id: string;
+  from_program: string;
+  to_program: string;
+  bonus_percent: number;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  source_url: string;
+  source_title?: string;
+  summary?: string;
+  ai_confidence?: number | null;
+  detected_at: string;
+}
+
+export async function getActiveTransferPromos(): Promise<TransferBonusEvent[]> {
+  return request<TransferBonusEvent[]>(`/transfer-promos/active`);
+}
+
+// ── Card comparison (public) ─────────────────────────────────────────────────
+
+import type { CardDetail as CardDetailType } from "./types";
+
+export interface CompareDiff {
+  annual_fee_delta_cad: number;
+  better_annual_fee: "a" | "b" | "tie";
+  welcome_bonus_delta: number;
+  better_welcome_bonus: "a" | "b" | "tie";
+  categories_where_a_wins: string[];
+  categories_where_b_wins: string[];
+  base_cpp_winner: "a" | "b" | "tie";
+}
+
+export interface CompareResponse {
+  a: CardDetailType;
+  b: CardDetailType;
+  diff: CompareDiff;
+}
+
+export async function getCompare(
+  a: string,
+  b: string,
+): Promise<CompareResponse> {
+  return request<CompareResponse>(
+    `/compare/${encodeURIComponent(a)}/${encodeURIComponent(b)}`,
+  );
+}
+
 // ── Spend CSV export ───────────────────────────────────────────────────────
 //
 // Returns a Blob the caller can hand to a download anchor. Uses raw fetch
 // because `request()` JSON-decodes — we want the raw CSV bytes.
+
+/* ── Application tracker ────────────────────────────────────────────────── */
+
+export interface CardApplication {
+  id: string;
+  user_id: string;
+  card_id: string;
+  card_name?: string;
+  issuer?: string;
+  applied_at: string;
+  status: "pending" | "approved" | "declined";
+  notes?: string;
+  created_at: string;
+}
+
+export interface EligibilityResult {
+  card_id: string;
+  severity: "ok" | "warn" | "unknown";
+  reason: string;
+  eligible_at?: string;
+  last_applied_at?: string;
+  issuer_rule?: string;
+}
+
+export async function listApplications(sessionId: string): Promise<CardApplication[]> {
+  const res = await request<{ applications: CardApplication[] }>(`/wallet/${sessionId}/applications`);
+  return res.applications ?? [];
+}
+
+export async function recordApplication(
+  sessionId: string,
+  cardId: string,
+  appliedAt: string,
+  status: "pending" | "approved" | "declined" = "pending",
+  notes?: string,
+): Promise<CardApplication> {
+  return request<CardApplication>(`/wallet/${sessionId}/applications`, {
+    method: "POST",
+    body: JSON.stringify({ card_id: cardId, applied_at: appliedAt, status, notes }),
+  });
+}
+
+export async function deleteApplication(sessionId: string, applicationId: string): Promise<void> {
+  await request(`/wallet/${sessionId}/applications/${applicationId}`, { method: "DELETE" });
+}
+
+export async function getEligibility(sessionId: string, cardId: string): Promise<EligibilityResult> {
+  return request<EligibilityResult>(`/wallet/${sessionId}/cards/${cardId}/eligibility`);
+}
 
 export async function exportSpendCSV(sessionId: string): Promise<Blob> {
   const headers: Record<string, string> = {};

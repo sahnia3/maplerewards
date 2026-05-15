@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { listCategories, optimize, logSpend } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
+import { Term } from "@/components/term";
+import { ApplyButton } from "@/components/cards/ApplyButton";
 import type { Category, CardRecommendation } from "@/lib/types";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
 import { cardImageUrl } from "@/lib/card-images";
@@ -47,16 +49,18 @@ function inferIssuer(name: string): string {
 
 const QUICK_AMOUNTS = [25, 50, 100, 250, 500, 1000];
 
-// Soft category tints (light editorial palette).
-const CAT_TINTS: Record<string, { hue: string; tint: string; emoji: string }> = {
-  groceries:        { hue: "var(--chart-forest)",  tint: "rgba(36,116,90,0.12)",   emoji: "🛒" },
-  dining:           { hue: "var(--chart-copper)",  tint: "rgba(168,90,40,0.12)",   emoji: "🍽" },
-  travel:           { hue: "var(--chart-sky)",     tint: "rgba(56,107,152,0.12)",  emoji: "✈" },
-  "gas-transit":    { hue: "var(--chart-glacier)", tint: "rgba(95,126,147,0.12)",  emoji: "⛽" },
-  pharmacy:         { hue: "var(--chart-plum)",    tint: "rgba(108,78,121,0.12)",  emoji: "℞" },
-  entertainment:    { hue: "var(--chart-gold)",    tint: "rgba(167,122,34,0.14)",  emoji: "♪" },
-  "streaming-digital": { hue: "var(--chart-teal)", tint: "rgba(46,115,121,0.12)",  emoji: "▷" },
-  "everything-else": { hue: "var(--ink-2)",        tint: "var(--card-fill)",       emoji: "·"  },
+// Soft category tints (light editorial palette). Hue + tint carry the visual
+// identity; per-category emoji markers were removed to stay consistent with
+// the editorial system (which is emoji-free everywhere else).
+const CAT_TINTS: Record<string, { hue: string; tint: string }> = {
+  groceries:        { hue: "var(--chart-forest)",  tint: "rgba(36,116,90,0.12)"  },
+  dining:           { hue: "var(--chart-copper)",  tint: "rgba(168,90,40,0.12)"  },
+  travel:           { hue: "var(--chart-sky)",     tint: "rgba(56,107,152,0.12)" },
+  "gas-transit":    { hue: "var(--chart-glacier)", tint: "rgba(95,126,147,0.12)" },
+  pharmacy:         { hue: "var(--chart-plum)",    tint: "rgba(108,78,121,0.12)" },
+  entertainment:    { hue: "var(--chart-gold)",    tint: "rgba(167,122,34,0.14)" },
+  "streaming-digital": { hue: "var(--chart-teal)", tint: "rgba(46,115,121,0.12)" },
+  "everything-else": { hue: "var(--ink-2)",        tint: "var(--card-fill)"      },
 };
 function tintFor(slug: string) {
   return CAT_TINTS[slug] ?? CAT_TINTS["everything-else"];
@@ -567,7 +571,7 @@ export function OptimizerForm() {
                     }}
                   >
                     {best.note ||
-                      `Earns ${best.earn_rate.toFixed(1)}× via ${best.program_name} at an effective ${best.effective_return.toFixed(2)}% return.`}
+                      `You'd earn about $${best.dollar_value.toFixed(2)} back${amount ? ` on this $${amount}` : ""} via ${best.program_name} — ${best.earn_rate.toFixed(1)}× points (${best.effective_return.toFixed(2)}% effective).`}
                   </p>
                 </div>
                 <div className="optimizer-winner-card" style={{ flexShrink: 0 }}>
@@ -596,8 +600,8 @@ export function OptimizerForm() {
               >
                 <Stat label="Cash value" value={`$${best.dollar_value.toFixed(2)}`} accent={t.hue} />
                 <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
-                <Stat label="Effective return" value={`${best.effective_return.toFixed(2)}%`} />
-                <Stat label="Program CPP" value={`${best.program_cpp.toFixed(2)}¢`} />
+                <Stat label={<>Effective <Term k="redemption">return</Term></>} value={`${best.effective_return.toFixed(2)}%`} />
+                <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} />
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {(() => {
@@ -645,6 +649,9 @@ export function OptimizerForm() {
                 >
                   Card detail
                 </Link>
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <ApplyButton cardId={best.card_id} cardName={best.card_name} alwaysShow size="sm" />
               </div>
             </div>
           </div>
@@ -772,7 +779,7 @@ export function OptimizerForm() {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
+function Stat({ label, value, accent }: { label: ReactNode; value: string; accent?: string }) {
   return (
     <div
       style={{

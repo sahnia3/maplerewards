@@ -30,14 +30,15 @@ const pageVariants = {
   },
 };
 
-// Auth pages render without sidebar/nav
+// Auth pages render without sidebar/nav. /embed/* is for iframe-friendly
+// widgets that need a clean viewport — same chrome-less treatment.
 const AUTH_PATHS = ["/login", "/signup"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { isCollapsed } = useSidebar();
 
-  const isAuthPage = AUTH_PATHS.includes(pathname);
+  const isAuthPage = AUTH_PATHS.includes(pathname) || pathname.startsWith("/embed/");
 
   if (isAuthPage) {
     return (

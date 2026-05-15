@@ -68,6 +68,14 @@ export const PRICING = {
     savings: "37%",
     monthlyEquivalent: 5.0,
   },
+  lifetime: {
+    price: 149,
+    currency: "CAD",
+    interval: "lifetime" as const,
+    label: "$149 once",
+    seats: 1000, // limited offer for first 1,000 founding subscribers
+    note: "Founding member · 1,000 seats only",
+  },
 } as const;
 
 // Feature comparison for pricing page

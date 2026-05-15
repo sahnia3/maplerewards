@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, Plus, ArrowRight, Trash2, Pencil, Check } from "lucide-react";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
@@ -8,6 +8,8 @@ import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { CSVImportPanel } from "@/components/csv-import-panel";
+import { DevaluationBanner } from "@/components/editorial/devaluation-banner";
+import { ProFOMOStrip } from "@/components/editorial/pro-fomo-strip";
 import { updateCardBalance, removeCardFromWallet } from "@/lib/api";
 import type { UserCard } from "@/lib/types";
 
@@ -60,6 +62,19 @@ export default function WalletPage() {
             </Link>
           }
         />
+
+        {/* ── Devaluation urgency banner (Pro) ─────────────────────
+            Self-hides for free users (Pro endpoint 402s), users with no
+            Aeroplan balance, and >7 days past the June 1 effective date.
+        */}
+        {sessionId && <DevaluationBanner sessionId={sessionId} />}
+
+        {/* ── Pro FOMO strip (free users only) ────────────────────
+            Surfaces aggregate counts of devaluations + issuer changes so
+            free users see Pro value with believable numbers. Self-hides
+            for Pro users.
+        */}
+        <ProFOMOStrip />
 
         {/* ── Stat strip ──────────────────────────────────────────── */}
         {!loading && wallet.length > 0 && (
@@ -235,7 +250,17 @@ function WalletRow({
   const [input, setInput] = useState(String(userCard.point_balance));
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  // Two-click confirm pattern replaces native window.confirm(), which broke the
+  // editorial visual language. First click flips the button to a "Confirm?"
+  // state for 3s; second click within that window actually removes.
+  useEffect(() => {
+    if (!confirmingRemove) return;
+    const t = setTimeout(() => setConfirmingRemove(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmingRemove]);
 
   async function save() {
     const bal = parseInt(input, 10);
@@ -251,7 +276,11 @@ function WalletRow({
   }
 
   async function remove() {
-    if (!confirm(`Remove ${card?.name ?? "this card"} from your wallet?`)) return;
+    if (!confirmingRemove) {
+      setConfirmingRemove(true);
+      return;
+    }
+    setConfirmingRemove(false);
     setRemoving(true);
     try {
       // Backend keys deletes by catalog card_id (DELETE /wallet/:sid/cards/:cardID
@@ -311,14 +340,14 @@ function WalletRow({
             onClick={remove}
             disabled={removing}
             className="mono"
-            title="Remove from wallet"
+            title={confirmingRemove ? "Click again to confirm removal" : "Remove from wallet"}
             style={{
               marginTop: 12,
               padding: "6px 10px",
-              border: "1px solid var(--rule)",
+              border: `1px solid ${confirmingRemove ? "var(--accent)" : "var(--rule)"}`,
               borderRadius: 8,
-              background: "transparent",
-              color: "var(--ink-3)",
+              background: confirmingRemove ? "var(--accent)" : "transparent",
+              color: confirmingRemove ? "#fff" : "var(--ink-3)",
               fontSize: 10,
               fontWeight: 600,
               letterSpacing: "0.10em",
@@ -327,9 +356,10 @@ function WalletRow({
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
+              transition: "background 180ms ease, color 180ms ease, border-color 180ms ease",
             }}
           >
-            <Trash2 size={11} /> {removing ? "Removing…" : "Remove"}
+            <Trash2 size={11} /> {removing ? "Removing…" : confirmingRemove ? "Click again to remove" : "Remove"}
           </button>
         </div>
       </div>
@@ -348,46 +378,49 @@ function WalletRow({
       >
         <span className="eyebrow">Point balance</span>
         {editing ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-              autoFocus
-              style={{
-                width: 140,
-                padding: "8px 12px",
-                border: "1px solid var(--accent)",
-                borderRadius: 8,
-                fontFamily: "var(--font-mono)",
-                fontSize: 16,
-                color: "var(--ink)",
-                background: "var(--surface)",
-                outline: "none",
-              }}
-            />
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving}
-              className="mono"
-              style={{
-                padding: "8px 12px",
-                background: "var(--accent)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              <Check size={12} />
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+                autoFocus
+                style={{
+                  width: 140,
+                  padding: "8px 12px",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 8,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 16,
+                  color: "var(--ink)",
+                  background: "var(--surface)",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                className="mono"
+                style={{
+                  padding: "8px 12px",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                <Check size={12} />
+              </button>
+            </div>
+            <FindMyBalanceLink programSlug={card?.loyalty_program?.slug} />
           </div>
         ) : (
           <button
@@ -531,5 +564,55 @@ function EmptyWallet() {
         <Plus size={13} /> Add a card
       </Link>
     </div>
+  );
+}
+
+/* ── Find-my-balance deep link ─────────────────────────────────────────
+ * Beginners often have no idea where to look up their Aeroplan/Scene+/etc
+ * point balance. This component maps each loyalty-program slug to a known
+ * landing page (login or "manage points") so the user can grab the number
+ * and paste it back into the wallet without a Google detour. */
+const BALANCE_LOOKUP_URLS: Record<string, string> = {
+  "aeroplan":         "https://www.aircanada.com/ca/en/aco/home/aeroplan/account.html",
+  "amex-mr-ca":       "https://www.americanexpress.com/en-ca/account/login/",
+  "rbc-avion":        "https://www.rbcrewards.com/",
+  "scene-plus":       "https://www.sceneplus.ca/login",
+  "td-rewards":       "https://www.tdrewards.com/",
+  "cibc-aventura":    "https://www.cibcrewards.com/",
+  "bmo-rewards":      "https://www.bmorewards.com/",
+  "marriott-bonvoy":  "https://www.marriott.com/sign-in.mi",
+  "hilton-honors":    "https://www.hilton.com/en/hilton-honors/login/",
+  "wealthsimple-cash":"https://my.wealthsimple.com/app/cash",
+  "scotia-rewards":   "https://www.scotiarewards.com/",
+  "pc-optimum":       "https://www.pcoptimum.ca/account",
+  "ct-money":         "https://triangle.canadiantire.ca/en.html",
+  "air-miles":        "https://www.airmiles.ca/en/login.html",
+};
+
+function FindMyBalanceLink({ programSlug }: { programSlug?: string }) {
+  const url = programSlug ? BALANCE_LOOKUP_URLS[programSlug] : undefined;
+  if (!url) {
+    return (
+      <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        Not sure? Check your issuer app or statement.
+      </span>
+    );
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mono"
+      style={{
+        fontSize: 10,
+        color: "var(--accent)",
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        textDecoration: "none",
+      }}
+    >
+      ↗ Find my number on the program site
+    </a>
   );
 }

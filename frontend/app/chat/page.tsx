@@ -109,7 +109,7 @@ export default function ChatPage() {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       if (msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro")) {
         setRateLimited(true);
-        setMessages((prev) => [...prev, { role: "assistant", content: "You've used your free message this month. Upgrade to Pro for unlimited AI access." }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: "You've used your 5 free messages for the month. Upgrade to Pro for unlimited AI access." }]);
       } else {
         setError(msg);
         setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't process your request. Please try again." }]);
@@ -134,7 +134,7 @@ export default function ChatPage() {
       <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 160px" }}>
         <PageMasthead
           eyebrow="Concierge"
-          eyebrowEnd="Claude Sonnet 4.5"
+          eyebrowEnd="Claude Sonnet 4.6"
           title={
             <>
               The <span style={{ fontStyle: "italic" }}>rewards</span> editor.
@@ -344,8 +344,8 @@ export default function ChatPage() {
         }}
       >
         <div style={{ maxWidth: 880, margin: "0 auto", padding: "14px clamp(20px, 3vw, 40px) 18px" }}>
-          {/* Research mode toggle */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          {/* Research mode toggle + free-tier quota indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => setResearchMode(!researchMode)}
@@ -373,6 +373,32 @@ export default function ChatPage() {
                 web sources cited
               </span>
             )}
+            {/* Soft free-tier indicator. Shows remaining count instead of
+                hard-disabling the input — user can still compose and only
+                hits friction at send time. Hidden for Pro members. */}
+            {!isPro && (
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  color: rateLimited ? "var(--accent)" : "var(--ink-3)",
+                  marginLeft: "auto",
+                }}
+              >
+                {rateLimited ? (
+                  <>
+                    Free limit reached ·{" "}
+                    <Link href="/pricing" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                      Upgrade for unlimited
+                    </Link>
+                  </>
+                ) : (
+                  <>Free tier · 5 messages/month · upgrade for unlimited</>
+                )}
+              </span>
+            )}
           </div>
 
           <div
@@ -391,9 +417,9 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={rateLimited && !isPro ? "Upgrade to Pro for unlimited messages" : "Ask the editor about your rewards…"}
+              placeholder={rateLimited && !isPro ? "Free monthly limit reached — upgrade for unlimited" : "Ask the editor about your rewards…"}
               rows={1}
-              disabled={loading || (rateLimited && !isPro)}
+              disabled={loading}
               className="serif"
               style={{
                 flex: 1,

@@ -8,6 +8,7 @@ import type { SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { Sparkline } from "@/components/editorial/sparkline";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { ProFOMOStrip } from "@/components/editorial/pro-fomo-strip";
 
 type DateRange = "7d" | "30d" | "90d" | "all";
 
@@ -157,6 +158,9 @@ export default function InsightsPage() {
             ) : undefined
           }
         />
+
+        {/* ── Pro FOMO strip (free users only) ──────────────────── */}
+        <ProFOMOStrip />
 
         {loading ? (
           <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.10em" }}>

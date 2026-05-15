@@ -41,11 +41,11 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps) {
         <div
           className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
           style={{
-            background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(217,119,6,0.08))",
-            border: "1px solid rgba(245,158,11,0.25)",
+            background: "linear-gradient(135deg, rgba(165,31,45,0.15), rgba(116,19,29,0.08))",
+            border: "1px solid rgba(165,31,45,0.25)",
           }}
         >
-          <Sparkles size={24} style={{ color: "#F59E0B" }} />
+          <Sparkles size={24} style={{ color: "var(--accent)" }} />
         </div>
 
         <h2 className="text-[18px] font-bold text-white mb-2">
@@ -63,8 +63,8 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps) {
           onClick={onClose}
           className="w-full h-11 rounded-xl font-semibold text-[14px] text-black transition-all hover:scale-[1.01] active:scale-[0.99]"
           style={{
-            background: "linear-gradient(135deg, #F59E0B, #D97706)",
-            boxShadow: "0 4px 20px rgba(245,158,11,0.3)",
+            background: "linear-gradient(135deg, var(--accent), var(--accent-2, #74131D))",
+            boxShadow: "0 4px 20px rgba(165,31,45,0.3)",
           }}
         >
           Got it!

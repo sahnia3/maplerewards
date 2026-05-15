@@ -7,7 +7,9 @@ import { listCards } from "@/lib/api";
 import type { Card, UserCard } from "@/lib/types";
 import { CardEditModal } from "@/components/cards/card-edit-modal";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
+import { HeadToHeadPicker } from "@/components/cards/head-to-head-picker";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { WelcomeOfferBadge } from "@/components/welcome-offer-badge";
 import { cardImageUrl } from "@/lib/card-images";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +139,11 @@ export default function CardsPage() {
             + Add a card
           </Link>
         </header>
+
+        {/* ── Head-to-head compare picker ─────────────────────────────
+            Two dropdowns + Compare button → navigates to /compare/[a]/[b].
+            Public; no auth required. */}
+        {allCards.length > 0 && <HeadToHeadPicker cards={allCards} />}
 
         {/* ── Wallet rail ──────────────────────────────────────────── */}
         <section style={{ marginBottom: 48 }}>
@@ -476,18 +483,21 @@ function CardLedgerRow({
         </div>
         <div
           className="serif"
-          style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 2, fontStyle: "italic" }}
+          style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 2, fontStyle: "italic", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
         >
-          {card.issuer}
-          {bonusValue && (
-            <>
-              {" · "}
-              <span className="mono" style={{ fontStyle: "normal", color: "var(--accent)", fontSize: 11, letterSpacing: "0.04em" }}>
-                {bonusValue}
-              </span>
-              {bonusSpend && <span style={{ color: "var(--ink-3)" }}> {bonusSpend}</span>}
-            </>
-          )}
+          <span>
+            {card.issuer}
+            {bonusValue && (
+              <>
+                {" · "}
+                <span className="mono" style={{ fontStyle: "normal", color: "var(--accent)", fontSize: 11, letterSpacing: "0.04em" }}>
+                  {bonusValue}
+                </span>
+                {bonusSpend && <span style={{ color: "var(--ink-3)" }}> {bonusSpend}</span>}
+              </>
+            )}
+          </span>
+          <WelcomeOfferBadge expiresAt={card.welcome_bonus_offer_expires_at} />
         </div>
       </div>
 

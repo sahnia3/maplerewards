@@ -7,6 +7,8 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChatFab } from "@/components/chat/chat-fab";
+import { SWRegister } from "@/components/sw-register";
+import { InstallPWAPrompt } from "@/components/install-pwa-prompt";
 
 const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
@@ -64,6 +66,8 @@ export default function RootLayout({
         <Providers>
           <AppShell>{children}</AppShell>
           <ChatFab />
+          <SWRegister />
+          <InstallPWAPrompt />
         </Providers>
       </body>
     </html>

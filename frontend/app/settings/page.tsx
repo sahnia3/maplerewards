@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Download, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { PageMasthead } from "@/components/editorial/page-masthead";
+import { useAuth } from "@/contexts/auth-context";
+import { useSession } from "@/contexts/session-context";
+import { changePassword, exportSpendCSV } from "@/lib/api";
 
 /* Editorial settings page — only what actually works.
  *
@@ -28,8 +31,19 @@ function saveBool(key: string, value: boolean) {
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = (resolvedTheme as "light" | "dark") ?? "light";
+  const { user, isAuthenticated } = useAuth();
+  const { sessionId } = useSession();
 
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  // Password change state — all controlled, no useReducer noise since the
+  // shape is small and the form clears on success anyway.
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdMessage, setPwdMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     setReduceMotion(loadBool("mr.motion.reduce", false));
@@ -39,6 +53,45 @@ export default function SettingsPage() {
     setReduceMotion(reduce);
     saveBool("mr.motion.reduce", reduce);
     document.documentElement.setAttribute("data-reduce-motion", reduce ? "true" : "false");
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentPwd || !newPwd) return;
+    setPwdLoading(true);
+    setPwdMessage(null);
+    try {
+      await changePassword(currentPwd, newPwd);
+      setPwdMessage({ kind: "ok", text: "Password updated. Other devices will need to sign in again." });
+      setCurrentPwd("");
+      setNewPwd("");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not update password";
+      setPwdMessage({ kind: "err", text: msg });
+    } finally {
+      setPwdLoading(false);
+    }
+  }
+
+  async function handleExportSpend() {
+    if (!sessionId) return;
+    setExportLoading(true);
+    setExportError(null);
+    try {
+      const blob = await exportSpendCSV(sessionId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `maplerewards_spend_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   return (
@@ -73,6 +126,143 @@ export default function SettingsPage() {
           </Row>
         </Section>
 
+        {/* Password change — only meaningful for password-auth accounts.
+            Google-only users see a helper hint instead of an empty form. */}
+        {isAuthenticated && (
+          <Section eyebrow="Security" title="Change your password.">
+            {user?.auth_provider === "google" ? (
+              <p
+                className="serif"
+                style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, padding: "16px 4px", marginTop: 0, lineHeight: 1.5 }}
+              >
+                Your account signs in with Google. Manage the password through your Google account
+                instead of here.
+              </p>
+            ) : (
+              <form onSubmit={handleChangePassword} style={{ display: "grid", gap: 12, padding: "16px 4px" }}>
+                <label className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)" }}>
+                  Current password
+                  <input
+                    type="password"
+                    value={currentPwd}
+                    onChange={(e) => setCurrentPwd(e.target.value)}
+                    autoComplete="current-password"
+                    style={inputStyle}
+                    required
+                  />
+                </label>
+                <label className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)" }}>
+                  New password (min 8 characters)
+                  <input
+                    type="password"
+                    value={newPwd}
+                    onChange={(e) => setNewPwd(e.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                    style={inputStyle}
+                    required
+                  />
+                </label>
+                {pwdMessage && (
+                  <div
+                    role={pwdMessage.kind === "err" ? "alert" : "status"}
+                    className="serif"
+                    style={{
+                      fontSize: 13,
+                      fontStyle: "italic",
+                      color: pwdMessage.kind === "err" ? "var(--loss)" : "var(--gain)",
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      background: "var(--surface)",
+                      border: `1px solid ${pwdMessage.kind === "err" ? "var(--loss)" : "var(--gain)"}`,
+                    }}
+                  >
+                    {pwdMessage.text}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={pwdLoading || !currentPwd || !newPwd}
+                  className="mono"
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "10px 20px",
+                    background: pwdLoading || !currentPwd || !newPwd ? "var(--rule-strong)" : "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    cursor: pwdLoading || !currentPwd || !newPwd ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {pwdLoading ? "Updating…" : "Update password"}
+                </button>
+              </form>
+            )}
+          </Section>
+        )}
+
+        {/* Data export — PIPEDA portability. Available to all accounts that
+            have a session (anonymous wallets included). */}
+        {sessionId && (
+          <Section eyebrow="Your data" title="Export your spend ledger.">
+            <div style={{ padding: "16px 4px" }}>
+              <p
+                className="serif"
+                style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginBottom: 14, lineHeight: 1.5 }}
+              >
+                Download every transaction you&apos;ve logged with us as a CSV. Includes date, card,
+                category, amount, points earned, and dollar value.
+              </p>
+              {exportError && (
+                <div
+                  role="alert"
+                  className="serif"
+                  style={{
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    color: "var(--loss)",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    background: "var(--surface)",
+                    border: "1px solid var(--loss)",
+                    marginBottom: 12,
+                  }}
+                >
+                  {exportError}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleExportSpend}
+                disabled={exportLoading}
+                className="mono"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 20px",
+                  background: "var(--ink)",
+                  color: "var(--paper)",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: exportLoading ? "wait" : "pointer",
+                }}
+              >
+                {exportLoading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {exportLoading ? "Preparing…" : "Download CSV"}
+              </button>
+            </div>
+          </Section>
+        )}
+
         <p
           className="serif"
           style={{
@@ -93,6 +283,20 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  marginTop: 6,
+  height: 40,
+  padding: "0 12px",
+  background: "var(--surface)",
+  border: "1px solid var(--rule)",
+  borderRadius: 8,
+  outline: "none",
+  fontFamily: "var(--font-mono)",
+  fontSize: 13,
+  color: "var(--ink)",
+};
 
 /* ── Subcomponents ─────────────────────────────────────────────── */
 

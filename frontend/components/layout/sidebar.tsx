@@ -23,27 +23,34 @@ import {
   Sparkles,
   Sun,
   Moon,
+  Wrench,
+  Flame,
+  Trophy,
+  ClipboardList,
 } from "lucide-react";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { UserMenu } from "@/components/auth/user-menu";
 import { NotificationCenter } from "@/components/notifications/notification-center";
+import { MapleWordmark } from "@/components/brand/maple-mark";
 
-/* ── Maple-leaf brand glyph (lime, scales with size prop) ───────────── */
-function MapleLeaf({ size = 14 }: { size?: number }) {
+/* ── Maple-leaf brand glyph — folded-origami, raster asset ─────────────
+ * Uses the round-2 origami mockup directly (cream background already
+ * stripped, cropped to bounds). PNG at 395×411 source resolution so
+ * it scales crisply down to favicon size. Path-based SVG was too
+ * noisy at small sizes — this is the user's selected design verbatim. */
+function MapleLeaf({ size = 30 }: { size?: number }) {
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/brand/maple-leaf-origami.png"
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="var(--lime)"
-      stroke="none"
+      alt=""
       aria-hidden
-    >
-      {/* Stylised maple leaf — single-fill silhouette */}
-      <path d="M12 2 L13.2 6.2 L17 4.5 L15.5 8.5 L20 8 L17.5 11 L22 12.5 L18.5 14 L20.5 17.5 L16.5 16 L17 20.5 L13.5 18 L12 22 L10.5 18 L7 20.5 L7.5 16 L3.5 17.5 L5.5 14 L2 12.5 L6.5 11 L4 8 L8.5 8.5 L7 4.5 L10.8 6.2 Z" />
-    </svg>
+      style={{ display: "block", objectFit: "contain" }}
+    />
   );
 }
 
@@ -65,10 +72,13 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { href: "/",              label: "Home",         icon: LayoutDashboard },
-      { href: "/cards",         label: "Cards",        icon: CreditCard      },
       { href: "/optimizer",     label: "Optimizer",    icon: Zap             },
+      { href: "/pro-tools",     label: "Pro Tools",    icon: Sparkles        },
       { href: "/wallet",        label: "Wallet",       icon: Wallet          },
+      { href: "/cards",         label: "Cards",        icon: CreditCard      },
+      { href: "/loyalty",       label: "Loyalty",      icon: Trophy          },
       { href: "/trip-planner",  label: "Trip Planner", icon: Plane           },
+      { href: "/chat",          label: "AI Assistant", icon: MessageCircle   },
     ],
   },
   {
@@ -76,9 +86,15 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/insights",      label: "Insights",     icon: BarChart2       },
       { href: "/portfolio",     label: "Portfolio",    icon: PieChart        },
-      { href: "/pro-tools",     label: "Pro Tools",    icon: Sparkles        },
+      { href: "/applications",  label: "Applications", icon: ClipboardList   },
       { href: "/feed",          label: "Feed",         icon: Rss             },
-      { href: "/chat",          label: "AI Assistant", icon: MessageCircle   },
+      { href: "/promos",        label: "Promos",       icon: Flame           },
+    ],
+  },
+  {
+    label: "Tools",
+    items: [
+      { href: "/tools",         label: "All Tools",    icon: Wrench          },
     ],
   },
 ];
@@ -175,7 +191,7 @@ export function Sidebar() {
 
     return (
       <>
-        {/* Logo lockup: maple leaf glyph (lime) + wordmark */}
+        {/* Logo lockup: folded-origami maple leaf + maple wordmark */}
         <div
           className="flex items-center shrink-0"
           style={{
@@ -190,20 +206,8 @@ export function Sidebar() {
             className="flex items-center gap-2"
             onClick={() => isMobile && setMobileOpen(false)}
           >
-            <MapleLeaf size={16} />
-            {!collapsed && (
-              <span
-                className="display"
-                style={{
-                  fontSize: 18,
-                  letterSpacing: "-0.01em",
-                  color: "var(--ink)",
-                  fontWeight: 400,
-                }}
-              >
-                maple<span style={{ color: "var(--accent)" }}>rewards</span>
-              </span>
-            )}
+            <MapleLeaf size={28} />
+            {!collapsed && <MapleWordmark size="sm" bare />}
           </Link>
           {!collapsed && (
             <div className="flex items-center gap-0.5">

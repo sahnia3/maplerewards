@@ -9,6 +9,83 @@ export interface LoyaltyProgram {
   updated_at: string;
 }
 
+export type CardOfferSource = "amex_offers" | "rbc_offers" | "scene_plus" | "other";
+
+export interface CardOffer {
+  id?: string;
+  user_id?: string;
+  card_id: string;
+  card_name?: string;
+  source: CardOfferSource;
+  merchant: string;
+  description?: string | null;
+  earn_amount?: number | null;
+  min_spend?: number | null;
+  activated_at?: string | null;
+  expires_at?: string | null;
+  is_used: boolean;
+  used_at?: string | null;
+  notes?: string | null;
+  /** Days until expiry; negative if expired. */
+  days_to_expiry?: number | null;
+}
+
+export interface CreateCardOfferRequest {
+  card_id: string;
+  source: CardOfferSource;
+  merchant: string;
+  description?: string | null;
+  earn_amount?: number | null;
+  min_spend?: number | null;
+  activated_at?: string | null;
+  expires_at?: string | null;
+  notes?: string | null;
+}
+
+export interface LoyaltyAccount {
+  id?: string;
+  user_id?: string;
+  program_slug: string;
+  program_name?: string;
+  account_label?: string | null;
+  balance: number;
+  expires_at?: string | null;        // YYYY-MM-DD
+  last_activity?: string | null;      // YYYY-MM-DD
+  notes?: string | null;
+  /** Derived by service: days until expiry (negative if past). */
+  days_to_expiry?: number | null;
+  /** Plain-English program-rule note ("expires 18 mo after last activity"). */
+  expiry_rule_note?: string | null;
+}
+
+export interface CreateLoyaltyAccountRequest {
+  program_slug: string;
+  account_label?: string | null;
+  balance: number;
+  expires_at?: string | null;
+  last_activity?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateLoyaltyAccountRequest {
+  balance?: number;
+  expires_at?: string | null;
+  last_activity?: string | null;
+  notes?: string | null;
+}
+
+export interface IssuerPageChange {
+  id: string;
+  page_id: string;
+  page_label: string;
+  page_url: string;
+  program_slug?: string | null;
+  detected_at: string;       // ISO timestamp
+  diff_summary: string;      // one-line headline
+  diff_snippet: string;      // ~500 char before/after
+  ai_confidence?: number | null;
+}
+
 export interface Card {
   id: string;
   name: string;
@@ -20,6 +97,15 @@ export interface Card {
   welcome_bonus_points: number;
   welcome_bonus_min_spend: number;
   welcome_bonus_months: number;
+  /**
+   * ISO date (YYYY-MM-DD) when the public welcome-offer reverts to the
+   * standard amount. Distinct from the user's personal min-spend deadline.
+   */
+  welcome_bonus_offer_expires_at?: string;
+  welcome_bonus_offer_source?: string;
+  // Optional commercial relationship — populated when we have an affiliate
+  // link configured for this card. ApplyButton hides itself when unset.
+  affiliate_url?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -306,6 +392,8 @@ export interface WelcomeBonus {
 export interface MissedRewardEntry {
   spend_entry_id: string;
   spent_at: string;
+  /** Merchant string from spend_entries.note — e.g. "METRO #129 TORONTO". */
+  description?: string;
   category_slug: string;
   category_name: string;
   amount: number;

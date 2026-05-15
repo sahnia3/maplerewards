@@ -8,6 +8,9 @@ import { getCardDetail } from "@/lib/api";
 import type { CardDetail, MultiplierRow, TransferPartner } from "@/lib/types";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { WelcomeOfferBadge } from "@/components/welcome-offer-badge";
+import { ApplyButton } from "@/components/cards/ApplyButton";
+import { EligibilityChip } from "@/components/cards/EligibilityChip";
+import { useSession } from "@/contexts/session-context";
 
 type TabKey = "overview" | "earn-rates" | "transfer-partners";
 
@@ -284,6 +287,7 @@ export default function CardDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cardId = params?.id as string;
+  const { sessionId } = useSession();
 
   const fromHint = searchParams?.get("from");
   const backHref =
@@ -437,6 +441,20 @@ export default function CardDetailPage() {
                   {(value_range_low * 100).toFixed(1)}–{(value_range_high * 100).toFixed(1)}¢/pt
                 </Pill>
               )}
+            </div>
+
+            <div style={{ marginTop: 22 }}>
+              <ApplyButton
+                cardId={card.id}
+                cardName={card.name}
+                hasAffiliate={Boolean(card.affiliate_url)}
+                alwaysShow
+                size="md"
+              />
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <EligibilityChip sessionId={sessionId} cardId={card.id} />
             </div>
           </div>
         </section>

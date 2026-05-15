@@ -26,19 +26,19 @@ const TYPICAL_SPEND = {
   entertainment: 100,
 };
 
-const CATEGORY_LABELS: Record<string, { emoji: string; name: string }> = {
-  groceries:     { emoji: "🛒", name: "Groceries" },
-  dining:        { emoji: "🍽️", name: "Dining" },
-  travel:        { emoji: "✈️", name: "Travel" },
-  "gas-transit": { emoji: "⛽", name: "Gas & Transit" },
-  pharmacy:      { emoji: "💊", name: "Pharmacy" },
-  entertainment: { emoji: "🎬", name: "Entertainment" },
+const CATEGORY_LABELS: Record<string, { name: string }> = {
+  groceries:     { name: "Groceries" },
+  dining:        { name: "Dining" },
+  travel:        { name: "Travel" },
+  "gas-transit": { name: "Gas & Transit" },
+  pharmacy:      { name: "Pharmacy" },
+  entertainment: { name: "Entertainment" },
 };
 
 export default function PortfolioPage() {
   const router = useRouter();
   const { sessionId, isReady } = useSession();
-  const { wallet, addCard } = useWallet();
+  const { wallet, addCard, isLoading: walletLoading } = useWallet();
 
   const [summary, setSummary] = useState<WalletSummary | null>(null);
   const [recs, setRecs] = useState<CardScore[]>([]);
@@ -103,6 +103,27 @@ export default function PortfolioPage() {
     : 1;
 
   const hasWallet = wallet.length > 0;
+
+  // Fresh user: no cards in wallet AND wallet finished loading. Skip the
+  // spinner gauntlet — we already know the analysis tiles will be empty,
+  // so render the onboarding CTA immediately. Without this the user sees
+  // 4 separate loading skeletons cycle through before discovering there's
+  // nothing to display.
+  if (!walletLoading && !hasWallet) {
+    return (
+      <div className="reveal" style={{ paddingTop: 0 }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+          <PageMasthead
+            eyebrow="Portfolio"
+            eyebrowEnd="0 cards · CAD"
+            title={<>The <span style={{ color: "var(--accent)" }}>annual</span> ledger.</>}
+            lede="Insurance, lounge access, multipliers, and credits — modeled as expected dollar value, net of fees, against the spend you actually log."
+          />
+          <PortfolioEmptyState onStart={() => router.push("/onboarding")} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
@@ -358,7 +379,7 @@ export default function PortfolioPage() {
           </div>
           <div className="portfolio-cat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
-              const cat = CATEGORY_LABELS[slug] ?? { emoji: "💳", name: slug };
+              const cat = CATEGORY_LABELS[slug] ?? { name: slug };
               const topCard = summary?.cards[0];
               return (
                 <div
@@ -1060,6 +1081,69 @@ export default function PortfolioPage() {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+/* ── Empty-state helper for fresh users with no cards ─────────────────────── */
+
+function PortfolioEmptyState({ onStart }: { onStart: () => void }) {
+  return (
+    <div
+      style={{
+        marginTop: 40,
+        borderTop: "1px solid var(--ink)",
+        borderBottom: "1px solid var(--rule)",
+        padding: "60px 20px",
+        textAlign: "center",
+      }}
+    >
+      <span className="eyebrow" style={{ color: "var(--accent)" }}>No cards yet</span>
+      <h3
+        className="display"
+        style={{
+          fontSize: "clamp(28px, 4vw, 40px)",
+          margin: "12px 0 0",
+          lineHeight: 1.05,
+        }}
+      >
+        Build a wallet first.
+      </h3>
+      <p
+        className="serif"
+        style={{
+          fontStyle: "italic",
+          color: "var(--ink-2)",
+          fontSize: 16,
+          maxWidth: 520,
+          margin: "12px auto 24px",
+          lineHeight: 1.55,
+        }}
+      >
+        The portfolio ledger needs at least one card to model insurance, lounge access,
+        multipliers, and credits. Take the four-question quiz and we&apos;ll seed your stack.
+      </p>
+      <button
+        onClick={onStart}
+        className="mono"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "14px 26px",
+          borderRadius: 8,
+          background: "var(--accent)",
+          color: "#fff",
+          border: "none",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
+      >
+        Start quiz <ChevronRight size={14} />
+      </button>
     </div>
   );
 }

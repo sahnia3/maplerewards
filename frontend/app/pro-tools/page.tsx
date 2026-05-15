@@ -11,6 +11,7 @@ import { ProToolsPersonalStrip } from "@/components/pro-tools/PersonalStrip";
 import { WalletStatsStrip } from "@/components/pro-tools/WalletStatsStrip";
 import { ProToolsUpsell } from "@/components/pro-tools/UpsellWall";
 import { MissedRewardsTile } from "@/components/pro-tools/MissedRewardsTile";
+import { WelcomeBonusMissionTile } from "@/components/pro-tools/WelcomeBonusMissionTile";
 import { CreditsTile } from "@/components/pro-tools/CreditsTile";
 import { CardValueTile } from "@/components/pro-tools/CardValueTile";
 import { IssuerChangesTile } from "@/components/pro-tools/IssuerChangesTile";
@@ -176,6 +177,8 @@ export default function ProToolsPage() {
         {active === "forensics" && (
           <>
             <MissedRewardsTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
+            <WelcomeBonusMissionTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <CreditsTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />

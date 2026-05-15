@@ -9,7 +9,18 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { setAuthTokenAccessor } from "@/lib/api";
+import { setAuthTokenAccessor, setAuthRefreshHandler, getCSRFToken, CSRF_HEADER } from "@/lib/api";
+
+// Small helper: build a headers map for a CSRF-protected auth POST. Mirrors
+// the api.ts request() wrapper for the call sites that bypass it.
+async function csrfHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const csrf = await getCSRFToken();
+  return {
+    "Content-Type": "application/json",
+    ...(csrf ? { [CSRF_HEADER]: csrf } : {}),
+    ...(extra ?? {}),
+  };
+}
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 
@@ -66,6 +77,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthTokenAccessor(() => tokenRef.current);
   }, [accessToken]);
 
+  // Wire transparent refresh-on-401 for the API client. When any Pro endpoint
+  // returns 401 because the 15-minute access token expired, lib/api.ts calls
+  // this handler instead of bubbling the error to the user — refresh succeeds
+  // → original request retried; refresh fails → token cleared, user re-logs in.
+  useEffect(() => {
+    setAuthRefreshHandler(async () => {
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (!refreshToken) return null;
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: "POST",
+          headers: await csrfHeaders(),
+          credentials: "include",
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!res.ok) {
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          setAccessToken(null);
+          setUser(null);
+          return null;
+        }
+        const data: TokenPair = await res.json();
+        setAccessToken(data.access_token);
+        setUser(data.user);
+        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+        tokenRef.current = data.access_token;
+        return data.access_token;
+      } catch {
+        return null;
+      }
+    });
+  }, []);
+
   // Try to restore session on mount using refresh token
   useEffect(() => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
@@ -74,12 +118,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Attempt to refresh the access token
-    fetch(`${BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    })
+    // Attempt to refresh the access token. CSRF is async so we kick off
+    // the header build first, then issue the fetch — only fires on mount.
+    (async () => {
+      const headers = await csrfHeaders();
+      return fetch(`${BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    })()
       .then((res) => {
         if (!res.ok) throw new Error("refresh failed");
         return res.json();
@@ -108,7 +157,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string, displayName: string, sessionId?: string) => {
       const res = await fetch(`${BASE_URL}/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await csrfHeaders(),
+        credentials: "include",
         body: JSON.stringify({
           email,
           password,
@@ -131,7 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const res = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await csrfHeaders(),
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
@@ -149,7 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (googleToken: string, sessionId?: string) => {
       const res = await fetch(`${BASE_URL}/auth/google`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await csrfHeaders(),
+        credentials: "include",
         body: JSON.stringify({
           google_token: googleToken,
           session_id: sessionId || "",
@@ -170,10 +222,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (accessToken) {
       await fetch(`${BASE_URL}/auth/logout`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: await csrfHeaders({ Authorization: `Bearer ${accessToken}` }),
+        credentials: "include",
       }).catch(() => {});
     }
     setAccessToken(null);
@@ -187,10 +237,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!accessToken) throw new Error("Not authenticated");
       const res = await fetch(`${BASE_URL}/auth/me`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: await csrfHeaders({ Authorization: `Bearer ${accessToken}` }),
+        credentials: "include",
         body: JSON.stringify({ display_name: displayName }),
       });
       if (!res.ok) throw new Error("Failed to update profile");

@@ -10,15 +10,6 @@ import { SkeletonChart } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Category, CardRecommendation } from "@/lib/types";
 
-/* Category emojis live as content (scannable category markers in a data
- * surface), not UI chrome. The empty state + segment toggle below use
- * Lucide icons; only the per-category data column carries emoji. */
-const CAT_ICONS: Record<string, string> = {
-  groceries: "🛒", dining: "🍽️", travel: "✈️", gas: "⛽", transit: "🚇",
-  entertainment: "🎬", streaming: "📺", pharmacy: "💊", "foreign-currency": "💱",
-  "everything-else": "💳", insurance: "🛡️", utilities: "🔌", "online-shopping": "🛍️",
-};
-
 function fmtPct(v: number) { return `${v.toFixed(2)}%`; }
 function fmtCAD(v: number) { return `$${v.toFixed(2)}`; }
 
@@ -139,8 +130,13 @@ export default function ComparePage() {
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {categories.map((cat) => (
-                  <div key={cat.slug} className="flex items-center gap-2">
-                    <span className="text-base shrink-0">{CAT_ICONS[cat.slug] ?? "💳"}</span>
+                  <div key={cat.slug}>
+                    <div
+                      className="mono shrink-0"
+                      style={{ fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: 4 }}
+                    >
+                      {cat.name}
+                    </div>
                     <div className="relative flex-1">
                       <span
                         className="absolute left-2.5 top-1/2 -translate-y-1/2 mono pointer-events-none"
@@ -291,7 +287,6 @@ export default function ComparePage() {
                         border: "1px solid var(--rule)",
                       }}
                     >
-                      <span className="text-base">{CAT_ICONS[category.slug] ?? "💳"}</span>
                       <div style={{ minWidth: 0 }}>
                         <div
                           className="display"
@@ -374,7 +369,6 @@ export default function ComparePage() {
                           style={{ padding: "16px 20px", background: isEven ? "var(--surface)" : "var(--surface-2)" }}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-base">{CAT_ICONS[cat.slug] ?? "💳"}</span>
                             <div>
                               <div className="display" style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.2 }}>
                                 {cat.name}

@@ -136,9 +136,9 @@ export default function HomePage() {
                 maxWidth: 540,
               }}
             >
-              Know exactly which Canadian credit card to swipe for every purchase. Track points
-              across Aeroplan, Scene+, AMEX MR, and 24 more programs, all priced in CAD.
-              MaxRewards and CardPointers cover US cards. We cover the 92 Canadian ones.
+              Know exactly which Canadian credit card to swipe for every purchase — groceries,
+              gas, dining, travel — and what those points are actually worth in dollars.
+              Built for Canada. Every card, every program, every transfer route.
             </p>
 
             <div style={{ display: "flex", gap: 12, marginTop: 32, flexWrap: "wrap" }}>
@@ -258,7 +258,7 @@ export default function HomePage() {
                 className="mono"
                 style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-3)" }}
               >
-                Three users · winter beta
+                Early beta · two of two
               </span>
             </div>
             <div
@@ -268,11 +268,6 @@ export default function HomePage() {
                 gap: 16,
               }}
             >
-              <QuoteCard
-                quote="The missed-rewards report showed me $312 left on the table in three months. I swapped two cards and it paid for the year."
-                name="Aditya S."
-                location="Toronto"
-              />
               <QuoteCard
                 quote="Finally something that handles the Cobalt-to-Aeroplan transfer the way I actually use it. The optimizer just knows."
                 name="Anne D."

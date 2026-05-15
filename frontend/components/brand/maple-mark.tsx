@@ -2,141 +2,150 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { LETTERS, MAPLE_POSITIONS, MAPLE_WIDTH, METRICS } from "./maple-paths";
 
 /**
- * MapleMark — the new MapleRewards identity.
+ * MapleMark — the MapleRewards app icon (May 2026 refresh).
  *
- * Editorial stamped-seal: a thin gold compass circle around a hand-drawn
- * 11-point maple leaf in maple-red strokes (with a forest-green stem dot).
- * No red background — the brief said specifically "not red." Cream/paper
- * surface, gold scaffolding, maple-red leaf. Reads like a magazine masthead
- * or a Canadian colonial wax seal, not a fast-food logo.
+ * A lowercase 'm' (hand-vectored from Inter Tight Bold) followed by a
+ * small solid maple-red dot. Pure SVG paths — no font dependency, no
+ * FOUT, renders identically regardless of font load state. Pairs with
+ * MapleWordmark as a two-tier identity system.
  *
- * All strokes/fills resolve via CSS vars, so the mark inverts cleanly in
- * dark mode without any prop changes.
+ * Colors resolve via CSS vars (--ink, --accent), so the mark inverts
+ * cleanly in dark mode without prop changes.
  */
 
 export interface MapleMarkProps extends React.SVGAttributes<SVGSVGElement> {
+  /** Pixel height of the mark. Width auto-scales from the SVG aspect ratio. */
   size?: number;
-  /** When true, drops the outer compass ring — a tighter mark for tight UIs. */
+  /** Hide the red dot — text-only variant for ultra-tight spaces. */
   bare?: boolean;
 }
 
-export const MapleMark = React.forwardRef<SVGSVGElement, MapleMarkProps>(function MapleMark(
-  { size = 28, bare = false, className, ...rest },
-  ref
-) {
-  return (
-    <svg
-      ref={ref}
-      width={size}
-      height={size}
-      viewBox="0 0 40 40"
-      role="img"
-      aria-label="MapleRewards"
-      className={cn("select-none", className)}
-      {...rest}
-    >
-      {/* Compass scaffolding — gold, hairline. Two concentric rings + four cardinal ticks. */}
-      {!bare && (
-        <g stroke="var(--gold)" strokeLinecap="round" fill="none">
-          <circle cx="20" cy="20" r="18.5" strokeWidth="0.6" />
-          <circle cx="20" cy="20" r="16.4" strokeWidth="0.35" opacity="0.55" />
-          {/* Cardinal ticks — barely there, just enough to feel architectural. */}
-          <path d="M20 1.5 L20 3.5 M20 36.5 L20 38.5 M1.5 20 L3.5 20 M36.5 20 L38.5 20" strokeWidth="0.45" />
-        </g>
-      )}
+// MapleMark layout in em units (1000-unit em).
+// m occupies x≈44..836 with native side bearings; dot sits in the
+// breathing room to the right at lowercase-period height.
+const MARK_DOT_GAP = 60; // gap from m's advance to dot's left edge
+const MARK_DOT_R = 70;
+const MARK_DOT_CY = -85; // slightly above baseline, where a period would sit
+const MARK_PAD_R = 50; // right padding past the dot
+const MARK_PAD_TOP = 110; // padding above x-height
+const MARK_PAD_BOT = 90; // padding below baseline
 
-      {/* The leaf — 11-point hand-stroke, no fill. Maple-red. */}
-      <path
-        d="M20 5
-           L22.6 12
-           L29 8.5
-           L26.5 15.4
-           L33.5 17.5
-           L27.4 21
-           L29.5 27.8
-           L23 26.3
-           L22 32.2
-           L20 29.6
-           L18 32.2
-           L17 26.3
-           L10.5 27.8
-           L12.6 21
-           L6.5 17.5
-           L13.5 15.4
-           L11 8.5
-           L17.4 12
-           Z"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
+const MARK_MIN_X = 0;
+const MARK_MIN_Y = -METRICS.xHeight - MARK_PAD_TOP; // -656
+const MARK_DOT_CX = LETTERS.m.advance + MARK_DOT_GAP + MARK_DOT_R; // 1011
+const MARK_VB_W = MARK_DOT_CX + MARK_DOT_R + MARK_PAD_R; // 1131
+const MARK_VB_H = -MARK_MIN_Y + MARK_PAD_BOT; // 746
 
-      {/* Stem indicator — a tiny forest-green pip below the leaf, pulling the mark off-center
-          just enough to feel hand-drawn rather than CAD-perfect. */}
-      <circle cx="20" cy="34.2" r="0.85" fill="var(--primary)" />
-    </svg>
-  );
-});
+export const MapleMark = React.forwardRef<SVGSVGElement, MapleMarkProps>(
+  function MapleMark({ size = 28, bare = false, className, style, ...rest }, ref) {
+    const aspect = MARK_VB_W / MARK_VB_H;
+    return (
+      <svg
+        ref={ref}
+        height={size}
+        width={Math.round(size * aspect)}
+        viewBox={`${MARK_MIN_X} ${MARK_MIN_Y} ${MARK_VB_W} ${MARK_VB_H}`}
+        role="img"
+        aria-label="MapleRewards"
+        className={cn("select-none", className)}
+        style={style}
+        {...rest}
+      >
+        <path d={LETTERS.m.d} fill="var(--ink)" />
+        {!bare && (
+          <circle
+            cx={MARK_DOT_CX}
+            cy={MARK_DOT_CY}
+            r={MARK_DOT_R}
+            fill="var(--accent)"
+          />
+        )}
+      </svg>
+    );
+  }
+);
 
 /**
- * MapleWordmark — Mark + name, the format used in the header / login / footer.
+ * MapleWordmark — the global MapleRewards wordmark (header, footer, marketing).
  *
- * The wordmark uses Instrument Serif italic for "maple" (display font) and
- * mono uppercase letter-spaced "rewards" — a deliberate type pairing that
- * reads as "Saturday Night magazine," not "fintech app from 2014."
+ * 'maple' in hand-vectored Inter Tight Bold paths, followed by a solid
+ * maple-red cursor block at lowercase x-height. Pure SVG paths — renders
+ * identically regardless of font load state.
+ *
+ * Accepts the original sm/md/lg/xl API; size prop controls cap-height
+ * in CSS pixels (SVG scales proportionally from there).
  */
 
-export interface MapleWordmarkProps extends React.HTMLAttributes<HTMLSpanElement> {
-  size?: "sm" | "md" | "lg";
+export interface MapleWordmarkProps extends React.SVGAttributes<SVGSVGElement> {
+  size?: "sm" | "md" | "lg" | "xl";
+  /** Drop the red cursor block — text-only variant. */
   bare?: boolean;
 }
 
-const SIZES = {
-  sm: { mark: 22, maple: "20px", rewards: "9px", gap: 8 },
-  md: { mark: 28, maple: "26px", rewards: "10px", gap: 10 },
-  lg: { mark: 36, maple: "34px", rewards: "11px", gap: 12 },
-} as const;
+// Wordmark layout. Block sits flush to lowercase x-height, mirroring a
+// terminal cursor. Block width is tuned to feel like one heavy letter.
+const WORDMARK_BLOCK_GAP = 70;
+const WORDMARK_BLOCK_W = 230;
+const WORDMARK_BLOCK_H = METRICS.xHeight; // 546
+const WORDMARK_PAD_R = 50;
+const WORDMARK_PAD_TOP = 80;
+const WORDMARK_PAD_BOT = 80;
 
-export function MapleWordmark({ size = "md", bare = false, className, ...rest }: MapleWordmarkProps) {
-  const s = SIZES[size];
-  return (
-    <span
-      className={cn("inline-flex items-center", className)}
-      style={{ gap: s.gap }}
-      {...rest}
-    >
-      <MapleMark size={s.mark} bare={bare} />
-      <span className="inline-flex items-baseline" style={{ gap: 6 }}>
-        <span
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: s.maple,
-            fontStyle: "italic",
-            color: "var(--ink)",
-            lineHeight: 1,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          maple
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: s.rewards,
-            color: "var(--ink-3)",
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            fontWeight: 600,
-            lineHeight: 1,
-          }}
-        >
-          rewards
-        </span>
-      </span>
-    </span>
-  );
-}
+const WORDMARK_MIN_X = 0;
+const WORDMARK_MIN_Y = -METRICS.capHeight - WORDMARK_PAD_TOP; // covers ascender (l)
+const WORDMARK_BLOCK_X = MAPLE_WIDTH + WORDMARK_BLOCK_GAP;
+const WORDMARK_VB_W = WORDMARK_BLOCK_X + WORDMARK_BLOCK_W + WORDMARK_PAD_R;
+const WORDMARK_VB_H = -WORDMARK_MIN_Y + (-METRICS.descent) + WORDMARK_PAD_BOT;
+
+// Map sizes → cap-height in CSS pixels.
+const SIZE_CAP_PX: Record<NonNullable<MapleWordmarkProps["size"]>, number> = {
+  sm: 18,
+  md: 24,
+  lg: 34,
+  xl: 50,
+};
+
+export const MapleWordmark = React.forwardRef<SVGSVGElement, MapleWordmarkProps>(
+  function MapleWordmark(
+    { size = "md", bare = false, className, style, ...rest },
+    ref
+  ) {
+    const capPx = SIZE_CAP_PX[size];
+    // Pixel scale: target cap-height (px) ÷ cap-height (em).
+    const scale = capPx / METRICS.capHeight;
+    const heightPx = WORDMARK_VB_H * scale;
+    const widthPx = WORDMARK_VB_W * scale;
+
+    return (
+      <svg
+        ref={ref}
+        width={Math.round(widthPx)}
+        height={Math.round(heightPx)}
+        viewBox={`${WORDMARK_MIN_X} ${WORDMARK_MIN_Y} ${WORDMARK_VB_W} ${WORDMARK_VB_H}`}
+        role="img"
+        aria-label="MapleRewards"
+        className={cn("select-none align-middle", className)}
+        style={style}
+        {...rest}
+      >
+        {MAPLE_POSITIONS.map(({ key, x }) => (
+          <g key={key} transform={`translate(${x} 0)`}>
+            <path d={LETTERS[key].d} fill="var(--ink)" />
+          </g>
+        ))}
+        {!bare && (
+          <rect
+            x={WORDMARK_BLOCK_X}
+            y={-METRICS.xHeight}
+            width={WORDMARK_BLOCK_W}
+            height={WORDMARK_BLOCK_H}
+            fill="var(--accent)"
+          />
+        )}
+      </svg>
+    );
+  }
+);

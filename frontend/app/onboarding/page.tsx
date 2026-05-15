@@ -12,6 +12,48 @@ import { Check, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 /* Editorial onboarding — all emoji removed, paper substrate, maple-red CTAs.
  * Four steps: choose cards · spending · preferences · ranked results. */
 
+// All step-by-step inputs are mirrored into localStorage so a refresh or a
+// browser tab swap doesn't drop ~5 minutes of typing on the floor. Cleared
+// by the "Add top 3" success handler so a returning user starts fresh.
+const ONBOARDING_KEY = "maple_onboarding_v1";
+
+interface OnboardingState {
+  step: 1 | 2 | 3 | 4;
+  selectedCardIds: string[];
+  monthlySpend: Record<string, number>;
+  cardCount: string;
+  feePreference: string;
+  selectedPerks: string[];
+}
+
+function readOnboardingState(): Partial<OnboardingState> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ONBOARDING_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Schema guard: ignore unknown shapes from a past version of the form.
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingState(state: OnboardingState) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ONBOARDING_KEY, JSON.stringify(state));
+  } catch {
+    /* quota or private-mode — silently ignore */
+  }
+}
+
+function clearOnboardingState() {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(ONBOARDING_KEY); } catch { /* noop */ }
+}
+
 const CATEGORIES = [
   { slug: "groceries",     label: "Groceries",     max: 2000, step: 50,  default: 600 },
   { slug: "dining",        label: "Dining",         max: 1000, step: 25,  default: 300 },
@@ -37,14 +79,22 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { addCard } = useWallet();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  // Lazy initializers hydrate from localStorage so a refresh mid-flow
+  // doesn't wipe partially-entered answers. The form should feel like a
+  // single continuous session, not a series of separate visits.
+  const restored = typeof window !== "undefined" ? readOnboardingState() : null;
+
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(restored?.step ?? 1);
   const [allCards, setAllCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(true);
-  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
-  const [monthlySpend, setMonthlySpend] = useState<Record<string, number>>(INITIAL_SPEND);
-  const [cardCount, setCardCount] = useState("2–3 cards");
-  const [feePreference, setFeePreference] = useState("Up to $150");
-  const [selectedPerks, setSelectedPerks] = useState<string[]>([]);
+  const [cardSearch, setCardSearch] = useState("");
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>(restored?.selectedCardIds ?? []);
+  const [monthlySpend, setMonthlySpend] = useState<Record<string, number>>(
+    restored?.monthlySpend ?? INITIAL_SPEND
+  );
+  const [cardCount, setCardCount] = useState(restored?.cardCount ?? "2–3 cards");
+  const [feePreference, setFeePreference] = useState(restored?.feePreference ?? "Up to $150");
+  const [selectedPerks, setSelectedPerks] = useState<string[]>(restored?.selectedPerks ?? []);
   const [results, setResults] = useState<CardScore[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
   const [addingCards, setAddingCards] = useState(false);
@@ -55,6 +105,12 @@ export default function OnboardingPage() {
       .catch(console.error)
       .finally(() => setCardsLoading(false));
   }, []);
+
+  // Mirror every step input into localStorage. The results array isn't
+  // persisted — it's derived from the inputs and regenerable on demand.
+  useEffect(() => {
+    writeOnboardingState({ step, selectedCardIds, monthlySpend, cardCount, feePreference, selectedPerks });
+  }, [step, selectedCardIds, monthlySpend, cardCount, feePreference, selectedPerks]);
 
   const totalMonthly = Object.values(monthlySpend).reduce((a, b) => a + b, 0);
   const toggleCard = (id: string) =>
@@ -78,6 +134,9 @@ export default function OnboardingPage() {
       for (const score of results.slice(0, 3)) {
         try { await addCard(score.card_id); } catch {}
       }
+      // User finished onboarding — discard the cached form state so a
+      // returning user (e.g. resetting their wallet) starts fresh.
+      clearOnboardingState();
       router.push("/");
     } finally { setAddingCards(false); }
   };
@@ -153,7 +212,7 @@ export default function OnboardingPage() {
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 80px" }}>
         {/* Step strip */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-          <span className="eyebrow">Step {step} of 4</span>
+          <span className="eyebrow">About 90 seconds · 4 steps · Step {step}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {[1, 2, 3, 4].map((s) => (
               <span
@@ -186,7 +245,7 @@ export default function OnboardingPage() {
             <StepHeader
               eyebrow="Getting started"
               title={<>Which cards <span style={{ fontStyle: "italic" }}>do you carry?</span></>}
-              lede="Tap every card you currently use. We'll model them against the optimizer to size leakage and missed transfers."
+              lede="Tap every card you currently use. We'll model them against the optimizer to measure missed rewards and unused transfers."
             />
 
             {cardsLoading ? (
@@ -194,6 +253,34 @@ export default function OnboardingPage() {
                 <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
               </div>
             ) : (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <input
+                    type="search"
+                    value={cardSearch}
+                    onChange={(e) => setCardSearch(e.target.value)}
+                    placeholder="Search by card name or issuer (e.g. Cobalt, RBC, Aeroplan)"
+                    autoFocus
+                    style={{
+                      width: "100%",
+                      padding: "12px 16px",
+                      borderRadius: 10,
+                      border: "1px solid var(--rule-strong)",
+                      background: "var(--surface)",
+                      color: "var(--ink)",
+                      fontSize: 14,
+                      outline: "none",
+                    }}
+                  />
+                  {cardSearch && (
+                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 6, letterSpacing: "0.10em", textTransform: "uppercase" }}>
+                      {allCards.filter((c) => {
+                        const q = cardSearch.toLowerCase();
+                        return c.name.toLowerCase().includes(q) || c.issuer.toLowerCase().includes(q);
+                      }).length} of {allCards.length} cards
+                    </div>
+                  )}
+                </div>
               <div
                 style={{
                   display: "grid",
@@ -202,7 +289,11 @@ export default function OnboardingPage() {
                   marginBottom: 28,
                 }}
               >
-                {allCards.map((card) => {
+                {allCards.filter((card) => {
+                  if (!cardSearch) return true;
+                  const q = cardSearch.toLowerCase();
+                  return card.name.toLowerCase().includes(q) || card.issuer.toLowerCase().includes(q);
+                }).map((card) => {
                   const on = selectedCardIds.includes(card.id);
                   return (
                     <button
@@ -254,6 +345,7 @@ export default function OnboardingPage() {
                   );
                 })}
               </div>
+              </>
             )}
 
             <div style={{ display: "flex", gap: 10 }}>
@@ -278,8 +370,37 @@ export default function OnboardingPage() {
             <StepHeader
               eyebrow="Spending profile"
               title={<>How do you <span style={{ fontStyle: "italic" }}>spend</span> each month?</>}
-              lede="Drag each ruled bar to your typical monthly outlay. We use these numbers to model effective return on every card in the catalogue."
+              lede="Drag each slider to your typical monthly outlay. We use these numbers to model the effective return on every card in the catalog."
             />
+
+            <button
+              type="button"
+              onClick={() => setMonthlySpend({
+                "groceries": 900,
+                "dining": 400,
+                "travel": 250,
+                "gas-transit": 220,
+                "pharmacy": 80,
+                "entertainment": 150,
+              })}
+              className="mono"
+              style={{
+                marginBottom: 22,
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1px dashed var(--rule-strong)",
+                background: "transparent",
+                color: "var(--ink-2)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+              title="Pre-fill with realistic numbers for a Canadian household ($2,000/mo total). Adjust from there."
+            >
+              I don&rsquo;t track my spend → use typical defaults
+            </button>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 24, marginBottom: 24 }}>
               {CATEGORIES.map((cat) => {
@@ -379,7 +500,7 @@ export default function OnboardingPage() {
             <StepHeader
               eyebrow="Preferences"
               title={<>One last <span style={{ fontStyle: "italic" }}>thing</span>.</>}
-              lede="A few preferences so the optimizer knows what to weigh — wallet size, fee tolerance, perk priority."
+              lede="A few preferences so the optimizer knows what to weigh: wallet size, fee tolerance, perk priority."
             />
 
             <div style={{ display: "flex", flexDirection: "column", gap: 26, marginBottom: 28 }}>
@@ -428,7 +549,7 @@ export default function OnboardingPage() {
           <>
             <StepHeader
               eyebrow="Your results"
-              title={<>Your ideal <span style={{ fontStyle: "italic" }}>card stack</span>.</>}
+              title={<>Your ideal <span style={{ fontStyle: "italic" }}>wallet</span>.</>}
               lede={`Ranked by estimated annual rewards on $${totalMonthly.toLocaleString()}/month of spend, net of annual fees.`}
             />
 
@@ -561,7 +682,7 @@ export default function OnboardingPage() {
                 textDecoration: "none",
               }}
             >
-              Or explore the full register →
+              Or explore the full card catalog →
             </Link>
           </>
         )}

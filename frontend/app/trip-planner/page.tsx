@@ -88,6 +88,17 @@ function TripPlannerInner() {
   const hasWallet = Boolean(user || sessionId);
   const isRoundTrip = Boolean(returnDate);
 
+  // Last-minute warning. Cash fares for sub-14-day departures jump 2-3x vs
+  // advance-purchase. Surfacing this in the form keeps users from blaming the
+  // tool when CPP looks comically high — it's the cash baseline that moved.
+  const daysToDepart = useMemo(() => {
+    if (!date) return null;
+    const dep = new Date(date + "T00:00:00").getTime();
+    const today = new Date(TODAY + "T00:00:00").getTime();
+    return Math.round((dep - today) / 86400000);
+  }, [date]);
+  const showLastMinuteWarning = daysToDepart !== null && daysToDepart >= 0 && daysToDepart <= 14;
+
   /* Persist form state to the querystring so a user can share or bookmark a
    * search. Uses router.replace (not push) so the back button stays useful.
    * Skipped on the initial mount via the ref guard. */
@@ -109,7 +120,7 @@ function TripPlannerInner() {
     router.replace(tail ? `/trip-planner?${tail}` : "/trip-planner", { scroll: false });
   }, [origin, destination, date, returnDate, flexDays, cabin, passengers, router]);
 
-  const search = useCallback(async () => {
+  const search = useCallback(async (opts?: { refresh?: boolean }) => {
     setErr(null);
     if (!origin || !destination || !date) {
       setErr("Origin, destination, and date are required.");
@@ -128,6 +139,7 @@ function TripPlannerInner() {
         flex_days: flexDays,
         cabin,
         passengers,
+        refresh: opts?.refresh === true,
       });
       // Mirror the backend's diversity cap (capWithDiversity from
       // internal/service/ai_tools.go) on the client so the user sees a
@@ -297,6 +309,23 @@ function TripPlannerInner() {
                   color: "var(--ink)",
                 }}
               />
+              {showLastMinuteWarning && (
+                <div
+                  className="serif"
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11,
+                    fontStyle: "italic",
+                    color: "var(--accent)",
+                    lineHeight: 1.4,
+                  }}
+                  title="Cash fares within 14 days are panic-priced and will make CPP look inflated. Try a date 3+ weeks out for typical redemption value."
+                >
+                  Last-minute departure. Cash fares jump 2-3× inside 14 days —
+                  CPP figures below will read high. Try 3+ weeks out for typical
+                  redemption value.
+                </div>
+              )}
             </div>
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Return (optional)</div>
@@ -415,7 +444,7 @@ function TripPlannerInner() {
             </div>
             <button
               type="button"
-              onClick={search}
+              onClick={() => search()}
               disabled={loading}
               className="mono"
               style={{
@@ -435,6 +464,34 @@ function TripPlannerInner() {
               {submitLabel}
             </button>
           </div>
+
+          {/* Refresh-live action: shown only after a search has produced results.
+              Bypasses the 45-min Redis cache by sending refresh:true, so the
+              user can force a fresh upstream pull when they suspect the cached
+              cash/points baseline has moved. */}
+          {results && results.length > 0 && !loading && (
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => search({ refresh: true })}
+                className="mono"
+                title="Bypass the 45-minute Redis cache and call Apify + Google Flights live again."
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 999,
+                  padding: "6px 14px",
+                  fontSize: 10,
+                  color: "var(--ink-2)",
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                ↻ Refresh live data
+              </button>
+            </div>
+          )}
 
           {err && (
             <div
@@ -823,6 +880,29 @@ function FlightRow({
           >
             {flight.value_rating || "value"}
           </div>
+          {/* Secondary CPP vs economy cash — the "would I actually pay this in cash?"
+              figure. Surfaces only on biz/first searches where the cabin baseline
+              inflates the headline CPP. Helps the user see past the 9¢ "excellent"
+              when they'd never pay $8k cash for the same ticket. */}
+          {flight.realistic_cpp !== undefined && flight.realistic_cpp > 0 && (
+            <div
+              className="mono"
+              title={
+                flight.economy_cash_cad
+                  ? `Compared to economy cash on the same route (~$${Math.round(flight.economy_cash_cad)})`
+                  : undefined
+              }
+              style={{
+                fontSize: 9,
+                color: "var(--ink-3)",
+                letterSpacing: "0.06em",
+                marginTop: 4,
+                opacity: 0.85,
+              }}
+            >
+              {flight.realistic_cpp.toFixed(2)}¢ vs economy
+            </div>
+          )}
           {flight.return_leg && (
             <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", marginTop: 4 }}>
               RT · {flight.return_leg.cpp.toFixed(2)}¢

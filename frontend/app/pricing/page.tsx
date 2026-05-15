@@ -438,8 +438,6 @@ function PricingContent() {
           </div>
         </section>
 
-        {/* ROI anchor — placeholder until cohort data lands */}
-        {/* placeholder until cohort data lands */}
         <aside
           style={{
             marginTop: 28,
@@ -457,7 +455,7 @@ function PricingContent() {
             className="serif"
             style={{ margin: 0, fontSize: 17, color: "var(--ink)", lineHeight: 1.45, maxWidth: 640, marginLeft: "auto", marginRight: "auto" }}
           >
-            Pro users typically identify <span style={{ color: "var(--accent)", fontWeight: 600 }}>$250 to $1,400</span> in recoverable rewards in their first 90 days. The subscription pays for itself once.
+            Pro runs your real spend through the optimizer every month and shows you the exact swipes that left rewards on the table — your number, not an industry average. If the missed total beats the subscription, you keep using it; if it doesn&rsquo;t, cancel.
           </p>
         </aside>
 
