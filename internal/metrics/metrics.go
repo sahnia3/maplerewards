@@ -60,6 +60,8 @@ type Snapshot struct {
 	Cache         map[string]int64 `json:"cache"`
 	Chat          map[string]int64 `json:"chat"`
 	Memory        map[string]int64 `json:"memory"`
+	Latency       []RouteLatency   `json:"latency"`
+	AnthropicCost map[string]int64 `json:"anthropic_cost"`
 }
 
 // Now builds a current snapshot. Cheap — no DB calls, no I/O.
@@ -93,6 +95,11 @@ func Now() Snapshot {
 			"heap_alloc_bytes": int64(ms.HeapAlloc),
 			"heap_sys_bytes":   int64(ms.HeapSys),
 			"num_gc":           int64(ms.NumGC),
+		},
+		Latency: LatencySnapshot(),
+		AnthropicCost: map[string]int64{
+			"input_tokens":  AnthropicInputTokens.Value(),
+			"output_tokens": AnthropicOutputTokens.Value(),
 		},
 	}
 }

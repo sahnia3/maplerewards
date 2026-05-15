@@ -321,6 +321,7 @@ func main() {
 	// Logger so log aggregation (Loki/Cloudwatch) can parse cleanly.
 	r.Use(mw.HTTPRequestLogger())
 	r.Use(middleware.Recoverer)
+	r.Use(mw.LatencyRecorder)
 	r.Use(corsMiddleware)
 
 	// Rate limit per IP per minute. Default 300 in dev, 60 in prod; override

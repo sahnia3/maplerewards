@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 
+	"maplerewards/internal/metrics"
 	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/model"
 	"maplerewards/internal/repo"
@@ -175,9 +176,10 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	// at ~1.3 chars/token. Errors are warn-and-continue: under-counting is
 	// preferable to failing the response.
 	if h.budget != nil {
-		estimate := estimateTokensUsed(req.Message, resp.Reply)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, estimate); berr != nil {
-			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", estimate)
+		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
+		metrics.AddAnthropicTokens(inTok, outTok)
+		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, inTok+outTok); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
 		}
 	}
 
@@ -382,9 +384,10 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Consume daily token budget on success.
 	if h.budget != nil {
-		estimate := estimateTokensUsed(req.Message, resp.Reply)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, estimate); berr != nil {
-			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", estimate)
+		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
+		metrics.AddAnthropicTokens(inTok, outTok)
+		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, inTok+outTok); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
 		}
 	}
 
@@ -516,11 +519,19 @@ var _ = model.ChatMessage{Role: "user", Content: "ping"}
 //     to amortize tool round-trips.
 //   - Assistant reply: 1 token per ~3.5 characters × 1.3.
 func estimateTokensUsed(userMessage, assistantReply string) int {
+	in, out := estimateTokenSplit(userMessage, assistantReply)
+	return in + out
+}
+
+// estimateTokenSplit returns the (input, output) estimate separately so the
+// metrics layer can track cost accurately — output tokens are ~5x the price
+// of input, so a combined number understates spend.
+func estimateTokenSplit(userMessage, assistantReply string) (in, out int) {
 	const baseSystemOverhead = 3000
 	const charsPerToken = 3.5
 	const toolRoundtripMultiplier = 1.3
 
-	inputTokens := baseSystemOverhead + int(float64(len(userMessage))/charsPerToken)
-	outputTokens := int(float64(len(assistantReply)) / charsPerToken * toolRoundtripMultiplier)
-	return inputTokens + outputTokens
+	in = baseSystemOverhead + int(float64(len(userMessage))/charsPerToken)
+	out = int(float64(len(assistantReply)) / charsPerToken * toolRoundtripMultiplier)
+	return in, out
 }
