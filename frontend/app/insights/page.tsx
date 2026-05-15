@@ -9,6 +9,7 @@ import { PageMasthead } from "@/components/editorial/page-masthead";
 import { Sparkline } from "@/components/editorial/sparkline";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { ProFOMOStrip } from "@/components/editorial/pro-fomo-strip";
+import { DevaluationBanner } from "@/components/editorial/devaluation-banner";
 
 type DateRange = "7d" | "30d" | "90d" | "all";
 
@@ -113,6 +114,7 @@ export default function InsightsPage() {
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        {sessionId && <DevaluationBanner sessionId={sessionId} />}
         <PageMasthead
           eyebrow="Insights"
           eyebrowEnd="Per category · per card"

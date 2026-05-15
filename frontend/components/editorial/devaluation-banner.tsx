@@ -127,7 +127,7 @@ export function DevaluationBanner({ sessionId }: { sessionId: string }) {
         }}
       >
         <Link
-          href="/trip-planner"
+          href="/tools/aeroplan-june-1"
           className="mono"
           style={{
             display: "inline-flex",
@@ -144,7 +144,7 @@ export function DevaluationBanner({ sessionId }: { sessionId: string }) {
             textTransform: "uppercase",
           }}
         >
-          Plan a burn →
+          See what to lock in →
         </Link>
         <button
           type="button"

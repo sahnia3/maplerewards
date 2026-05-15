@@ -283,3 +283,71 @@ After the agents finished, I wired everything into `cmd/api/main.go`:
 5. **Send the outreach** when you have a live URL + traction numbers — drafts in `LEADS.md`.
 
 If any of those needs more help (e.g. you want me to walk through deploying to Fly step by step, or draft outreach follow-up bumps once you've sent the first wave), just ask.
+
+---
+
+## Reddit launch — Aeroplan June 1 lock-in calculator
+
+**Targets**: r/churningcanada (15.8k members, the right audience), r/PersonalFinanceCanada (1.2M, broader reach). Post to r/churningcanada FIRST — get traction signal, refine, then cross-post.
+
+**Timing**: Tuesday May 22 morning, 8–10am ET. Tuesdays index for highest CC-enthusiast engagement.
+
+**Account hygiene before posting**:
+- Read every r/churningcanada post from the past 30 days (do not link until you've genuinely participated)
+- Leave 3–5 useful comments on Aeroplan/SUB/transfer-bonus threads in the week leading up to launch
+- Use your existing reddit account; do not create a fresh throwaway
+
+**Draft post (r/churningcanada)** —
+
+> **Title**: I built a free Aeroplan June 1 lock-in calculator — see exactly what you save by booking now vs after the chart hike
+>
+> **Body**:
+>
+> Hey r/churningcanada,
+>
+> Like a lot of you I've been mentally running the "should I burn my MR / Aeroplan stash before June 1?" calculation since the chart-hike announcement landed. The long-haul-biz hike is ~17% and I kept wanting a single page that showed me, per route, the exact CAD savings if I lock in today vs next week.
+>
+> So I built one. It's free, no signup required, server-rendered HTML so you can share the link straight to your group chat:
+>
+> **maplerewards.ca/tools/aeroplan-june-1**
+>
+> The interesting numbers (one-way business, current chart vs post-June-1):
+>
+> - **YYZ → Europe** (LHR / CDG / AMS): 70K → 82.5K = **$250 saved per ticket**
+> - **YYZ → Asia-Pacific** (NRT / ICN / HKG): 87.5K → 102.5K = **$300 saved per ticket**
+> - **YVR → Asia-Pacific**: 75K → 87.75K = $255 (closest CA gateway, sweetest spot)
+> - **YYZ → Middle East / India**: 85K → 99.5K = $290
+> - **YYZ → South America**: 55K → 64.5K = $190
+>
+> (Economy hikes are gentler but still ~17% across the board.)
+>
+> You can filter by airport, region, and cabin. CAD math uses 2.0¢/point — your own redemption value will vary by route + partner, but 2.0¢ is the "stable cash equivalent" benchmark I see most of you use.
+>
+> Caveats so I don't get murdered in the comments:
+> 1. **Star Alliance partner availability** is the bottleneck on most of these routes — Lufthansa, SWISS, ANA. If you can't find J space on a route, the savings are theoretical.
+> 2. **Award space released ~355 days out** — book early.
+> 3. **I'm not making money off this page** — there's no signup, no email gate, no popup. (Yes, MapleRewards has a paid tier; this tool stays free regardless.)
+>
+> Source for chart numbers: Air Canada published award chart (May 2026 refresh). One Mile at a Time, Prince of Travel and Frugal Flyer have all confirmed the same.
+>
+> Happy to answer questions on the math or specific routings. If anyone finds an error in the chart, DM me or comment — I'll fix and re-deploy same day.
+>
+> &mdash; aditya
+
+**Cross-post wording for r/PersonalFinanceCanada** (do this 24h after the original lands):
+
+> **Title**: For anyone with Aeroplan points: chart hike happens June 1, and there's now a free calculator showing exactly which trips to lock in
+>
+> **Body**: Short version of the same post, with extra context for beginners. Lead with "Aeroplan = Air Canada's loyalty program; their award prices increase on June 1; you can lock in the cheaper price by booking BEFORE then even if your trip is later." Link to the same URL.
+
+**Post-launch checklist**:
+- [ ] Watch the post for first 90 min, reply to every top-level comment within an hour
+- [ ] If a comment surfaces a chart error, deploy fix same day + comment confirming
+- [ ] After 24h, cross-post to r/PersonalFinanceCanada with the wording above
+- [ ] Day 3: thank-you DM to anyone who shared the link off-Reddit (track via referer logs)
+- [ ] Day 7: write the "What we learned launching to r/churningcanada" follow-up post with engagement numbers
+
+**Do NOT**:
+- Self-vote, ask friends to upvote, or use a vote-buying service. Reddit will detect and shadowban the account.
+- Promote the paid tier in the post. The whole point is "this tool stays free."
+- Cross-post until the original has marinated for at least 24h.
