@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useTransform, useMotionValueEvent, useSpring } from "framer-motion";
+import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 
 /* Scroll-scrubbed Toronto dolly-in video.
  *
@@ -21,53 +21,57 @@ import { motion, useScroll, useTransform, useMotionValueEvent, useSpring } from 
  * from re-encoding with every-frame keyframes (ffmpeg -g 1), but the
  * stock MP4 from Kling scrubs acceptably for hero use. */
 
-const VIDEO_SRC = "/landing/toronto-dolly.mp4";
+/* `-scrub.mp4` is the ffmpeg-rebuilt version with every-frame keyframes
+ * (-g 1 -keyint_min 1 -sc_threshold 0). Stock MP4 from Kling had
+ * keyframes ~every 30 frames → backward seeks were expensive and made
+ * the scrub feel like ping-ponging. With per-frame keyframes the
+ * browser can seek to any time instantly. */
+const VIDEO_SRC = "/landing/toronto-dolly-scrub.mp4";
 const VIDEO_DURATION_SEC = 8;
 
 export function LandingKineticProof() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
+  /* Forward-only watermark: tracks the furthest currentTime the user has
+   * reached. Once the video has advanced to a frame, it never rewinds —
+   * scroll-up keeps the video where it is. Per user request: "once you
+   * scroll down, you see the video and then after that you can't go back." */
+  const watermarkRef = useRef(0);
 
-  /* Track scroll through the 220vh container. start/end offsets:
-   * - "start end" → section top hits viewport bottom → progress = 0
-   * - "end start" → section bottom hits viewport top → progress = 1 */
+  /* Track scroll through the 220vh container. */
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start end", "end start"],
   });
 
-  /* Smooth the scroll value so trackpad/wheel jitter doesn't translate
-   * directly into video frame jumps. Springs lerp toward target over
-   * a few hundred ms. */
-  const smoothed = useSpring(scrollYProgress, {
-    stiffness: 140,
-    damping: 30,
-    mass: 0.5,
-  });
+  /* No spring — was adding 200-300ms of lag making the scrub feel
+   * disconnected from the wheel. Raw scrollYProgress is the source of
+   * truth; we only smooth the video binding via the watermark below. */
+  const playhead = useTransform(scrollYProgress, [0.15, 0.85], [0, VIDEO_DURATION_SEC], { clamp: true });
 
-  /* Push the active scrubbing window into 0.15 → 0.85 of the scroll
-   * range so the video isn't pegged at frame 0 / final frame too long
-   * at the section edges. */
-  const playhead = useTransform(smoothed, [0.15, 0.85], [0, VIDEO_DURATION_SEC], { clamp: true });
-
-  /* Bind video.currentTime to the playhead motion value. The video is
-   * paused; we only mutate currentTime. The browser renders whichever
-   * frame the playhead lands on. */
+  /* Forward-only binding: the video's currentTime is monotonically
+   * non-decreasing. If the user scrolls back, the video stays at the
+   * watermark frame; if they scroll forward past the watermark, the
+   * video catches up. */
   useMotionValueEvent(playhead, "change", (t) => {
     const v = videoRef.current;
     if (!v || !videoReady) return;
-    /* Avoid micro-jitter resets — only seek if the delta is meaningful. */
-    if (Math.abs(v.currentTime - t) > 0.03) {
+    /* Only advance — never rewind. */
+    if (t <= watermarkRef.current) return;
+    watermarkRef.current = t;
+    /* Threshold avoids redundant seeks on micro-deltas. */
+    if (Math.abs(v.currentTime - t) > 0.02) {
       v.currentTime = t;
     }
   });
 
-  /* Eyebrow + descriptor fade timing tied to scroll. */
-  const eyebrowOpacity = useTransform(smoothed, [0.05, 0.18], [0, 1]);
-  const eyebrowY = useTransform(smoothed, [0.05, 0.18], [12, 0]);
-  const captionOpacity = useTransform(smoothed, [0.75, 0.9], [0, 1]);
-  const captionY = useTransform(smoothed, [0.75, 0.9], [16, 0]);
+  /* Eyebrow + caption fade tied to RAW progress (these can fade in/out
+   * with scroll; only the video is locked forward-only). */
+  const eyebrowOpacity = useTransform(scrollYProgress, [0.05, 0.18], [0, 1]);
+  const eyebrowY = useTransform(scrollYProgress, [0.05, 0.18], [12, 0]);
+  const captionOpacity = useTransform(scrollYProgress, [0.75, 0.9], [0, 1]);
+  const captionY = useTransform(scrollYProgress, [0.75, 0.9], [16, 0]);
 
   /* Force the video to load + seek to frame 0 once it's loadable, so
    * the first frame is on-screen even before any scroll. */
