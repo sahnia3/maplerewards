@@ -73,20 +73,29 @@ export function LandingKineticProof() {
   const captionOpacity = useTransform(scrollYProgress, [0.75, 0.9], [0, 1]);
   const captionY = useTransform(scrollYProgress, [0.75, 0.9], [16, 0]);
 
-  /* Force the video to load + seek to frame 0 once it's loadable, so
-   * the first frame is on-screen even before any scroll. */
+  /* Mark the video ready once metadata is available. ONLY seeks to 0
+   * on the very first ready event — the canplay event re-fires every
+   * time the browser buffers a new chunk (e.g. after every scroll-seek),
+   * and re-seeking to 0 each time was producing the "flickering between
+   * first and last keyframe" symptom: the scrub set a frame, the seek
+   * completed, canplay re-fired, currentTime reset to 0, next scroll
+   * tick set a new frame, etc. The didSeekInitial flag fixes it. */
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onCanPlay = () => {
+    let didSeekInitial = false;
+    const onReady = () => {
       setVideoReady(true);
-      try { v.currentTime = 0; } catch {}
+      if (!didSeekInitial) {
+        didSeekInitial = true;
+        try { v.currentTime = 0; } catch {}
+      }
     };
-    v.addEventListener("loadedmetadata", onCanPlay);
-    v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("loadedmetadata", onReady);
+    v.addEventListener("canplay", onReady);
     return () => {
-      v.removeEventListener("loadedmetadata", onCanPlay);
-      v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("loadedmetadata", onReady);
+      v.removeEventListener("canplay", onReady);
     };
   }, []);
 
