@@ -127,6 +127,16 @@ func main() {
 	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""))
 	promoSvc := service.NewPromoSentinelService(tavilySvc, transferBonusRepo, getEnv("ANTHROPIC_API_KEY", ""))
 
+	// Account cleanup — hard-deletes users whose deleted_at is older than the
+	// 30-day retention window. PIPEDA promise: data fully purged within 30
+	// days of deletion request. Runs daily at the same cadence as digests.
+	accountCleanupSvc := service.NewAccountCleanupService(pool, 30)
+
+	// Weekly valuation refresh — re-anchors point_valuations.recorded_at so
+	// the UI's freshness chip stops claiming every program is months-stale.
+	// Mirrors cmd/refresh-valuations/main.go but on a schedule.
+	valuationRefreshSvc := service.NewValuationRefreshService(pool, valuationRepo, redisCache)
+
 	awardWatchEnabled := apify.IsAvailable() || seatsAero.IsAvailable()
 	if !awardWatchEnabled {
 		log.Warn("no live award data source configured — award-watch sweeps disabled (set APIFY_TOKEN or SEATSAERO_API_KEY to enable)")
@@ -160,6 +170,7 @@ func main() {
 	digestSvc.RunSweep(ctx, log, time.Now())
 	missedRewardsDigestSvc.RunSweep(ctx, log, time.Now())
 	promoSvc.RunSweep(ctx, log)
+	accountCleanupSvc.RunSweep(ctx, log)
 
 	awardTicker := time.NewTicker(time.Duration(awardTickHours) * time.Hour)
 	defer awardTicker.Stop()
@@ -186,6 +197,12 @@ func main() {
 		case <-digestTicker.C:
 			digestSvc.RunSweep(ctx, log, time.Now())
 			missedRewardsDigestSvc.RunSweep(ctx, log, time.Now())
+			accountCleanupSvc.RunSweep(ctx, log)
+			// Valuation refresh runs in the same daily slot. The 7-day staleness
+			// threshold is honored by checking the freshness chip in the UI
+			// rather than gating here — running daily costs ~0 since the
+			// rescan is a bounded ~27-row sweep.
+			valuationRefreshSvc.RunSweep(ctx, log)
 		case <-promoTicker.C:
 			promoSvc.RunSweep(ctx, log)
 		}

@@ -23,13 +23,20 @@ import (
 // the result satisfies basic shape invariants. Designed to run as a goroutine
 // for the lifetime of the process.
 type ApifySmokeChecker struct {
-	awardSvc *service.AwardSearchService
-	interval time.Duration
+	awardSvc   *service.AwardSearchService
+	interval   time.Duration
+	mailer     service.Mailer
+	adminEmail string
 
 	// lastResult is updated atomically after each run for debug introspection.
 	// Stored as JSON-marshalable struct rather than the live value to avoid
 	// race conditions on slog reads.
 	lastResult atomic.Value // *SmokeResult
+
+	// lastAlertAt throttles admin-email alerts so a persistent schema-drift
+	// failure doesn't email the admin every interval. Resends only if at
+	// least alertCooldown has elapsed since the last failure email.
+	lastAlertAt atomic.Value // time.Time
 }
 
 // SmokeResult captures the outcome of one smoke run.
@@ -53,6 +60,20 @@ func NewApifySmokeChecker(awardSvc *service.AwardSearchService, interval time.Du
 		interval: interval,
 	}
 }
+
+// WithAlerts attaches an admin alert channel. When a smoke run fails, the
+// checker emails adminEmail (24h throttle to avoid spam) AND logs at
+// ERROR level so the package-level Sentry forwarder picks it up too.
+func (c *ApifySmokeChecker) WithAlerts(mailer service.Mailer, adminEmail string) *ApifySmokeChecker {
+	c.mailer = mailer
+	c.adminEmail = adminEmail
+	return c
+}
+
+// alertCooldown is the minimum gap between two admin-email alerts about the
+// same persistent failure. 24h is the right balance: a real drift gets
+// surfaced once a day during incident response, not every 6h.
+const alertCooldown = 24 * time.Hour
 
 // Start runs the smoke checker until ctx is cancelled. First run fires after
 // 90 seconds so it doesn't compete with cold-start traffic. Subsequent runs
@@ -161,12 +182,53 @@ func (c *ApifySmokeChecker) runOnce(parent context.Context) {
 			"results", res.ResultCount,
 			"elapsed", elapsed,
 		)
-	} else {
-		slog.Warn("[apify-smoke] FAILED",
-			"reason", res.Reason,
-			"results", res.ResultCount,
-			"elapsed", elapsed,
-		)
+		return
+	}
+
+	// Failure path: ERROR-level so the Sentry slog hook forwards. The admin
+	// email is rate-limited so a persistent failure doesn't flood the inbox
+	// — Sentry's grouping handles repeat visibility upstream.
+	slog.Error("[apify-smoke] FAILED",
+		"reason", res.Reason,
+		"results", res.ResultCount,
+		"elapsed", elapsed,
+	)
+	c.maybeAlertAdmin(parent, res)
+}
+
+// maybeAlertAdmin sends an email to adminEmail if (a) the mailer is wired
+// AND (b) we haven't sent an alert in the last alertCooldown. Best-effort:
+// any failure here is logged but doesn't bubble back into the smoke loop.
+func (c *ApifySmokeChecker) maybeAlertAdmin(ctx context.Context, res *SmokeResult) {
+	if c.mailer == nil || c.adminEmail == "" {
+		return
+	}
+	now := time.Now()
+	if prev, ok := c.lastAlertAt.Load().(time.Time); ok && now.Sub(prev) < alertCooldown {
+		return
+	}
+	c.lastAlertAt.Store(now)
+
+	subject := "[Maple Rewards] Apify smoke-test FAILED"
+	body := fmt.Sprintf(
+		"The Apify award-scraper smoke test failed at %s.\n\n"+
+			"Reason: %s\n"+
+			"Result count: %d\n"+
+			"Elapsed: %s\n\n"+
+			"This usually means actor schema drift — check Apify run logs for the\n"+
+			"flight-award-scraper actor and confirm field names in internal/service/\n"+
+			"apify_awards.go still match the actor's current output.\n\n"+
+			"Next email in %s if the failure persists.",
+		res.StartedAt.Format(time.RFC3339),
+		res.Reason, res.ResultCount, res.Elapsed, alertCooldown,
+	)
+	if err := c.mailer.Send(ctx, service.MailMessage{
+		To:      []string{c.adminEmail},
+		Subject: subject,
+		Text:    body,
+		Tag:     "apify-smoke-drift",
+	}); err != nil {
+		slog.Warn("[apify-smoke] admin alert email failed", "err", err)
 	}
 }
 
