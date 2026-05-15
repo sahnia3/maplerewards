@@ -1,0 +1,692 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Session Summary</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif;
+  color: #1a1410;
+  background: #fbf7ee;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 56px 80px;
+  line-height: 1.5;
+  font-size: 14px;
+}
+h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 32px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  color: #1a1410;
+}
+h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 36px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid #eae2d2;
+  color: #1a1410;
+}
+h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.25;
+  margin: 24px 0 8px;
+  color: #1a1410;
+}
+h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #5a5347;
+  margin: 18px 0 4px;
+}
+p { margin: 0 0 12px; }
+strong { color: #1a1410; font-weight: 600; }
+em { font-style: italic; color: #74131d; }
+a { color: #a51f2d; text-decoration: none; border-bottom: 1px solid rgba(165,31,45,0.25); }
+hr {
+  border: none;
+  border-top: 1px solid #eae2d2;
+  margin: 32px 0;
+}
+ul, ol { padding-left: 20px; margin: 0 0 14px; }
+li { margin: 4px 0; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: #eae2d2;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #74131d;
+}
+pre {
+  background: #1a1410;
+  color: #eae2d2;
+  padding: 14px 18px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 18px;
+  font-size: 13px;
+}
+th, td {
+  border-bottom: 1px solid #eae2d2;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-weight: 600;
+  background: #f3eddc;
+  color: #1a1410;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #5a5347;
+  margin: 0 0 8px;
+}
+@media print {
+  body { padding: 28px 36px; max-width: none; }
+  h2 { page-break-before: auto; break-before: auto; }
+  h2, h3 { page-break-after: avoid; break-after: avoid; }
+  table, pre { page-break-inside: avoid; break-inside: avoid; }
+}
+</style></head>
+<body>
+<h1>MapleRewards — Production-Hardening + Aeroplan-Window Plan</h1>
+<p><strong>Date</strong>: 2026-05-15</p>
+<p><strong>Author</strong>: Aditya (planned with Claude)</p>
+<p><strong>Trigger</strong>: Second independent review (6 parallel audit agents) flagged production-readiness gaps post-merge of today&#x27;s 32 commits.</p>
+<p><strong>Output format</strong>: This markdown gets converted to PDF after exit (executable step at the end).</p>
+<hr>
+<h2>Context</h2>
+<p>Today&#x27;s 32 commits already shipped 18 of the ~28 findings from the second independent review:</p>
+<p>P0 backend security (auth timing, anon-session takeover, pgxpool, trusted-proxy, slowloris, stdout logging, panic recovers, missed-rewards O(N) cap, AI prompt strip), 6 data migrations (Aeroplan CPP 2.0, Cobalt cap group, Wealthsimple cards, RBC Avion VI, MBNA WE intro, Marriott transfers), the application tracker (RBC 90d, TD 365d cooldowns), affiliate redirect endpoint with Apply CTAs, missed-rewards weekly email digest, AI <code>lookup_card</code> tool, branded card-removal confirm, ProGate amber→maple, Term glossary, beginner UX (plain-English optimizer copy, hero sub-headline, &quot;I don&#x27;t know my spend&quot; fallback, balance lookup deep links), and <code>make worker</code> Makefile target.</p>
+<p>What this plan addresses is the <strong>remaining ~10 verified gaps</strong> that block charging money + the <strong>strategic deadline pressure</strong> (Aeroplan June 1 chart hike is ~17 days out).</p>
+<p>Verdict from the audit (after today&#x27;s commits): 🟡 YELLOW for free beta launch, 🟢 GREEN for paid launch achievable in ~2 focused weeks.</p>
+<hr>
+<h2>Verification Summary</h2>
+<p>Three parallel Explore agents read the code; results below.</p>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Review claim</th>
+<th>Verdict</th>
+<th>File:line</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td><code>.env</code> secrets in git history</td>
+<td><strong>PARTIAL</strong> — secrets in local <code>.env</code>, NOT in git (gitignored from day 1)</td>
+<td><code>git log --all -- .env</code> empty</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Pricing page &quot;Billing is in beta. All Pro features are currently free.&quot;</td>
+<td><strong>TRUE — STILL PRESENT</strong></td>
+<td><code>frontend/app/pricing/page.tsx:93,149</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>No Claude token cost ceiling, no per-user daily budget</td>
+<td><strong>TRUE</strong></td>
+<td><code>internal/service/ai_tools.go:1273,1470</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>JWT secret no minimum entropy / length check</td>
+<td><strong>TRUE</strong></td>
+<td><code>cmd/api/main.go:115-124</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>CORS validation only when <code>APP_ENV=production</code></td>
+<td><strong>TRUE</strong></td>
+<td><code>cmd/api/main.go:665-700</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Stripe webhook <code>MarkProcessed</code> race</td>
+<td><strong>PARTIAL</strong> — race window exists, <code>SetUserPro</code> is idempotent so actual double-grant risk LOW</td>
+<td><code>internal/service/billing.go:153-280</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>io.ReadAll(_)</code> silent failure</td>
+<td><strong>TRUE</strong></td>
+<td><code>internal/service/billing.go:132</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>ai_tools.go</code> 1,436 LOC</td>
+<td><strong>TRUE</strong></td>
+<td>1,436 LOC confirmed</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>optimizer-form.tsx</code> 798-line monolith, no ErrorBoundary</td>
+<td><strong>TRUE</strong> (802 LOC)</td>
+<td><code>frontend/components/optimizer-form.tsx</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>&lt;img&gt;</code> everywhere, no <code>next/image</code></td>
+<td><strong>PARTIAL</strong> — 9 instances (review said &quot;everywhere&quot;); contained</td>
+<td>9 files</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>console.error</code> swallowing</td>
+<td><strong>TRUE</strong> — 7 in portfolio, 2 in onboarding</td>
+<td><code>frontend/app/portfolio/page.tsx</code>, <code>onboarding/page.tsx</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>0 frontend tests</td>
+<td><strong>TRUE</strong></td>
+<td><code>find frontend -name &quot;*.test.*&quot;</code> → 0</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Browser extension placeholder icons (all zeros)</td>
+<td><strong>TRUE</strong> — all 69 bytes</td>
+<td><code>browser-extension/icons/*.png</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td>Browser extension manual session-ID bridge</td>
+<td><strong>TRUE</strong></td>
+<td><code>browser-extension/popup.js:46-54</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td>Missing FK indexes on <code>cards.loyalty_program_id</code> + <code>user_cards.card_id</code></td>
+<td><strong>TRUE</strong></td>
+<td><code>migrations/000001_schema.up.sql:26,80</code></td>
+</tr>
+<tr>
+<td>16</td>
+<td>Soft-delete <code>deleted_at IS NULL</code> inconsistent across repos</td>
+<td><strong>TRUE</strong> — only 4 repos filter</td>
+<td><code>internal/repo/*.go</code></td>
+</tr>
+<tr>
+<td>17</td>
+<td>No hard-delete cron for soft-deleted users &gt;30d</td>
+<td><strong>TRUE</strong></td>
+<td>nothing in <code>cmd/</code> or <code>internal/service</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td>No Sentry / error reporting wiring</td>
+<td><strong>TRUE</strong></td>
+<td>grep clean</td>
+</tr>
+<tr>
+<td>19</td>
+<td>No privacy / ToS / cookie consent page</td>
+<td><strong>TRUE</strong></td>
+<td><code>find frontend/app -name &quot;*privacy*&quot;</code> → 0</td>
+</tr>
+<tr>
+<td>20</td>
+<td>No backup/DR plan documented</td>
+<td><strong>TRUE</strong></td>
+<td><code>docs/DEPLOY.md</code> has no <code>pg_dump</code></td>
+</tr>
+<tr>
+<td>21</td>
+<td>No DSAR endpoint (PIPEDA data export)</td>
+<td><strong>TRUE</strong></td>
+<td>no <code>/account/export</code> route</td>
+</tr>
+</tbody></table>
+<p><strong>False/Already-fixed-today claims</strong> (mentioned by review but not actually open): login timing attack, anon-session takeover, pgxpool, trusted-proxy CIDR, slowloris, panic recovers, missed-rewards O(N), AI prompt 92-card dump, founder testimonial, window.confirm, ProGate amber, <code>$250–$1,400</code> pricing placeholder, free chat copy, Loyalty in sidebar, onboarding card search, Apply Now CTAs on <code>/cards/[id]</code>, application tracker, missed-rewards digest, Aeroplan CPP, Wealthsimple cards, Cobalt cap, RBC Avion VI, MBNA WE, Marriott transfers.</p>
+<hr>
+<h2>Strategic frame</h2>
+<table>
+<thead><tr>
+<th>Axis</th>
+<th>Decision</th>
+</tr></thead><tbody>
+<tr>
+<td>North star</td>
+<td>Production-ready paid launch — not feature expansion</td>
+</tr>
+<tr>
+<td>Window</td>
+<td>2 weeks of focused work → 🟢 GREEN</td>
+</tr>
+<tr>
+<td>Deadline pressure</td>
+<td><strong>Aeroplan June 1 chart hike is ~17 days out</strong> — exception-to-the-rule feature work allowed here only</td>
+</tr>
+<tr>
+<td>Cost discipline</td>
+<td>Prevent Claude budget explosion from abuse before any public launch</td>
+</tr>
+<tr>
+<td>Trust discipline</td>
+<td>PIPEDA-compliant (privacy + DSAR) before charging a cent</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>The Plan</h2>
+<h3>Phase 1 — Ship Blockers (P0, week 1)</h3>
+<p>These prevent legal/financial blowups on launch day.</p>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>1.1</td>
+<td><strong>Kill the &quot;Billing is in beta&quot; line</strong> on pricing page. Replace with active billing copy that mentions the 7-day trial + cancel-anytime.</td>
+<td>XS</td>
+<td><code>frontend/app/pricing/page.tsx:93, 149</code>; <code>frontend/components/upgrade-modal.tsx</code> (if mirrored)</td>
+</tr>
+<tr>
+<td>1.2</td>
+<td><strong>Rotate <code>.env</code> secrets</strong> even though they never made it to git. New <code>ANTHROPIC_API_KEY</code>, new <code>APIFY_TOKEN</code>, new <code>TAVILY_API_KEY</code>. Add a <code>scripts/rotate-keys.md</code> runbook.</td>
+<td>S</td>
+<td><code>.env</code> (local only); deployment secret store</td>
+</tr>
+<tr>
+<td>1.3</td>
+<td><strong>Privacy Policy + ToS + cookie consent banner.</strong> Required by PIPEDA + GDPR. Static MDX pages at <code>/privacy</code>, <code>/terms</code>. Cookie banner uses <code>localStorage</code> flag, blocks non-essential cookies until accepted.</td>
+<td>M</td>
+<td>new <code>frontend/app/privacy/page.tsx</code>, <code>frontend/app/terms/page.tsx</code>, <code>frontend/components/cookie-consent.tsx</code></td>
+</tr>
+<tr>
+<td>1.4</td>
+<td><strong>Claude per-user daily token budget.</strong> Track tokens-in + tokens-out in Redis per user per UTC day. Free tier: 50K tokens/day. Pro: 500K/day. Hard 429 with retry-after header when exceeded. Reuse existing <code>internal/quota</code> package.</td>
+<td>M</td>
+<td>new <code>internal/service/ai_budget.go</code>; gate <code>ChatWithToolsStream</code> at <code>ai_tools.go:1273</code></td>
+</tr>
+<tr>
+<td>1.5</td>
+<td><strong>Hard-cap <code>MaxTokens</code> per call by tier.</strong> Free 1500, Pro 4096. Today it&#x27;s a fixed 4096 for everyone.</td>
+<td>XS</td>
+<td><code>internal/service/ai_tools.go:1470</code></td>
+</tr>
+<tr>
+<td>1.6</td>
+<td><strong>JWT secret length + entropy check</strong> — refuse to boot if <code>len(JWT_SECRET) &lt; 32</code> in production.</td>
+<td>XS</td>
+<td><code>cmd/api/main.go:115-124</code></td>
+</tr>
+<tr>
+<td>1.7</td>
+<td><strong>CORS validation regardless of APP_ENV.</strong> Reject <code>*</code> and missing values in all envs, not just prod. Localhost remains the dev fallback default.</td>
+<td>XS</td>
+<td><code>cmd/api/main.go:665-700</code></td>
+</tr>
+<tr>
+<td>1.8</td>
+<td><strong>Sentry wiring</strong> (Go + browser). DSN env-gated; no-op when absent. <code>internal/observability/sentry.go</code> initializes; <code>slog.Handler</code> adapter forwards <code>ERROR</code>-level entries to Sentry. Frontend: <code>@sentry/nextjs</code> with <code>sentry.client.config.ts</code> + <code>sentry.server.config.ts</code>.</td>
+<td>M</td>
+<td>new <code>internal/observability/sentry.go</code>; <code>frontend/sentry.{client,server}.config.ts</code>; wire in <code>cmd/api/main.go</code> + <code>frontend/app/layout.tsx</code></td>
+</tr>
+<tr>
+<td>1.9</td>
+<td><strong><code>io.ReadAll</code> error handling</strong> in Stripe checkout — log the read error before logging the body, return 500 to the client when read failed.</td>
+<td>XS</td>
+<td><code>internal/service/billing.go:132</code></td>
+</tr>
+</tbody></table>
+<p><strong>Phase 1 exit criteria</strong>:</p>
+<ul>
+<li><code>/pricing</code> no longer mentions &quot;beta&quot; or &quot;currently free&quot;</li>
+<li><code>/privacy</code> and <code>/terms</code> render with consent banner</li>
+<li>POST <code>/chat</code> returns 429 after exceeding 50K tokens/day on free tier (test with synthetic loop)</li>
+<li>Production deploy fails fast on JWT_SECRET shorter than 32 chars or missing CORS_ORIGIN</li>
+<li>Sentry shows synthetic test error within 30s of intentional <code>panic()</code></li>
+</ul>
+<hr>
+<h3>Phase 2 — Backend Correctness + Compliance (P1, week 1.5)</h3>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>2.1</td>
+<td><strong>Stripe webhook idempotency tighten.</strong> Wrap <code>HandleWebhookEvent</code> + <code>RecordEvent</code> in a single DB transaction; on any error, roll back so the retry sees <code>IsEventProcessed=false</code> AND no partial state.</td>
+<td>S</td>
+<td><code>internal/handler/billing.go</code> webhook handler; <code>internal/service/billing.go:153-280</code></td>
+</tr>
+<tr>
+<td>2.2</td>
+<td><strong>FK indexes migration.</strong> New migration adds <code>CREATE INDEX CONCURRENTLY</code> on <code>cards(loyalty_program_id)</code> and <code>user_cards(card_id)</code>. Test query plan before/after with EXPLAIN ANALYZE on <code>GetUserCards</code> JOIN.</td>
+<td>XS</td>
+<td>new <code>migrations/000044_fk_indexes.up.sql</code></td>
+</tr>
+<tr>
+<td>2.3</td>
+<td><strong>Soft-delete sweep across all repos.</strong> Audit every <code>SELECT</code> against <code>users</code> table; add <code>AND deleted_at IS NULL</code> where missing. Add a static test to grep for unfiltered queries.</td>
+<td>S</td>
+<td><code>internal/repo/*.go</code> (specifically <code>spend.go</code>, <code>wallet.go::GetUserCards</code>, <code>bonuses.go</code>)</td>
+</tr>
+<tr>
+<td>2.4</td>
+<td><strong>Hard-delete cron.</strong> Background worker task purges <code>users WHERE deleted_at &lt; NOW() - INTERVAL &#x27;30 days&#x27;</code> daily at 03:00 UTC. Logs row count.</td>
+<td>S</td>
+<td><code>cmd/worker/main.go</code> (add ticker), new <code>internal/service/account_cleanup.go</code></td>
+</tr>
+<tr>
+<td>2.5</td>
+<td><strong>DSAR export endpoint.</strong> <code>GET /api/v1/account/export</code> returns a JSON blob with: profile, cards, spend history, applications, missed-rewards reports, chat history. PIPEDA + GDPR Art. 15.</td>
+<td>M</td>
+<td>new <code>internal/handler/account_export.go</code>; new <code>internal/service/data_export.go</code></td>
+</tr>
+<tr>
+<td>2.6</td>
+<td><strong>Apify schema-drift alert.</strong> When smoke test fails, emit Sentry warning + Resend email to admin (single recipient via <code>ADMIN_EMAIL</code> env var).</td>
+<td>XS</td>
+<td><code>internal/health/apify_smoke.go</code> (extend)</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 2 exit criteria</strong>:</p>
+<ul>
+<li><code>EXPLAIN ANALYZE SELECT … FROM user_cards uc JOIN cards c …</code> shows index scan, not seq scan</li>
+<li>Synthetic test: register → soft-delete → attempt login → must fail</li>
+<li><code>GET /account/export</code> returns user&#x27;s data as downloadable JSON</li>
+<li>Trigger Apify failure → admin email arrives</li>
+</ul>
+<hr>
+<h3>Phase 3 — Aeroplan June 1 PR Window (P0 strategic, <strong>must ship before May 25</strong>)</h3>
+<p>This is the only feature work in this plan. The window closes June 1 forever.</p>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>3.1</td>
+<td><strong>Aeroplan Lock-In Calculator.</strong> Public tool at <code>/tools/aeroplan-june-1</code>. User enters: home airport, target region, business/economy. Returns: top 3 routings cheaper today than June 2, with the exact CAD savings. SSR for SEO. Embed Open Graph card showing dollar savings.</td>
+<td>M</td>
+<td>new <code>frontend/app/tools/aeroplan-june-1/page.tsx</code>; backend: new <code>internal/handler/aeroplan_june1.go</code> using existing <code>internal/service/devaluation.go</code> projection logic</td>
+</tr>
+<tr>
+<td>3.2</td>
+<td><strong>Personalized exposure banner on <code>/wallet</code> and <code>/insights</code>.</strong> &quot;Your existing redemptions lose $X on June 1; book by May 31 to save.&quot; For logged-in users with non-zero Aeroplan balance.</td>
+<td>S</td>
+<td><code>frontend/components/editorial/devaluation-banner.tsx</code> (extend; already exists per intel)</td>
+</tr>
+<tr>
+<td>3.3</td>
+<td><strong>Reddit post draft + scheduled publish.</strong> Markdown post for r/churningcanada + r/PersonalFinanceCanada. Title: &quot;I built a free Aeroplan June 1 lock-in calculator (no signup required).&quot; Schedule for May 22 morning.</td>
+<td>XS</td>
+<td>new <code>WORK-LOG.md</code> section with the draft</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 3 exit criteria</strong>:</p>
+<ul>
+<li><code>/tools/aeroplan-june-1?airport=YYZ&amp;region=europe&amp;cabin=business</code> returns 3 routings with dollar deltas</li>
+<li>Lighthouse mobile score ≥85 on the page (it&#x27;ll get traffic spikes)</li>
+<li>Reddit post drafted and scheduled</li>
+</ul>
+<hr>
+<h3>Phase 4 — Frontend Quality + Extension Ship (P1, week 2)</h3>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>4.1</td>
+<td><strong>Split <code>optimizer-form.tsx</code></strong> (802 LOC) into: form, results, runner-up table, costco-warning. Wrap top-level in <code>ErrorBoundary</code> that shows a &quot;something went wrong, retry&quot; surface instead of white screen.</td>
+<td>M</td>
+<td>refactor <code>frontend/components/optimizer-form.tsx</code> into <code>frontend/components/optimizer/*</code></td>
+</tr>
+<tr>
+<td>4.2</td>
+<td><strong>Replace <code>console.error</code> swallowing.</strong> Use a shared <code>useReportableError</code> hook that surfaces a toast + sends to Sentry. Bulk-replace 9 sites in portfolio + onboarding.</td>
+<td>S</td>
+<td><code>frontend/lib/use-reportable-error.ts</code>; <code>frontend/app/portfolio/page.tsx:62-97</code>; <code>frontend/app/onboarding/page.tsx:105,127</code></td>
+</tr>
+<tr>
+<td>4.3</td>
+<td><strong><code>&lt;img&gt;</code> → <code>next/image</code></strong> in 9 files. The <code>editorial-card.tsx</code> and <code>card-fan.tsx</code> ones are the highest-impact — they ship on /cards landing.</td>
+<td>S</td>
+<td>9 files; ensure <code>next.config.ts</code> has remote patterns for whatever CDN</td>
+</tr>
+<tr>
+<td>4.4</td>
+<td><strong>Browser extension production icons.</strong> Use existing Higgsfield brand kit; render the maple-leaf-origami PNG at 16/32/48/128. Re-validate manifest.json icon paths.</td>
+<td>XS</td>
+<td><code>browser-extension/icons/*.png</code> (replace)</td>
+</tr>
+<tr>
+<td>4.5</td>
+<td><strong>Browser extension cookie bridge.</strong> Replace manual paste with <code>chrome.cookies.get</code> on <code>maplerewards.ca</code> reading the <code>mr_session_id</code> cookie (or auth JWT). Fallback to existing paste-flow with clearer UI.</td>
+<td>M</td>
+<td><code>browser-extension/popup.js:46-54</code>, <code>browser-extension/manifest.json</code> (cookies permission)</td>
+</tr>
+<tr>
+<td>4.6</td>
+<td><strong>Chrome Web Store listing submission.</strong> Screenshots (5), 128px icon, description, privacy disclosure. Pay $5 USD developer fee.</td>
+<td>S</td>
+<td>new <code>browser-extension/STORE-LISTING.md</code></td>
+</tr>
+</tbody></table>
+<p><strong>Phase 4 exit criteria</strong>:</p>
+<ul>
+<li>Trigger an optimizer API error → user sees toast + retry button, NOT white screen</li>
+<li>Browser extension icon visible in Chrome toolbar (no placeholder)</li>
+<li>Install extension, log in via popup, see correct best-card recommendation on amazon.ca without copy-pasting anything</li>
+<li>Chrome Web Store listing in &quot;pending review&quot; status</li>
+</ul>
+<hr>
+<h3>Phase 5 — Test Coverage + Observability Depth (P2, week 2.5)</h3>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>5.1</td>
+<td><strong>Frontend test scaffold.</strong> Vitest + Testing Library for unit; Playwright for 3 critical E2E flows (signup, optimize, upgrade-to-Pro). Target: smoke tests, not coverage.</td>
+<td>M</td>
+<td><code>frontend/vitest.config.ts</code>, <code>frontend/playwright.config.ts</code>, 3 spec files</td>
+</tr>
+<tr>
+<td>5.2</td>
+<td><strong>Backend coverage push</strong> to ≥70% on <code>auth</code>, <code>billing</code>, <code>ai</code>. Stripe webhook needs idempotency test (run the same event twice, assert single Pro grant).</td>
+<td>M</td>
+<td><code>internal/service/auth_test.go</code> (exists), <code>billing_test.go</code>, <code>ai_tools_test.go</code> (extend)</td>
+</tr>
+<tr>
+<td>5.3</td>
+<td><strong>Latency + cost metrics.</strong> Wrap each endpoint with <code>metrics.Histogram(&quot;http.duration&quot;, route)</code> and Anthropic calls with <code>metrics.Counter(&quot;anthropic.tokens.out&quot;, model)</code>. Expose Prom-format <code>/metrics</code> (admin-only).</td>
+<td>S</td>
+<td><code>internal/metrics/metrics.go</code> (exists, extend)</td>
+</tr>
+<tr>
+<td>5.4</td>
+<td><strong>Backup/DR runbook.</strong> Document daily <code>pg_dump</code> cron, S3 destination, monthly restore-test SOP. Even if not automated, write the runbook so the next failure mode isn&#x27;t fatal.</td>
+<td>S</td>
+<td>new <code>docs/BACKUP-RUNBOOK.md</code></td>
+</tr>
+</tbody></table>
+<p><strong>Phase 5 exit criteria</strong>:</p>
+<ul>
+<li><code>npm test</code> runs the frontend smoke suite green</li>
+<li><code>go test -coverprofile</code> shows ≥70% on auth + billing</li>
+<li><code>/metrics</code> returns P50/P95/P99 per route after 100 synthetic requests</li>
+<li>One successful staging <code>pg_restore</code> from a fresh backup</li>
+</ul>
+<hr>
+<h3>Phase 6 — Code Architecture Cleanup (P2, ongoing)</h3>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Item</th>
+<th>Effort</th>
+<th>Files</th>
+</tr></thead><tbody>
+<tr>
+<td>6.1</td>
+<td><strong>Split <code>ai_tools.go</code></strong> (1,436 LOC) into: <code>ai_tool_registry.go</code>, <code>ai_tool_handlers/*.go</code> (one file per tool), <code>ai_chat_loop.go</code>. No behavior changes.</td>
+<td>M</td>
+<td>refactor — keep all tests green</td>
+</tr>
+<tr>
+<td>6.2</td>
+<td><strong><code>refresh-valuations</code> cron</strong> for the CLI binary that&#x27;s currently never run. Add to <code>cmd/worker/main.go</code> as a weekly tick.</td>
+<td>XS</td>
+<td><code>cmd/worker/main.go</code>; reuse <code>cmd/refresh-valuations/main.go</code> logic</td>
+</tr>
+</tbody></table>
+<p><strong>Exit criteria</strong>: file size sane, no behavior regressions, valuation freshness self-maintained.</p>
+<hr>
+<h2>Critical files</h2>
+<p><strong>Backend</strong>:</p>
+<ul>
+<li><code>cmd/api/main.go</code> — boot-time validation gates (JWT entropy, CORS, env presence)</li>
+<li><code>internal/service/ai_tools.go</code> — per-user token budget gate around <code>ChatWithToolsStream</code></li>
+<li><code>internal/service/billing.go</code> — tighten webhook transaction</li>
+<li><code>internal/handler/account_export.go</code> (new) — DSAR endpoint</li>
+<li><code>internal/service/account_cleanup.go</code> (new) — hard-delete cron</li>
+<li><code>internal/observability/sentry.go</code> (new) — error reporting wiring</li>
+<li><code>migrations/000044_fk_indexes.up.sql</code> (new) — FK index migration</li>
+</ul>
+<p><strong>Frontend</strong>:</p>
+<ul>
+<li><code>frontend/app/pricing/page.tsx</code> — kill the &quot;beta&quot; copy</li>
+<li><code>frontend/app/privacy/page.tsx</code> (new), <code>frontend/app/terms/page.tsx</code> (new)</li>
+<li><code>frontend/components/cookie-consent.tsx</code> (new)</li>
+<li><code>frontend/sentry.client.config.ts</code> (new), <code>frontend/sentry.server.config.ts</code> (new)</li>
+<li><code>frontend/components/optimizer-form.tsx</code> — split + ErrorBoundary</li>
+<li><code>frontend/lib/use-reportable-error.ts</code> (new) — replace console.error</li>
+<li><code>frontend/app/tools/aeroplan-june-1/page.tsx</code> (new) — June 1 calculator</li>
+</ul>
+<p><strong>Browser extension</strong>:</p>
+<ul>
+<li><code>browser-extension/icons/*.png</code> — replace placeholders</li>
+<li><code>browser-extension/popup.js</code> — cookie bridge</li>
+<li><code>browser-extension/STORE-LISTING.md</code> (new) — Chrome Web Store submission package</li>
+</ul>
+<hr>
+<h2>Verification methodology</h2>
+<p>End-to-end smoke after each phase. Commands as one-liners so we can grep this plan and copy-paste.</p>
+<pre># Phase 1 — Ship blockers
+curl -sf https://maplerewards.ca/pricing | grep -v &quot;Billing is in beta&quot; &amp;&amp; echo &quot;✓ beta line gone&quot;
+curl -sf https://maplerewards.ca/privacy | grep -q &quot;Personal Information Protection&quot; &amp;&amp; echo &quot;✓ privacy page&quot;
+# Token budget test (after registering test user):
+for i in $(seq 1 200); do curl -s -X POST .../chat -d &#x27;{&quot;message&quot;:&quot;x&quot;}&#x27;; done | grep -c &quot;429&quot; # should be &gt;0
+
+# Phase 2 — Backend
+PGPASSWORD=password psql -d maplerewards -c &quot;EXPLAIN ANALYZE SELECT * FROM user_cards uc JOIN cards c ON c.id=uc.card_id WHERE uc.user_id=&#x27;...&#x27;;&quot; | grep -q &quot;Index Scan&quot;
+curl -sf -H &quot;Authorization: Bearer $JWT&quot; https://maplerewards.ca/api/v1/account/export | jq -r &#x27;.profile.email&#x27;
+
+# Phase 3 — Aeroplan
+curl -sf &quot;https://maplerewards.ca/tools/aeroplan-june-1?airport=YYZ&amp;region=europe&amp;cabin=business&quot; | grep -q &quot;save \\$&quot;
+npx lighthouse https://maplerewards.ca/tools/aeroplan-june-1 --only-categories=performance --form-factor=mobile
+
+# Phase 4 — Frontend + Extension
+# Manual: throttle network to &quot;Offline&quot; in DevTools while on /optimizer → confirm toast appears, no white screen
+# Manual: install built extension, sign in to maplerewards.ca, visit amazon.ca → confirm tile shows without paste
+
+# Phase 5 — Tests + metrics
+cd frontend &amp;&amp; npm test --run
+go test ./internal/service/auth/... ./internal/service/billing/... -coverprofile=cov.out &amp;&amp; go tool cover -func=cov.out | grep total
+curl -sf -H &quot;Authorization: Bearer $ADMIN_JWT&quot; https://maplerewards.ca/metrics | grep &quot;http_duration_seconds&quot;</pre>
+<hr>
+<h2>Sequencing + parallelism</h2>
+<p><strong>Approved scope (2026-05-15)</strong>: Execute all 6 phases sequentially, no sign-off pause between phases. PDF generated up-front before execution begins.</p>
+<p><strong>Order of execution</strong>:</p>
+<ol>
+<li>Phase 1 — Ship blockers (P0)</li>
+<li>Phase 2 — Backend correctness + compliance (P1)</li>
+<li>Phase 3 — Aeroplan June 1 PR window (P0 strategic, deadline-critical)</li>
+<li>Phase 4 — Frontend quality + extension ship (P1)</li>
+<li>Phase 5 — Test coverage + observability depth (P2)</li>
+<li>Phase 6 — Code architecture cleanup (P2)</li>
+</ol>
+<p><strong>Calendar overlay</strong> (evenings/weekends, ~2 weeks):</p>
+<ul>
+<li><strong>Week 1 (May 16–22)</strong>: Phase 1 fully, Phase 2.1–2.4</li>
+<li><strong>Week 1.5 (May 23–25)</strong>: Phase 2.5–2.6 + Phase 3 (June 1 calculator + Reddit post by May 22 latest)</li>
+<li><strong>Week 2 (May 26–June 1)</strong>: Phase 4</li>
+<li><strong>Week 2.5 (June 2 onward)</strong>: Phases 5 + 6 post-launch</li>
+</ul>
+<p>Phase 3 must complete before May 22 even if it requires de-prioritizing parts of Phase 2. The June 1 deadline is non-negotiable — if it slips, Phase 3 dies entirely and the rest of the plan continues.</p>
+<hr>
+<h2>Killed ideas (don&#x27;t build now)</h2>
+<ul>
+<li><strong>Plaid/Flinks bank sync</strong> — Open Banking Act bans screen scraping Q3 2026 anyway; revisit when official API channel opens</li>
+<li><strong>Multi-program transfer optimizer</strong> — high effort, defer to post-launch when conversion data exists</li>
+<li><strong>Browser extension content-script DOM injection on checkout pages</strong> — Phase 4.5 fixes the auth bridge; checkout-button anchoring is a v2 problem</li>
+<li><strong>PostHog/Mixpanel analytics</strong> — Sentry first, then revisit</li>
+<li><strong>Family/household mode</strong> — premium tier upgrade signal, not a launch blocker</li>
+<li><strong>Dunning / customer portal / churn tracking</strong> — open the Stripe customer portal link from settings; full dunning automation later</li>
+<li><strong>Pricing restructure to $39/$89/$199</strong> — review&#x27;s recommendation, but conflicts with current data discipline; defer until first 100 paid customers prove the conversion math</li>
+</ul>
+<hr>
+<h2>Open dependencies</h2>
+<ol>
+<li><strong>Sentry account</strong> — need a free-tier project for both Go + JS DSNs</li>
+<li><strong>Domain decision</strong> — <code>maplerewards.ca</code> vs apex; affects CORS_ORIGIN + cookie domain</li>
+<li><strong>Deployment target</strong> — Fly.io vs Railway vs Vercel+Render; influences how <code>make worker</code> runs in prod (separate machine vs single binary)</li>
+<li><strong>Anthropic spend cap</strong> — set at provider dashboard as belt-and-suspenders to the per-user budget</li>
+<li><strong>Admin email</strong> — single recipient for Apify drift alerts + cron failure alerts</li>
+</ol>
+<hr>
+<h2>After plan approval — PDF generation</h2>
+<p>User wants a PDF (not markdown) for readability. Once plan mode exits:</p>
+<pre># 1. Copy plan to docs/ for repo-tracking
+cp /Users/adityasahni/.claude/plans/ultraplan-so-basically-quirky-quill.md \
+   /Users/adityasahni/Desktop/Claudecode/maplerewards/maplerewards-main/docs/PLAN-2026-05-15.md
+
+# 2. Render to HTML (reuse /tmp/md_to_html.py from earlier sessions; falls back to pandoc)
+python3 /tmp/md_to_html.py docs/PLAN-2026-05-15.md &gt; docs/PLAN-2026-05-15.html
+
+# 3. HTML → PDF via headless Chrome
+&quot;/Applications/Google Chrome.app/Contents/MacOS/Google Chrome&quot; \
+  --headless --disable-gpu \
+  --print-to-pdf=/Users/adityasahni/Desktop/Claudecode/maplerewards/PLAN-2026-05-15.pdf \
+  --no-pdf-header-footer \
+  &quot;file://$(pwd)/docs/PLAN-2026-05-15.html&quot;
+
+# 4. Open the PDF
+open /Users/adityasahni/Desktop/Claudecode/maplerewards/PLAN-2026-05-15.pdf</pre>
+<p>Drop the PDF on the desktop next to <code>PHASE_1_AND_2_SUMMARY.pdf</code> so all session artifacts cluster.</p>
+<hr>
+<h2>Summary</h2>
+<p>The new review surfaced 28 distinct findings. Today&#x27;s 32 commits already shipped 18 of them. <strong>10 genuine gaps remain</strong> — almost all of them are launch-blockers, not feature work. The single feature exception is the <strong>Aeroplan June 1 lock-in calculator</strong> because the deadline (~17 days) is non-negotiable.</p>
+<p>Two focused weeks of work converts MapleRewards from &quot;🟡 free beta worthy&quot; to &quot;🟢 paid launch ready&quot; without expanding scope. The PDF generation step at the end gives you a printable artifact for cross-referencing with the original review.</p>
+<p>Critical sequence:</p>
+<ol>
+<li>Pricing copy + privacy + Claude budget + CORS/JWT gates → <strong>prevents launch-day blow-ups</strong></li>
+<li>Aeroplan calculator → <strong>captures the once-a-decade PR moment</strong></li>
+<li>Sentry + FK indexes + DSAR + hard-delete cron → <strong>closes the PIPEDA + observability gaps</strong></li>
+<li>Frontend cleanup + extension ship → <strong>converts the curious into installs</strong></li>
+<li>Tests + metrics + DR runbook → <strong>survives first incident</strong></li>
+</ol>
+<p>Files to touch: ~25 modified, ~15 new. No new migrations except the FK index one.</p>
+</body></html>
