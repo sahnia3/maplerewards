@@ -26,7 +26,7 @@ import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-mot
  * keyframes ~every 30 frames → backward seeks were expensive and made
  * the scrub feel like ping-ponging. With per-frame keyframes the
  * browser can seek to any time instantly. */
-const VIDEO_SRC = "/landing/toronto-dolly-scrub.mp4";
+const VIDEO_SRC = "/landing/toronto-dolly-hd.mp4";
 const VIDEO_DURATION_SEC = 8;
 
 export function LandingKineticProof() {
@@ -107,41 +107,63 @@ export function LandingKineticProof() {
           top: 0,
           height: "100vh",
           width: "100%",
+          /* Brand canvas still bleeds through around the inset video.
+           * No more fullscreen black background. */
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           overflow: "hidden",
-          background: "#0a0606",
         }}
       >
-        {/* The video itself — cover-fits the viewport, no controls */}
-        <video
-          ref={videoRef}
-          src={VIDEO_SRC}
-          muted
-          playsInline
-          preload="auto"
-          /* Don't autoplay — currentTime is driven by scroll. */
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
-          }}
-        />
-
-        {/* Vignette to ground the video in the brand atmosphere — fades
-            cool edges into the burgundy-grain canvas. */}
+        {/* The video sits in a centered, framed window — not edge-to-edge.
+         * Aspect ratio locks to 16:9 (matching the asset) so the frame
+         * stays cinematic at any viewport. max-width/height keep it
+         * inset from the page edges so the burgundy canvas reads
+         * around it. */}
         <div
-          aria-hidden
           style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(ellipse 80% 70% at 50% 50%, transparent 50%, rgba(10, 6, 6, 0.45) 100%), linear-gradient(180deg, rgba(10,6,6,0.30) 0%, transparent 22%, transparent 78%, rgba(10,6,6,0.55) 100%)",
-            pointerEvents: "none",
+            position: "relative",
+            width: "min(82vw, 1200px)",
+            aspectRatio: "16 / 9",
+            maxHeight: "72vh",
+            borderRadius: 18,
+            overflow: "hidden",
+            boxShadow:
+              "0 40px 80px -20px rgba(0, 0, 0, 0.55), 0 24px 48px -16px rgba(0, 0, 0, 0.35), var(--shadow-accent-glow)",
+            border: "1px solid var(--rule-strong)",
+            background: "#0a0606",
           }}
-        />
+        >
+          <video
+            ref={videoRef}
+            src={VIDEO_SRC}
+            muted
+            playsInline
+            preload="auto"
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "center",
+            }}
+          />
+
+          {/* Soft inner vignette so the video edges feel intentional
+              rather than hard-cropped. */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(ellipse 85% 75% at 50% 50%, transparent 60%, rgba(10, 6, 6, 0.35) 100%)",
+              pointerEvents: "none",
+            }}
+          />
+        </div>
 
         {/* Eyebrow at top — fades in as the section enters */}
         <motion.div
