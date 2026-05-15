@@ -70,8 +70,10 @@ func (r *EmailVerifyRepo) MarkUserVerified(ctx context.Context, userID string) e
 func (r *EmailVerifyRepo) GetUserVerifiedStatus(ctx context.Context, userID string) (bool, string, error) {
 	var verifiedAt *time.Time
 	var email *string
+	// Filter soft-deleted users: a deleted account's verification status
+	// should not be visible to downstream callers.
 	err := r.pool.QueryRow(ctx, `
-		SELECT email_verified_at, email FROM users WHERE id = $1
+		SELECT email_verified_at, email FROM users WHERE id = $1 AND deleted_at IS NULL
 	`, userID).Scan(&verifiedAt, &email)
 	if err != nil {
 		return false, "", err

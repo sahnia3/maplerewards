@@ -90,7 +90,7 @@ function PricingContent() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       if (msg.includes("billing is not configured") || msg.includes("stripe not configured")) {
-        setError("Billing is in beta. All Pro features are currently free. No card needed.");
+        setError("Checkout is temporarily unavailable — please try again in a moment.");
       } else {
         setError(msg);
       }
@@ -116,7 +116,7 @@ function PricingContent() {
           }
         />
 
-        {/* Beta-free banner — surfaced above the tier cards, calm. */}
+        {/* Trial + cancel-anytime banner — calm, above the tier cards. */}
         <div
           role="status"
           style={{
@@ -143,10 +143,10 @@ function PricingContent() {
               textTransform: "uppercase",
             }}
           >
-            Open beta
+            7-day trial
           </span>
           <span className="serif" style={{ fontSize: 15, color: "var(--ink-2)", lineHeight: 1.4 }}>
-            Pro features are free during open beta. No card needed. We&rsquo;ll email you when pricing turns on.
+            Try every Pro feature free for 7 days. Cancel anytime from your account settings — no card-on-file surprises.
           </span>
         </div>
 

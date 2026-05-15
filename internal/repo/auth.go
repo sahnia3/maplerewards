@@ -337,6 +337,19 @@ func (r *AuthRepo) IsStripeEventProcessed(ctx context.Context, eventID string) (
 	return exists, nil
 }
 
+// DeleteStripeEvent removes a previously-recorded event row. Used by the
+// webhook handler when event processing fails AFTER RecordStripeEvent has
+// already inserted the dedup row — without this, Stripe's retry would find
+// the row, treat the event as done, and skip retry. The handler reserves
+// the row first (atomic INSERT) and rolls it back (this DELETE) on failure.
+func (r *AuthRepo) DeleteStripeEvent(ctx context.Context, eventID string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM stripe_events WHERE event_id = $1`, eventID)
+	if err != nil {
+		return fmt.Errorf("delete stripe event: %w", err)
+	}
+	return nil
+}
+
 // DeleteUser soft-deletes a user account: marks deleted_at, scrambles the
 // email so the address can be re-registered, revokes refresh tokens, and
 // writes an audit-log entry. PIPEDA requires we honour deletion requests

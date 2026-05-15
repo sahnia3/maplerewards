@@ -1319,7 +1319,11 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 			roundTools = nil
 		}
 
-		resp, err := s.callClaudeWithTools(ctx, system, roundTools, msgs)
+		maxTokens := 1500
+		if isPro {
+			maxTokens = 4096
+		}
+		resp, err := s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens)
 		if err != nil {
 			return nil, fmt.Errorf("claude round %d: %w", round+1, err)
 		}
@@ -1459,15 +1463,22 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 }
 
 // callClaudeWithTools — block-based, tool-aware variant of callClaude.
+// maxTokens is tier-dependent: free 1500, Pro 4096. Caller decides based on
+// the request's isPro state. Caps runaway-output abuse on the free tier
+// without limiting Pro analytics queries.
 func (s *AIService) callClaudeWithTools(
 	ctx context.Context,
 	system []systemBlock,
 	tools []map[string]any,
 	messages []claudeBlockMessage,
+	maxTokens int,
 ) (*claudeToolUseResponse, error) {
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
 	reqBody := claudeToolUseRequest{
 		Model:     s.modelID,
-		MaxTokens: 4096,
+		MaxTokens: maxTokens,
 		System:    system,
 		Tools:     tools,
 		Messages:  messages,

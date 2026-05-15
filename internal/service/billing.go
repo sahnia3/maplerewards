@@ -28,6 +28,10 @@ type BillingRepository interface {
 	// before. Cheap lookup used at the START of the webhook to short-circuit
 	// duplicates without re-running the (potentially expensive) handler.
 	IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error)
+	// DeleteStripeEvent compensates for a failed handler — see the webhook
+	// flow: we INSERT the dedup row BEFORE doing work; if work fails we
+	// DELETE so Stripe's retry can re-attempt.
+	DeleteStripeEvent(ctx context.Context, eventID string) error
 }
 
 // BillingService handles Stripe billing logic.
@@ -129,7 +133,15 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		// A read failure usually means a partial response (context cancel,
+		// upstream RST, slow network). Surfacing the read error gives us a
+		// real diagnostic instead of an opaque empty-body parse failure.
+		slog.Error("stripe checkout: response body read failed",
+			"status", resp.StatusCode, "err", readErr)
+		return nil, fmt.Errorf("stripe response body read: %w", readErr)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("stripe checkout error", "status", resp.StatusCode, "body", string(body))
@@ -272,4 +284,12 @@ func (s *BillingService) RecordEvent(ctx context.Context, eventID, eventType str
 // processing instead of being silently dropped as a duplicate.
 func (s *BillingService) IsEventProcessed(ctx context.Context, eventID string) (bool, error) {
 	return s.repo.IsStripeEventProcessed(ctx, eventID)
+}
+
+// DeleteEvent compensates for a failed webhook handler: removes the dedup
+// row that was inserted up-front so Stripe's retry can re-process the event.
+// Called by the handler in the error path; safe to call when the row is
+// already gone (treats DELETE as idempotent).
+func (s *BillingService) DeleteEvent(ctx context.Context, eventID string) error {
+	return s.repo.DeleteStripeEvent(ctx, eventID)
 }

@@ -23,6 +23,7 @@ import (
 	"maplerewards/internal/health"
 	"maplerewards/internal/knowledge"
 	mw "maplerewards/internal/middleware"
+	"maplerewards/internal/observability"
 	"maplerewards/internal/quota"
 	"maplerewards/internal/repo"
 	"maplerewards/internal/service"
@@ -44,7 +45,17 @@ func main() {
 	// vector (mode 0644, no rotation, potential PII) and broke under container
 	// orchestrators that expect logs on stdout. Operators who want a file sink
 	// should capture stdout via systemd/journald/k8s/docker logging drivers.
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	//
+	// The slog handler is tee'd through observability.SentryHandler so any
+	// ERROR-level record also ships to Sentry (no-op when SENTRY_DSN unset).
+	baseHandler := slog.NewJSONHandler(os.Stdout, nil)
+	observability.SetDefault(observability.NewReporter(observability.Config{
+		DSN:         os.Getenv("SENTRY_DSN"),
+		Environment: getEnv("APP_ENV", "development"),
+		Release:     getEnv("GIT_COMMIT", "dev"),
+		ServerName:  getEnv("HOSTNAME", "maple-api"),
+	}))
+	log := slog.New(observability.NewSentryHandler(baseHandler))
 	slog.SetDefault(log)
 
 	// ── Postgres ──────────────────────────────────────────────────────────
@@ -112,6 +123,11 @@ func main() {
 	applicationRepo := repo.NewApplicationRepo(pool)
 
 	// ── Services ──────────────────────────────────────────────────────────
+	// JWT_SECRET length floor: 32 chars (HS256 best-practice). A 10-char
+	// password-style secret is brute-forceable; require operators to use
+	// `openssl rand -hex 32` (64 chars) or equivalent. Boot fails fast in
+	// production rather than silently accepting weak secrets.
+	const minJWTSecretLen = 32
 	appEnv := getEnv("APP_ENV", "development")
 	jwtSecret = getEnv("JWT_SECRET", "")
 	if appEnv == "production" {
@@ -119,9 +135,18 @@ func main() {
 			log.Error("JWT_SECRET must be set to a non-default value when APP_ENV=production")
 			os.Exit(1)
 		}
+		if len(jwtSecret) < minJWTSecretLen {
+			log.Error("JWT_SECRET too short for production",
+				"len", len(jwtSecret), "min", minJWTSecretLen,
+				"hint", "generate with `openssl rand -hex 32`")
+			os.Exit(1)
+		}
 	} else if jwtSecret == "" {
 		log.Warn("JWT_SECRET unset; using dev fallback (DO NOT USE IN PRODUCTION)")
 		jwtSecret = devJWTFallback
+	} else if len(jwtSecret) < minJWTSecretLen {
+		log.Warn("JWT_SECRET shorter than recommended minimum",
+			"len", len(jwtSecret), "min", minJWTSecretLen)
 	}
 	walletSvc := service.NewWalletService(walletRepo, cardRepo, spendRepo, bonusRepo, redisCache)
 	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache)
@@ -194,7 +219,14 @@ func main() {
 	// Uses Background() — the goroutine runs for the full process lifetime and
 	// is killed cleanly when the OS terminates the process on shutdown.
 	if apifySvc.IsAvailable() {
-		health.NewApifySmokeChecker(awardSearchSvc, 6*time.Hour).Start(context.Background())
+		smoke := health.NewApifySmokeChecker(awardSearchSvc, 6*time.Hour)
+		// Admin alert path: when a smoke run fails, email ADMIN_EMAIL (24h
+		// throttle) and ERROR-log so Sentry picks it up. No-op when either
+		// is unset — the slog.Error path still runs.
+		if adminEmail := strings.TrimSpace(os.Getenv("ADMIN_EMAIL")); adminEmail != "" {
+			smoke = smoke.WithAlerts(mailer, adminEmail)
+		}
+		smoke.Start(context.Background())
 	}
 
 	// ── Repos that depend on services being wired ────────────────────────
@@ -213,7 +245,15 @@ func main() {
 	walletH := handler.NewWalletHandler(walletSvc)
 	optimizerH := handler.NewOptimizerHandler(optimizerSvc, walletRepo)
 	spendH := handler.NewSpendHandler(walletSvc)
-	chatH := handler.NewChatHandlerWithRepo(aiSvc, rdb, walletRepo, chatRepo)
+	// Daily per-user Claude token budget. Free 50K/day, Pro 500K/day. Gates
+	// /chat with a 429 + Retry-After header when exceeded. Without this any
+	// authenticated user can burn through our Anthropic budget in hours.
+	aiBudget := service.NewAIBudget(rdb)
+	chatH := handler.NewChatHandlerWithRepo(aiSvc, rdb, walletRepo, chatRepo).WithBudget(aiBudget)
+
+	// DSAR / right-of-access export (PIPEDA + GDPR Art. 15).
+	dataExportSvc := service.NewDataExportService(pool, walletRepo, authRepo)
+	accountExportH := handler.NewAccountExportHandler(dataExportSvc)
 	adminValuationH := handler.NewAdminValuationHandler(valuationRepo, redisCache)
 	adminQuotaH := handler.NewAdminQuotaHandler(quotaClient)
 	adminMetricsH := handler.NewAdminMetricsHandler()
@@ -364,6 +404,10 @@ func main() {
 		// Affiliate redirect — public, logs click + 302s to the affiliate URL.
 		r.Get("/affiliate/click/{cardID}", affiliateH.Click)
 
+		// Aeroplan June 1 2026 lock-in calculator — public utility tool.
+		// Pure read-only filter over a static chart of pre/post-hike routings.
+		r.Get("/tools/aeroplan-june-1", handler.NewAeroplanJune1Handler().Query)
+
 		// Side-by-side card comparison. Powers SSG pages at
 		// /compare/[a]/[b]. Both params accept either UUID or slug.
 		r.Get("/compare/{a}/{b}", compareH.Compare)
@@ -440,6 +484,11 @@ func main() {
 			r.Post("/auth/change-password", authH.ChangePassword)
 			r.Post("/auth/verify-email/send", emailVerifyH.SendVerification)
 			r.Post("/billing/checkout", billingH.CreateCheckout)
+
+			// PIPEDA + GDPR Art. 15 right-of-access — full JSON dump of all
+			// data we hold about this user. Behind JWT only (not CSRF) so it
+			// can be hit as a plain GET from the browser.
+			r.Get("/account/export", accountExportH.Export)
 
 			// Web push subscription management — any authenticated user can
 			// register/unregister a browser. The Test endpoint is gated to
@@ -678,22 +727,41 @@ func corsMiddleware(next http.Handler) http.Handler {
 // init runs before main() and validates security-critical env vars. Refusing
 // to boot is the right default — silent CORS misconfiguration in production
 // has historically been the single most damaging misconfig in this category.
+//
+// Validation runs in ALL environments. Staging/dev are NOT a "free pass":
+// they share infrastructure with production, share auth cookies, and a
+// CORS_ORIGIN=* in staging is just as dangerous as in production. The only
+// difference is that dev allows http:// origins (for localhost) whereas
+// production requires https://.
 func init() {
-	// Only enforce when explicitly in production. Other environments may
-	// run with the default localhost origin.
-	if !strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+	isProd := strings.EqualFold(os.Getenv("APP_ENV"), "production")
+	origin := strings.TrimSpace(os.Getenv("CORS_ORIGIN"))
+
+	if isProd {
+		switch {
+		case origin == "":
+			slog.Error("CORS_ORIGIN must be set when APP_ENV=production")
+			os.Exit(1)
+		case origin == "*":
+			slog.Error("CORS_ORIGIN=* is not allowed in production (credentials would be exposed cross-origin)")
+			os.Exit(1)
+		case !strings.HasPrefix(origin, "https://"):
+			slog.Error("CORS_ORIGIN must use https:// in production", "value", origin)
+			os.Exit(1)
+		}
 		return
 	}
-	origin := strings.TrimSpace(os.Getenv("CORS_ORIGIN"))
-	switch {
-	case origin == "":
-		slog.Error("CORS_ORIGIN must be set when APP_ENV=production")
+
+	// Non-prod: only validate when explicitly set. Empty falls back to the
+	// localhost default in corsMiddleware. But `*` is never acceptable
+	// because the response sets Access-Control-Allow-Credentials: true.
+	if origin == "*" {
+		slog.Error("CORS_ORIGIN=* is not allowed (credentials would be exposed cross-origin)",
+			"hint", "use http://localhost:3000 for dev or https://your-staging-domain for staging")
 		os.Exit(1)
-	case origin == "*":
-		slog.Error("CORS_ORIGIN=* is not allowed in production (credentials would be exposed cross-origin)")
-		os.Exit(1)
-	case !strings.HasPrefix(origin, "https://"):
-		slog.Error("CORS_ORIGIN must use https:// in production", "value", origin)
+	}
+	if origin != "" && !strings.HasPrefix(origin, "http://") && !strings.HasPrefix(origin, "https://") {
+		slog.Error("CORS_ORIGIN must include scheme (http:// or https://)", "value", origin)
 		os.Exit(1)
 	}
 }

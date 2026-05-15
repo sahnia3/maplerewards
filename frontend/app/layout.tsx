@@ -9,6 +9,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ChatFab } from "@/components/chat/chat-fab";
 import { SWRegister } from "@/components/sw-register";
 import { InstallPWAPrompt } from "@/components/install-pwa-prompt";
+import { CookieConsent } from "@/components/cookie-consent";
+import { ErrorReporterInit } from "@/components/error-reporter-init";
 
 const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
@@ -64,10 +66,12 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={fontVars}>
       <body className="antialiased min-h-screen grain">
         <Providers>
+          <ErrorReporterInit />
           <AppShell>{children}</AppShell>
           <ChatFab />
           <SWRegister />
           <InstallPWAPrompt />
+          <CookieConsent />
         </Providers>
       </body>
     </html>

@@ -40,6 +40,7 @@ type ChatHandler struct {
 	rdb           *redis.Client
 	sessionLookup mw.SessionOwnerLookup // may be nil in tests
 	chatRepo      *repo.ChatRepo        // nil disables persistence (e.g. unit tests)
+	budget        *service.AIBudget     // nil → fail-open (no daily token budget enforced)
 }
 
 // NewChatHandler keeps a positional signature for unit tests that don't
@@ -58,6 +59,13 @@ func NewChatHandlerWithRepo(svc *service.AIService, rdb *redis.Client, sessionLo
 		sessionLookup: sessionLookup,
 		chatRepo:      chatRepo,
 	}
+}
+
+// WithBudget attaches a per-user daily token budget enforcer. Returns the
+// handler for chainable construction; safe to call with a nil budget (no-op).
+func (h *ChatHandler) WithBudget(b *service.AIBudget) *ChatHandler {
+	h.budget = b
+	return h
 }
 
 // Chat handles a POST with a user message and returns an AI response.
@@ -117,6 +125,22 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Daily Claude token budget — separate from monthly message cap. Protects
+	// against runaway-loop abuse that would burn the Anthropic monthly budget
+	// even within the free-tier message count. Pro users have 10× headroom.
+	if h.budget != nil {
+		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, isPro)
+		if err != nil {
+			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+		} else if exhausted {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
+			jsonErrorCode(w, "DAILY_LIMIT",
+				"You've hit today's AI token budget. Resets at UTC midnight.",
+				http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro)
 	if err != nil {
 		// P0: do NOT leak Anthropic error bodies / tool-call internals to the
@@ -142,6 +166,18 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		pipe.Expire(r.Context(), key, 62*24*time.Hour)
 		if _, err := pipe.Exec(r.Context()); err != nil {
 			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
+		}
+	}
+
+	// Consume daily token budget. Estimate-based until we plumb the
+	// Anthropic usage block all the way through the service — input is the
+	// user message + system-prompt overhead (~3K), output is the reply length
+	// at ~1.3 chars/token. Errors are warn-and-continue: under-counting is
+	// preferable to failing the response.
+	if h.budget != nil {
+		estimate := estimateTokensUsed(req.Message, resp.Reply)
+		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, estimate); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", estimate)
 		}
 	}
 
@@ -241,6 +277,20 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Daily token budget gate, mirrors the non-streaming Chat handler.
+	if h.budget != nil {
+		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, isPro)
+		if err != nil {
+			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+		} else if exhausted {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
+			jsonErrorCode(w, "DAILY_LIMIT",
+				"You've hit today's AI token budget. Resets at UTC midnight.",
+				http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		jsonError(w, "streaming not supported by upstream", http.StatusInternalServerError)
@@ -327,6 +377,14 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		pipe.Expire(r.Context(), key, 62*24*time.Hour)
 		if _, err := pipe.Exec(r.Context()); err != nil {
 			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
+		}
+	}
+
+	// Consume daily token budget on success.
+	if h.budget != nil {
+		estimate := estimateTokensUsed(req.Message, resp.Reply)
+		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, estimate); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", estimate)
 		}
 	}
 
@@ -443,3 +501,26 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 // Compile-time guard: ensure model.ChatMessage is still the shape persistChat
 // expects. Catches future struct renames at build time.
 var _ = model.ChatMessage{Role: "user", Content: "ping"}
+
+// estimateTokensUsed produces a coarse token-count estimate for the daily
+// budget tracker. The Anthropic API returns precise usage counts in its
+// response body; until those are plumbed through ChatResponse this estimate
+// is the stop-gap.
+//
+// Components:
+//   - System-prompt overhead: ~3,000 tokens (cached, but still billed at
+//     cached-input rates). We bill at full rate here to over-estimate
+//     intentionally — under-counting is the dangerous failure mode.
+//   - User message: 1 token per ~3.5 characters (English; Claude tokenizer).
+//   - Tool calls: untracked; add a 1.3× multiplier to the assistant reply
+//     to amortize tool round-trips.
+//   - Assistant reply: 1 token per ~3.5 characters × 1.3.
+func estimateTokensUsed(userMessage, assistantReply string) int {
+	const baseSystemOverhead = 3000
+	const charsPerToken = 3.5
+	const toolRoundtripMultiplier = 1.3
+
+	inputTokens := baseSystemOverhead + int(float64(len(userMessage))/charsPerToken)
+	outputTokens := int(float64(len(assistantReply)) / charsPerToken * toolRoundtripMultiplier)
+	return inputTokens + outputTokens
+}

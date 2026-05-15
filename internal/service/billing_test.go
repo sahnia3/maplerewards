@@ -69,6 +69,11 @@ func (m *mockBillingRepo) IsStripeEventProcessed(ctx context.Context, eventID st
 	return m.processedEvents[eventID], nil
 }
 
+func (m *mockBillingRepo) DeleteStripeEvent(ctx context.Context, eventID string) error {
+	delete(m.processedEvents, eventID)
+	return nil
+}
+
 func newBillingSvc(repo *mockBillingRepo) *BillingService {
 	return &BillingService{repo: repo}
 }
