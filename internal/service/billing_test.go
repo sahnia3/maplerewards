@@ -224,3 +224,71 @@ func TestBillingWebhook_MalformedJSON_Errors(t *testing.T) {
 		t.Fatal("expected error on malformed JSON payload")
 	}
 }
+
+// ── Idempotency: the Phase 2.1 reserve-then-work-then-rollback contract ────
+// These pin the behaviour that prevents a Stripe retry from double-granting
+// Pro. The handler orchestrates RecordEvent → HandleWebhookEvent → (on fail)
+// DeleteEvent; these tests exercise the service primitives that back it.
+
+func TestBillingWebhook_RecordEvent_DuplicateReturnsFalse(t *testing.T) {
+	repo := newMockBillingRepo()
+	svc := newBillingSvc(repo)
+	ctx := context.Background()
+
+	first, err := svc.RecordEvent(ctx, "evt_123", "checkout.session.completed")
+	if err != nil || !first {
+		t.Fatalf("first RecordEvent should reserve the row: ok=%v err=%v", first, err)
+	}
+	second, err := svc.RecordEvent(ctx, "evt_123", "checkout.session.completed")
+	if err != nil {
+		t.Fatalf("second RecordEvent errored: %v", err)
+	}
+	if second {
+		t.Fatal("duplicate event must return false so the handler short-circuits with 200")
+	}
+}
+
+func TestBillingWebhook_FailedProcessing_RollbackAllowsRetry(t *testing.T) {
+	repo := newMockBillingRepo()
+	svc := newBillingSvc(repo)
+	ctx := context.Background()
+
+	// Reserve the row, simulate a processing failure, roll back.
+	if ok, _ := svc.RecordEvent(ctx, "evt_fail", "checkout.session.completed"); !ok {
+		t.Fatal("expected to reserve the row")
+	}
+	if err := svc.DeleteEvent(ctx, "evt_fail"); err != nil {
+		t.Fatalf("DeleteEvent (rollback) errored: %v", err)
+	}
+	// Stripe retries the same event — it MUST be re-processable now.
+	again, err := svc.RecordEvent(ctx, "evt_fail", "checkout.session.completed")
+	if err != nil || !again {
+		t.Fatalf("after rollback the retry must re-reserve: ok=%v err=%v", again, err)
+	}
+}
+
+func TestBillingWebhook_DoubleDelivery_SingleProGrant(t *testing.T) {
+	repo := newMockBillingRepo()
+	repo.users["user-9"] = &model.User{ID: "user-9"}
+	svc := newBillingSvc(repo)
+	ctx := context.Background()
+	body := json.RawMessage(`{"client_reference_id":"user-9","customer":"cus_9"}`)
+
+	// First delivery: reserve, then process.
+	if ok, _ := svc.RecordEvent(ctx, "evt_dup", "checkout.session.completed"); !ok {
+		t.Fatal("first delivery should reserve")
+	}
+	if err := svc.HandleWebhookEvent(ctx, "checkout.session.completed", body); err != nil {
+		t.Fatalf("first processing failed: %v", err)
+	}
+	if !repo.proStatus["user-9"] {
+		t.Fatal("expected Pro granted after first delivery")
+	}
+
+	// Second delivery (Stripe retry): RecordEvent returns false → handler
+	// would 200-skip. We assert the dedup gate holds; processing must NOT
+	// run again.
+	if ok, _ := svc.RecordEvent(ctx, "evt_dup", "checkout.session.completed"); ok {
+		t.Fatal("duplicate delivery must NOT re-reserve — would allow a second grant")
+	}
+}
