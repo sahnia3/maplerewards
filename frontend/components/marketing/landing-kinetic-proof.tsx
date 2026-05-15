@@ -1,209 +1,217 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, useInView } from "framer-motion";
+import { motion, useScroll, useTransform, useMotionValueEvent, useSpring } from "framer-motion";
 
-/* Kinetic proof moment — replaces the photograph editorial figure on the
- * marketing landing. The number IS the visual: a giant italic display
- * dollar figure that counts up on scroll-in, surrounded by tiny editorial
- * type so the eye stays on the figure.
+/* Scroll-scrubbed Toronto dolly-in video.
  *
- * Design rationale:
- *   - Big claim. One number. Counter unlocks on view (Emil rule: motion
- *     conveys state, not decoration — the count is "revealing what we
- *     measured for an average user").
- *   - Italic Instrument Serif at clamp(96-176px) — the headline-scale
- *     editorial figure. Maple color so it lives in the brand.
- *   - Centered. Full-bleed padding. The number gets the whole viewport
- *     to breathe in.
- *   - No image. The Higgsfield still-life it replaced felt out of place
- *     against the rest of the digital product. */
+ * Previous iterations of this section used a static count-up number,
+ * then a scroll-bound dollar figure with receipt ledger; the user
+ * called those visually weak. This version replaces them with a
+ * Kling-3.0-rendered 8-second cinematic dolly: three Toronto towers
+ * at twilight that the camera pushes into, eventually crossing the
+ * glass into a lit office where a silhouetted figure walks past.
+ *
+ * The video does NOT autoplay. Its `currentTime` is bound to the
+ * user's scroll position through the 220vh container — scroll down,
+ * dolly pushes in; scroll back, it rewinds. This is the iPhone-launch-
+ * page scrubbing technique.
+ *
+ * For smooth scrubbing on long scroll jumps the video would benefit
+ * from re-encoding with every-frame keyframes (ffmpeg -g 1), but the
+ * stock MP4 from Kling scrubs acceptably for hero use. */
 
-const TARGET = 1247;       // dollars recovered, average user, year one
-const DURATION_MS = 1800;  // count-up duration
-const SWIPES = 312;
-const CARDS = 4;
-
-/* Count-up easing: ease-out-quart matches the rest of the system motion. */
-function easeOutQuart(t: number) {
-  return 1 - Math.pow(1 - t, 4);
-}
-
-function CountUp({ target, durationMs, active }: { target: number; durationMs: number; active: boolean }) {
-  const [value, setValue] = useState(0);
-  const startRef = useRef<number | null>(null);
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!active) return;
-    function step(t: number) {
-      if (startRef.current === null) startRef.current = t;
-      const elapsed = t - startRef.current;
-      const progress = Math.min(elapsed / durationMs, 1);
-      setValue(Math.round(easeOutQuart(progress) * target));
-      if (progress < 1) rafRef.current = requestAnimationFrame(step);
-    }
-    rafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [active, target, durationMs]);
-
-  return <>{value.toLocaleString("en-CA")}</>;
-}
+const VIDEO_SRC = "/landing/toronto-dolly.mp4";
+const VIDEO_DURATION_SEC = 8;
 
 export function LandingKineticProof() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, amount: 0.4 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoReady, setVideoReady] = useState(false);
+
+  /* Track scroll through the 220vh container. start/end offsets:
+   * - "start end" → section top hits viewport bottom → progress = 0
+   * - "end start" → section bottom hits viewport top → progress = 1 */
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start end", "end start"],
+  });
+
+  /* Smooth the scroll value so trackpad/wheel jitter doesn't translate
+   * directly into video frame jumps. Springs lerp toward target over
+   * a few hundred ms. */
+  const smoothed = useSpring(scrollYProgress, {
+    stiffness: 140,
+    damping: 30,
+    mass: 0.5,
+  });
+
+  /* Push the active scrubbing window into 0.15 → 0.85 of the scroll
+   * range so the video isn't pegged at frame 0 / final frame too long
+   * at the section edges. */
+  const playhead = useTransform(smoothed, [0.15, 0.85], [0, VIDEO_DURATION_SEC], { clamp: true });
+
+  /* Bind video.currentTime to the playhead motion value. The video is
+   * paused; we only mutate currentTime. The browser renders whichever
+   * frame the playhead lands on. */
+  useMotionValueEvent(playhead, "change", (t) => {
+    const v = videoRef.current;
+    if (!v || !videoReady) return;
+    /* Avoid micro-jitter resets — only seek if the delta is meaningful. */
+    if (Math.abs(v.currentTime - t) > 0.03) {
+      v.currentTime = t;
+    }
+  });
+
+  /* Eyebrow + descriptor fade timing tied to scroll. */
+  const eyebrowOpacity = useTransform(smoothed, [0.05, 0.18], [0, 1]);
+  const eyebrowY = useTransform(smoothed, [0.05, 0.18], [12, 0]);
+  const captionOpacity = useTransform(smoothed, [0.75, 0.9], [0, 1]);
+  const captionY = useTransform(smoothed, [0.75, 0.9], [16, 0]);
+
+  /* Force the video to load + seek to frame 0 once it's loadable, so
+   * the first frame is on-screen even before any scroll. */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onCanPlay = () => {
+      setVideoReady(true);
+      try { v.currentTime = 0; } catch {}
+    };
+    v.addEventListener("loadedmetadata", onCanPlay);
+    v.addEventListener("canplay", onCanPlay);
+    return () => {
+      v.removeEventListener("loadedmetadata", onCanPlay);
+      v.removeEventListener("canplay", onCanPlay);
+    };
+  }, []);
 
   return (
-    <section
-      ref={ref}
-      style={{
-        position: "relative",
-        padding: "clamp(80px, 12vh, 160px) clamp(20px, 4vw, 60px)",
-        maxWidth: 1280,
-        margin: "0 auto",
-        textAlign: "center",
-        overflow: "hidden",
-      }}
-    >
-      {/* Soft maple-glow halo following the figure */}
+    <section ref={containerRef} style={{ position: "relative", height: "220vh" }}>
       <div
-        aria-hidden
         style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(ellipse 60% 50% at 50% 50%, var(--accent-glow), transparent 60%)",
-          pointerEvents: "none",
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          width: "100%",
+          overflow: "hidden",
+          background: "#0a0606",
         }}
-      />
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        style={{ position: "relative" }}
       >
-        <p
-          className="mono"
+        {/* The video itself — cover-fits the viewport, no controls */}
+        <video
+          ref={videoRef}
+          src={VIDEO_SRC}
+          muted
+          playsInline
+          preload="auto"
+          /* Don't autoplay — currentTime is driven by scroll. */
+          aria-hidden
           style={{
-            fontSize: 11,
-            letterSpacing: "0.22em",
-            textTransform: "uppercase",
-            color: "var(--ink-3)",
-            fontWeight: 600,
-            margin: 0,
-            marginBottom: 32,
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center",
+          }}
+        />
+
+        {/* Vignette to ground the video in the brand atmosphere — fades
+            cool edges into the burgundy-grain canvas. */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 80% 70% at 50% 50%, transparent 50%, rgba(10, 6, 6, 0.45) 100%), linear-gradient(180deg, rgba(10,6,6,0.30) 0%, transparent 22%, transparent 78%, rgba(10,6,6,0.55) 100%)",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Eyebrow at top — fades in as the section enters */}
+        <motion.div
+          style={{
+            position: "absolute",
+            top: "clamp(40px, 8vh, 80px)",
+            left: 0,
+            right: 0,
+            display: "flex",
+            justifyContent: "center",
+            opacity: eyebrowOpacity,
+            y: eyebrowY,
+            pointerEvents: "none",
           }}
         >
-          Average user · year one
-        </p>
+          <span
+            className="mono"
+            style={{
+              fontSize: 11,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: "rgba(242, 237, 227, 0.78)",
+              fontWeight: 600,
+              padding: "8px 16px",
+              background: "rgba(10, 6, 6, 0.35)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              borderRadius: 999,
+              border: "1px solid rgba(242, 237, 227, 0.08)",
+            }}
+          >
+            Built into every Canadian wallet · scroll
+          </span>
+        </motion.div>
 
-        <h2
-          className="display"
+        {/* Caption that lands at the end of the scrub — "what was the point" */}
+        <motion.div
           style={{
-            margin: 0,
-            fontSize: "clamp(96px, 16vw, 220px)",
-            lineHeight: 0.88,
-            letterSpacing: "-0.03em",
-            color: "var(--accent)",
-            fontStyle: "italic",
-            fontVariantNumeric: "tabular-nums",
+            position: "absolute",
+            bottom: "clamp(40px, 8vh, 80px)",
+            left: 0,
+            right: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 6,
+            opacity: captionOpacity,
+            y: captionY,
+            pointerEvents: "none",
+            padding: "0 clamp(20px, 4vw, 60px)",
+            textAlign: "center",
           }}
         >
-          $<CountUp target={TARGET} durationMs={DURATION_MS} active={inView} />
-        </h2>
-      </motion.div>
-
-      <motion.p
-        initial={{ opacity: 0, y: 12 }}
-        animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
-        className="serif"
-        style={{
-          position: "relative",
-          margin: "32px auto 0",
-          maxWidth: 640,
-          fontSize: "clamp(18px, 1.5vw, 22px)",
-          fontStyle: "italic",
-          color: "var(--ink-2)",
-          lineHeight: 1.45,
-        }}
-      >
-        recovered in optimized rewards — across {SWIPES.toLocaleString("en-CA")} swipes,
-        on {CARDS} cards, in their first twelve months on Maple.
-      </motion.p>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={inView ? { opacity: 1 } : { opacity: 0 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
-        style={{
-          position: "relative",
-          marginTop: 56,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 16,
-          flexWrap: "wrap",
-          justifyContent: "center",
-          paddingTop: 22,
-          borderTop: "1px solid var(--rule)",
-        }}
-      >
-        <StatChip label="Cards modelled" value="102" />
-        <Dot />
-        <StatChip label="Loyalty programs" value="19" />
-        <Dot />
-        <StatChip label="Transfer partners" value="40+" />
-      </motion.div>
+          <span
+            className="display"
+            style={{
+              fontSize: "clamp(28px, 3.5vw, 42px)",
+              fontStyle: "italic",
+              letterSpacing: "-0.015em",
+              color: "#F2EDE3",
+              textShadow: "0 2px 24px rgba(0,0,0,0.6)",
+              lineHeight: 1.05,
+              margin: 0,
+            }}
+          >
+            Every Bay Street wallet, optimized.
+          </span>
+          <span
+            className="serif"
+            style={{
+              marginTop: 4,
+              fontSize: "clamp(13px, 1.1vw, 15px)",
+              fontStyle: "italic",
+              color: "rgba(242, 237, 227, 0.72)",
+              textShadow: "0 1px 12px rgba(0,0,0,0.6)",
+              lineHeight: 1.45,
+              maxWidth: 520,
+            }}
+          >
+            One window at a time — Maple knows which card to swipe before you walk through it.
+          </span>
+        </motion.div>
+      </div>
     </section>
-  );
-}
-
-function StatChip({ label, value }: { label: string; value: string }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8 }}>
-      <span
-        className="display"
-        style={{
-          fontSize: 20,
-          fontStyle: "italic",
-          color: "var(--ink)",
-          letterSpacing: "-0.005em",
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {value}
-      </span>
-      <span
-        className="mono"
-        style={{
-          fontSize: 10,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: "var(--ink-3)",
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
-function Dot() {
-  return (
-    <span
-      aria-hidden
-      style={{
-        display: "inline-block",
-        width: 4,
-        height: 4,
-        borderRadius: 999,
-        background: "var(--rule-strong)",
-      }}
-    />
   );
 }
