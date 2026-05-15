@@ -4,7 +4,7 @@
   "short_name": "MapleRewards",
   "version": "0.1.0",
   "description": "Tells you the best Canadian credit card to use on every checkout — in CAD, with caps and transfer partners baked in.",
-  "permissions": ["storage", "activeTab", "tabs"],
+  "permissions": ["storage", "activeTab", "tabs", "cookies"],
   "host_permissions": [
     "http://localhost:8080/*",
     "https://maplerewards.ca/*",

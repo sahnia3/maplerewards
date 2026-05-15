@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWallet } from "@/contexts/wallet-context";
 import { listCards, getRecommendations } from "@/lib/api";
+import { useReportableError } from "@/lib/use-reportable-error";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import type { Card, CardScore } from "@/lib/types";
 import { Check, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
@@ -99,12 +100,15 @@ export default function OnboardingPage() {
   const [resultsLoading, setResultsLoading] = useState(false);
   const [addingCards, setAddingCards] = useState(false);
 
+  const reportCards = useReportableError("onboarding.listCards");
+  const reportResults = useReportableError("onboarding.getRecommendations");
+
   useEffect(() => {
     listCards()
       .then(setAllCards)
-      .catch(console.error)
+      .catch(reportCards)
       .finally(() => setCardsLoading(false));
-  }, []);
+  }, [reportCards]);
 
   // Mirror every step input into localStorage. The results array isn't
   // persisted — it's derived from the inputs and regenerable on demand.
@@ -124,7 +128,7 @@ export default function OnboardingPage() {
       const data = await getRecommendations({ monthly_spend: monthlySpend });
       setResults(data);
       setStep(4);
-    } catch (e) { console.error(e); }
+    } catch (e) { reportResults(e); }
     finally { setResultsLoading(false); }
   };
 

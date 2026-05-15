@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
+import { useReportableError } from "@/lib/use-reportable-error";
 import { getWalletSummary, getRecommendations, getPortfolioAnalysis, getCardCredits, getSQCProjection, getCardValueSummary } from "@/lib/api";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import type { WalletSummary, CardScore, Card, PortfolioAnalysis, CardCreditStatus, SQCProjection, CardValueSummary } from "@/lib/types";
@@ -54,47 +55,55 @@ export default function PortfolioPage() {
   const [cardValues, setCardValues] = useState<CardValueSummary[]>([]);
   const [cardValuesLoading, setCardValuesLoading] = useState(true);
 
+  const reportSummary = useReportableError("portfolio.summary");
+  const reportRecs = useReportableError("portfolio.recommendations");
+  const reportAnalysis = useReportableError("portfolio.analysis");
+  const reportCredits = useReportableError("portfolio.credits");
+  const reportSQC = useReportableError("portfolio.sqc");
+  const reportCardValues = useReportableError("portfolio.cardValues");
+  const reportAdd = useReportableError("portfolio.addCard");
+
   useEffect(() => {
     if (!isReady || !sessionId) return;
 
     getWalletSummary(sessionId)
       .then(setSummary)
-      .catch(console.error)
+      .catch(reportSummary)
       .finally(() => setSummaryLoading(false));
 
     const walletCardIds = new Set(wallet.map(uc => uc.card_id));
     getRecommendations({ monthly_spend: TYPICAL_SPEND })
       .then(data => setRecs(data.filter(s => !walletCardIds.has(s.card_id)).slice(0, 6)))
-      .catch(console.error)
+      .catch(reportRecs)
       .finally(() => setRecsLoading(false));
 
     getPortfolioAnalysis(sessionId)
       .then(setAnalysis)
-      .catch(console.error)
+      .catch(reportAnalysis)
       .finally(() => setAnalysisLoading(false));
 
     getCardCredits(sessionId)
       .then(setCredits)
-      .catch(console.error)
+      .catch(reportCredits)
       .finally(() => setCreditsLoading(false));
 
     getSQCProjection(sessionId)
       .then(setSQC)
-      .catch(console.error)
+      .catch(reportSQC)
       .finally(() => setSQCLoading(false));
 
     getCardValueSummary(sessionId)
       .then(setCardValues)
-      .catch(console.error)
+      .catch(reportCardValues)
       .finally(() => setCardValuesLoading(false));
-  }, [isReady, sessionId, wallet.length]);
+  }, [isReady, sessionId, wallet.length, reportSummary, reportRecs, reportAnalysis, reportCredits, reportSQC, reportCardValues]);
 
   const handleAdd = async (cardId: string) => {
     try {
       await addCard(cardId);
       setAddedIds(p => new Set([...p, cardId]));
     } catch (e) {
-      console.error(e);
+      reportAdd(e);
     }
   };
 

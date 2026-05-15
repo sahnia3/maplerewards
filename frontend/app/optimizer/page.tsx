@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { OptimizerForm } from "@/components/optimizer-form";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function OptimizerPage() {
   return (
@@ -74,7 +75,9 @@ export default function OptimizerPage() {
         </header>
 
         {/* ── Form + results ─────────────────────────────────────── */}
-        <OptimizerForm />
+        <ErrorBoundary surface="optimizer">
+          <OptimizerForm />
+        </ErrorBoundary>
 
         <LeafDivider />
 

@@ -44,12 +44,30 @@ const $openSettings = document.getElementById("open-settings");
 })();
 
 async function getSessionID() {
-  // The web app stores session_id in localStorage on its own origin. The
-  // extension popup runs on chrome-extension:// so we can't read that
-  // directly — instead we use chrome.storage as the bridge, set by the web
-  // app via window.postMessage when the user installs the extension. For
-  // MVP we accept that the user has to manually paste their session ID into
-  // chrome.storage if the bridge isn't set up yet.
+  // Cookie-bridge path: read the session cookie directly from the
+  // maplerewards.ca domain. Requires `cookies` permission + a host_permissions
+  // entry in manifest.json. Falls back to the legacy chrome.storage bridge
+  // for users who installed the extension before the cookie permission
+  // was granted (those still need to use the manual paste flow once).
+  const COOKIE_HOSTS = [
+    "https://maplerewards.ca",
+    "https://www.maplerewards.ca",
+    "http://localhost:3000",
+  ];
+  for (const url of COOKIE_HOSTS) {
+    try {
+      const cookie = await chrome.cookies.get({ url, name: "mr_session" });
+      if (cookie && cookie.value) {
+        // Cache for offline popup opens. Refreshed on each successful read.
+        await chrome.storage.local.set({ mr_session_id: cookie.value });
+        return cookie.value;
+      }
+    } catch (_) {
+      // Permission denied or domain not visited yet — try the next host.
+    }
+  }
+  // Legacy fallback: storage may still hold a manually-pasted value, or
+  // the extension may have set it from a previous cookie read.
   const { mr_session_id } = await chrome.storage.local.get("mr_session_id");
   return mr_session_id || null;
 }
