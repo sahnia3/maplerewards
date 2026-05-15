@@ -14,7 +14,7 @@
 
 Canada's $820B+ credit card market has zero native rewards optimization tools. Every existing platform is US-focused, leaving Canadian cardholders guessing which card to pull out at checkout. MapleRewards fixes that.
 
-`92 cards` | `19 loyalty programs` | `35+ API endpoints` | `27,760 lines of code`
+`104 cards` | `27 loyalty programs` | `80+ API endpoints` | `43 migrations` | Production-ready
 
 </div>
 
@@ -35,6 +35,9 @@ MapleRewards tells you which credit card earns the most on every purchase, track
 | **Card Comparison** | Side-by-side comparison of any catalogued cards across all earning categories and perks. |
 | **Spending Tracker** | Transaction logging with category-based statistics and historical trends. |
 | **Multi-step Onboarding** | Card selection flow and spending category profiling to personalize recommendations from day one. |
+| **Application Tracker** | Records every card application with per-issuer cooldown rules (RBC 90d, TD 365d, BMO 90d, etc.) and warns before re-applying inside the cooldown window. |
+| **Missed-Rewards Weekly Digest** | Pro-only email: replays last 7 days of swipes through the optimizer and surfaces every transaction where a different wallet card would have earned more. Empty weeks aren't sent. |
+| **Affiliate-Aware Apply CTAs** | One-click apply buttons on `/cards/[id]`, `/compare/[a]/[b]`, and optimizer results — routed through a click-logging redirect endpoint that powers per-card affiliate attribution. |
 
 ---
 
@@ -44,19 +47,26 @@ MapleRewards tells you which credit card earns the most on every purchase, track
 flowchart LR
     A[Client Request] --> B[Chi Router]
     B --> C[Middleware Stack]
-    C --> C1[CORS]
-    C --> C2[Rate Limiter\n300 req/min]
-    C --> C3[JWT Auth]
-    C3 --> D[Handler]
-    D --> E[Service Layer]
-    E --> F[Repository]
-    F --> G[(PostgreSQL)]
-    F --> H[(Redis Cache)]
-    E --> I[External APIs]
-    I --> I1[Claude API]
-    I --> I2[SerpAPI]
-    I --> I3[Apify]
-    I --> I4[Seats.aero]
+    C --> C1[CORS exact-origin]
+    C --> C2[Per-IP Rate Limit<br/>60 prod / 300 dev]
+    C --> C3[HTTPRequestLogger<br/>structured slog]
+    C3 --> D[Per-route guards]
+    D --> D1[JWTOptional / Required]
+    D --> D2[Per-user Rate Limit<br/>60 free / 240 pro]
+    D --> D3[BodyLimit 1MB / 5MB CSV]
+    D --> D4[CSRFProtect<br/>state-changing]
+    D --> D5[RequireSessionOwner<br/>RequirePro / RequireAdmin]
+    D5 --> E[Handler]
+    E --> F[Service Layer]
+    F --> G[Repository]
+    G --> H[(PostgreSQL 16)]
+    G --> I[(Redis 7)]
+    F --> J[External APIs]
+    J --> J1[Claude Sonnet 4.5]
+    J --> J2[SerpAPI quota-tracked]
+    J --> J3[Apify cached 45min]
+    J --> J4[Seats.aero]
+    J --> J5[Stripe HMAC-verified]
 
     style A fill:#1a1a2e,stroke:#e2e8f0,color:#e2e8f0
     style B fill:#16213e,stroke:#e2e8f0,color:#e2e8f0
@@ -64,11 +74,14 @@ flowchart LR
     style D fill:#1a1a2e,stroke:#e2e8f0,color:#e2e8f0
     style E fill:#16213e,stroke:#e2e8f0,color:#e2e8f0
     style F fill:#0f3460,stroke:#e2e8f0,color:#e2e8f0
-    style G fill:#4169E1,stroke:#e2e8f0,color:#e2e8f0
-    style H fill:#DC382D,stroke:#e2e8f0,color:#e2e8f0
+    style G fill:#0f3460,stroke:#e2e8f0,color:#e2e8f0
+    style H fill:#4169E1,stroke:#e2e8f0,color:#e2e8f0
+    style I fill:#DC382D,stroke:#e2e8f0,color:#e2e8f0
 ```
 
 The backend follows a strict **Handler > Service > Repository** separation. Handlers extract and validate request parameters. Services contain all business logic. Repositories own database access. No layer skips another.
+
+A standalone worker (`cmd/worker`) handles long-running background sweeps (award-watch alerts, issuer-page-diff detection) so the API stays responsive. A second standalone binary (`cmd/refresh-valuations`) re-anchors CPP freshness weekly via cron.
 
 ---
 
@@ -76,14 +89,15 @@ The backend follows a strict **Handler > Service > Repository** separation. Hand
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Go 1.23, Chi v5 router, JWT authentication |
+| **Backend** | Go 1.23, Chi v5 router, structured slog, expvar metrics |
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Framer Motion 12, shadcn/ui |
-| **Database** | PostgreSQL 16 (12 tables, 9 migrations) |
-| **Cache** | Redis 7 |
-| **AI** | Claude Sonnet 4.5 (conversational rewards advice with wallet context) |
-| **Payments** | Stripe |
-| **Auth** | Google OAuth + JWT refresh tokens |
-| **External Data** | SerpAPI (flights), Apify (award scraping), Seats.aero (award availability) |
+| **Database** | PostgreSQL 16 (20+ tables, 43 migrations) |
+| **Cache** | Redis 7 (wallet 30m, valuations 1h invalidatable, award search 45m, monthly provider quota counters) |
+| **AI** | Claude Sonnet 4.5 with tool-use loop (9 tools), DB-backed conversation history, wallet-aware prompt assembly |
+| **Payments** | Stripe (HMAC-verified webhook, idempotent event dedup, monthly + annual + lifetime tiers) |
+| **Auth** | Google OAuth + JWT (HS256, refresh rotation with reuse-detection, CSRF double-submit) |
+| **External Data** | SerpAPI (cash + economy baseline + round-trip, quota-tracked), Apify (award scraping, 45m Redis cache), Seats.aero (award availability), Tavily (web search fallback) |
+| **Ops** | Docker non-root user 10001, govulncheck + npm audit in CI, /admin/metrics + /admin/quota + /admin/valuations |
 
 ---
 
@@ -104,7 +118,11 @@ make setup
 # Start the Go backend on :8080
 make dev
 
-# In a separate terminal — start Next.js on :3000
+# In a separate terminal — start the background worker
+# (award-watch sweeps, issuer-watch, missed-rewards digest, promo sentinel)
+make worker
+
+# In a third terminal — start Next.js on :3000
 cd frontend && npm run dev
 ```
 
@@ -125,26 +143,43 @@ Create a `.env` file in the project root with the following:
 | `SERPAPI_KEY` | Google Flights data |
 | `APIFY_TOKEN` | Award availability scraping |
 | `SEATSAERO_API_KEY` | Seats.aero award search |
+| `RESEND_API_KEY` | Optional — outbound email (digests, alerts). Stub logger used when unset. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Optional — Web Push delivery for award-watch alerts. |
+| `TRUSTED_PROXIES` | Comma-separated CIDRs whose `X-Forwarded-For` headers are honored by the rate limiter. Empty for direct-to-internet. |
+| `DB_MAX_CONNS` / `DB_MIN_CONNS` | Postgres pool sizing (defaults 25 / 2). Override per environment. |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Pro-tier billing. |
 
 ---
 
 ## Data Model
 
-12 PostgreSQL tables across 9 migrations:
+20+ PostgreSQL tables across 43 migrations. Core entities:
 
 ```
-users
-loyalty_programs ............ 19 Canadian programs (Aeroplan, Avion, Scene+, etc.)
-cards ....................... 92 credit cards with reward structures
-card_multipliers ............ Per-category earn rates for each card
-categories .................. 8 spending categories with MCC code mappings
-transfer_partners ........... Program-to-airline/hotel transfer ratios
-point_valuations ............ Cents-per-point benchmarks by program
-user_cards .................. User wallet — owned cards and balances
-spend_entries ............... Transaction log
-welcome_bonus ............... Sign-up bonus tracking and progress
-stripe_customer ............. Billing integration
-refresh_tokens .............. JWT token rotation
+users + auth_users + email_verifications + refresh_tokens   Auth + JWT rotation + email verification
+loyalty_programs ........... 19 Canadian programs (Aeroplan, Avion, Scene+, PC Optimum, ...)
+cards + card_multipliers ... 104 credit cards with per-category earn rates
+categories ................. 8 spending categories with MCC mappings
+transfer_partners .......... Program-to-airline/hotel transfer ratios
+point_valuations + history . CPP benchmarks; weekly refresh re-anchors freshness
+user_cards + spend_entries . Wallet + transaction log
+welcome_bonus + bonuses .... Sign-up bonus tracking and milestone progress
+card_credits + redemptions . Annual credit / renewal tracker
+sqc_accrual + thresholds ... Aeroplan 2026 Status-Qualifying Credits projector
+award_watch + events ....... Pro-tier saved trips; worker re-probes on a 4h tick
+buy_promo_pricing .......... Buy-points break-even calculator
+devaluation_events ......... Chart-change history (June 2026 Aeroplan, etc.)
+merchant_acceptance ........ Stack-calculator merchant catalog
+issuer_page_diff ........... Bank product-page change detector
+loyalty_accounts ........... Non-card program tracking (Marriott, Hyatt, etc.)
+card_offers ................ Amex Offers / RBC Offers / Scene+ tracker
+chat_conversations + msgs .. Server-side AI chat history
+stripe_customer + events ... Stripe billing + idempotent webhook dedup
+affiliate_links + clicks ... Per-card affiliate URLs + click ledger
+card_applications .......... User-recorded card applications + status
+issuer_rules ............... Per-issuer cooldown rules (RBC 90d, TD 365d, etc.)
+push_subscriptions ......... Web Push (VAPID) endpoints per user
+transfer_bonus_events ...... Promo Sentinel: live-detected transfer bonuses
 ```
 
 **Spending Categories**: Groceries, Dining, Travel, Gas, Pharmacy, Entertainment, Streaming, Everything Else
@@ -156,26 +191,42 @@ refresh_tokens .............. JWT token rotation
 
 ```
 maplerewards-main/
-├── cmd/api/main.go              # Backend entry point
+├── cmd/
+│   ├── api/main.go              # API entry point (~550 LOC; routes + middleware + DI)
+│   ├── worker/                  # Background sweeps (award-watch, issuer-watch)
+│   └── refresh-valuations/      # Weekly cron — re-anchors point_valuations freshness
 ├── internal/
-│   ├── handler/                 # 22 HTTP handlers
-│   ├── service/                 # 18 business logic files
-│   │   ├── ai.go               # Claude integration (1,026 lines)
-│   │   ├── trip.go             # Trip planner (1,040 lines)
-│   │   ├── award_search.go     # Flight awards (698 lines)
-│   │   └── optimizer.go        # Card ranking (305 lines)
-│   ├── repo/                    # 7 database access layers
-│   ├── model/types.go           # 100+ struct definitions
-│   ├── middleware/              # JWT, rate limiting, CORS, logging
-│   ├── cache/                   # Redis integration
-│   └── knowledge/               # YAML knowledge bases
+│   ├── handler/                 # 37 HTTP handlers — masked errors via jsonMaskedError
+│   ├── service/                 # 40 business-logic files
+│   │   ├── ai.go               # Claude tool-use loop + wallet context (~1,100 LOC)
+│   │   ├── trip.go             # Trip planner (~1,100 LOC; Apify-priming aware)
+│   │   ├── award_search.go     # Live award + economy-baseline (~760 LOC)
+│   │   └── optimizer.go        # Card ranking (305 LOC)
+│   ├── repo/                    # 20 pgx-backed repositories
+│   ├── model/types.go           # Shared DTOs
+│   ├── middleware/              # JWT, CSRF, ratelimit (token bucket), bodylimit,
+│   │                            # session_owner, RequireAdmin, RequirePro, HTTPRequestLogger
+│   ├── cache/                   # Redis (wallet, valuations, award search, multipliers)
+│   ├── quota/                   # Monthly INCR counter for SerpAPI / Apify / Tavily
+│   ├── metrics/                 # expvar-backed counters surfaced at /admin/metrics
+│   ├── health/                  # Apify smoke check (6h)
+│   └── knowledge/               # YAML knowledge bases (rewards + strategies)
 ├── frontend/                    # Next.js 16 app
-│   ├── app/                     # 18+ page routes
-│   ├── components/              # UI + feature components
+│   ├── app/                     # 22 page routes (incl. pro-tools, trip-planner)
+│   ├── components/
+│   │   ├── editorial/          # PaperTile + EmptyState (unified empty-state primitive)
+│   │   ├── pro-tools/          # 14 extracted Pro Tools tiles + PersonalStrip
+│   │   └── trip-planner/       # SourceBadge, SegmentDetails, WalletAffordPill, LoadingPills
 │   └── contexts/                # Session, Auth, Wallet, Sidebar
-├── migrations/                  # 9 PostgreSQL migrations
+├── migrations/                  # 34 PostgreSQL migrations (matched up/down pairs)
+├── docs/
+│   └── DEPLOY.md                # Production runbook
+├── BRAND.md                     # Brand voice + banned-word list + palette
+├── SECURITY.md                  # Threat model + defense layers
+├── SHIP.md                      # Single-page deployment checklist
+├── Dockerfile                   # Multi-stage; runs as USER 10001:10001
 ├── Makefile                     # Build & run commands
-└── docker-compose.yml           # PostgreSQL + Redis
+└── docker-compose.yml           # Local PostgreSQL + Redis
 ```
 
 </details>
@@ -217,6 +268,19 @@ cd frontend && npm run lint
 ```
 
 ---
+
+## Production Operations
+
+| Concern | Where |
+|---|---|
+| Deploy runbook | [`SHIP.md`](SHIP.md) — 10 ordered steps from infra to smoke |
+| Threat model + defense layers | [`SECURITY.md`](SECURITY.md) |
+| Brand voice / banned-word list | [`BRAND.md`](BRAND.md) |
+| Detailed env vars + topology | [`docs/DEPLOY.md`](docs/DEPLOY.md) |
+| In-process metrics | `GET /api/v1/admin/metrics` (admin-gated) |
+| External API quota dashboard | `GET /api/v1/admin/quota` (admin-gated) |
+| Push fresh CPP values | `POST /api/v1/admin/valuations` (admin-gated) |
+| CI gates | `go vet`, `golangci-lint`, `go test -race`, `govulncheck`, `next build`, `npm audit`, Docker non-root verification |
 
 ## How the Optimizer Works
 

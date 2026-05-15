@@ -1,0 +1,43 @@
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -1,3 +1,12 @@
++// Wave 1 chat-history patch:
++//   1. Switch chatH construction to NewChatHandlerWithRepo so the chat repo
++//      is plumbed in for authenticated persistence.
++//   2. Register two new JWT-required routes:
++//        GET /chat/conversations
++//        GET /chat/conversations/{id}/messages
++//
++// Apply with `git apply .planning/wave1-chat-routes-patch.diff` from the repo
++// root. Do NOT apply during the same release as migration 000034 unless the
++// migration has already been deployed — the handler short-circuits on a nil
++// repo so an early deploy is safe, but the routes will 503 until migrated.
+ package main
+
+@@ -179,7 +188,9 @@
+ 	devalH := handler.NewDevaluationHandler(devalSvc)
+
+-	chatH := handler.NewChatHandler(aiSvc, rdb, walletRepo)
++	// Persistence-aware chat handler — anonymous users stay ephemeral, only
++	// authenticated users get rows in chat_conversations / chat_messages.
++	chatRepo := repo.NewChatRepo(db)
++	chatH := handler.NewChatHandlerWithRepo(aiSvc, rdb, walletRepo, chatRepo)
+
+ 	// ── Router ────────────────────────────────────────────────────────────
+ 	r := chi.NewRouter()
+@@ -336,6 +347,15 @@
+ 		r.Group(func(r chi.Router) {
+ 			r.Use(mw.JWTRequired(authSvc))
+ 			r.Use(mw.CSRFProtect)
+ 			r.Post("/auth/logout", authH.Logout)
+@@ -345,6 +365,12 @@
+ 			r.Post("/auth/verify-email/send", emailVerifyH.SendVerification)
+ 			r.Post("/billing/checkout", billingH.CreateCheckout)
++
++			// Chat history — authenticated users only. Anonymous chat continues
++			// to work via /chat and /chat/stream above; it just isn't persisted.
++			r.Get("/chat/conversations", chatH.ListConversations)
++			r.Get("/chat/conversations/{id}/messages", chatH.GetMessages)
+ 		})
+
+ 		// ── Wallet-owner routes ─────────────────────────────────────────

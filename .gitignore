@@ -35,3 +35,10 @@ pgdata/
 # frontend/public/brand/ for runtime assets)
 /design/
 SESSION-BRIEF.pdf
+
+# Stray compiled worker binary (use `make worker-build` to bin/worker instead)
+/worker
+
+# Python bytecode caches
+__pycache__/
+*.pyc

@@ -1,0 +1,28 @@
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -159,7 +159,7 @@
+ 	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
+
+ 	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, kb)
+-	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb)
++	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb, redisCache)
+
+ 	aiSvc := service.NewAIService(
+ 		getEnv("ANTHROPIC_API_KEY", ""),
+
+# NOTE TO ORCHESTRATOR:
+# When this phase was authored, cmd/api/main.go was already partially modified
+# (presumably by a previous wave) to wire up:
+#   - quotaClient := quota.New(rdb)
+#   - serpSvc with quotaClient
+#   - adminEmails via splitCSV(getEnv("ADMIN_EMAILS", ""))
+#   - adminValuationH := handler.NewAdminValuationHandler(valuationRepo, redisCache)
+#   - adminQuotaH    := handler.NewAdminQuotaHandler(quotaClient)
+#   - /admin/valuations + /admin/quota routes under JWTRequired + RequireAdmin
+#
+# The ONLY remaining change required to compile is the one above:
+# pass redisCache into NewAwardSearchService so the new AwardCache parameter
+# (added in this wave to internal/service/award_search.go) is satisfied.
+#
+# If main.go regresses to a clean state, apply the FULL set of changes documented
+# in the project plan — every other addition is already present in main.go today.

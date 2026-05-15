@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "MapleRewards — Best Card per Swipe",
+  "short_name": "MapleRewards",
+  "version": "0.1.0",
+  "description": "Tells you the best Canadian credit card to use on every checkout — in CAD, with caps and transfer partners baked in.",
+  "permissions": ["storage", "activeTab", "tabs"],
+  "host_permissions": [
+    "http://localhost:8080/*",
+    "https://maplerewards.ca/*",
+    "https://*.maplerewards.ca/*"
+  ],
+  "action": {
+    "default_title": "MapleRewards",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.amazon.ca/*",
+        "*://*.bestbuy.ca/*",
+        "*://*.indigo.ca/*",
+        "*://*.sephora.com/*",
+        "*://*.well.ca/*",
+        "*://*.metro.ca/*",
+        "*://*.sobeys.com/*",
+        "*://*.iga.net/*",
+        "*://*.loblaws.ca/*",
+        "*://*.nofrills.ca/*",
+        "*://*.realcanadiansuperstore.ca/*",
+        "*://*.shoppersdrugmart.ca/*",
+        "*://*.costco.ca/*",
+        "*://*.walmart.ca/*",
+        "*://*.canadiantire.ca/*",
+        "*://*.uber.com/*",
+        "*://*.ubereats.com/*",
+        "*://*.skipthedishes.com/*",
+        "*://*.doordash.com/*",
+        "*://*.aircanada.com/*",
+        "*://*.westjet.com/*",
+        "*://*.expedia.ca/*",
+        "*://*.booking.com/*",
+        "*://*.marriott.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

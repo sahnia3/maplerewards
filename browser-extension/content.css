@@ -1,0 +1,95 @@
+/* MapleRewards content-script overlay.
+ *
+ * All styles are intentionally namespaced under #__maplerewards_root__ to
+ * avoid leaking into the host page. We use Inter / system fonts to match
+ * the web app's editorial-but-modern aesthetic without shipping a font file.
+ */
+
+#__maplerewards_root__ {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 2147483647; /* topmost; lots of e-com sites have their own z-spam */
+  font-family: ui-sans-serif, system-ui, "Segoe UI", -apple-system, sans-serif;
+  pointer-events: none;
+}
+
+#__maplerewards_root__ .mr-card {
+  pointer-events: auto;
+  background: #fff;
+  color: #15151a;
+  border: 1px solid rgba(20, 20, 28, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px -8px rgba(20, 20, 28, 0.18);
+  padding: 14px 16px;
+  width: 320px;
+  position: relative;
+  animation: mr-pop 220ms ease;
+}
+
+#__maplerewards_root__ .mr-card--muted {
+  background: #fafafa;
+}
+
+#__maplerewards_root__ .mr-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #c0392b; /* maple red */
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+#__maplerewards_root__ .mr-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  color: #15151a;
+}
+
+#__maplerewards_root__ .mr-sub {
+  font-size: 12px;
+  color: #5b5b66;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+#__maplerewards_root__ .mr-warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(192, 57, 43, 0.08);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  color: #8a2419;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#__maplerewards_root__ .mr-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+#__maplerewards_root__ .mr-dismiss:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #15151a;
+}
+
+#__maplerewards_root__ .mr-card a {
+  color: #c0392b;
+}
+
+@keyframes mr-pop {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
