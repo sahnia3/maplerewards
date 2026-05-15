@@ -75,16 +75,83 @@ var feedSources = []feedSource{
 }
 
 const (
-	feedCacheKey  = "articles:v2"
+	feedCacheKey  = "articles:v3"
 	feedCacheTTL  = 2 * time.Hour
 	feedMaxItems  = 80
 	feedFetchTime = 10 * time.Second
 )
 
+// ── Relevance gate ───────────────────────────────────────────────────────────
+//
+// The source list (Doctor of Credit, The Points Guy, View From The Wing, OMAAT,
+// even rewards subreddits) publishes a lot of content that has nothing to do
+// with credit-card rewards: airline cancellations, gift-card store promos
+// (Kroger / Chipotle / White Castle), tax advice, banking trivia. We aggregate
+// these sources because they ALSO cover cards/points well — but every item
+// must pass the relevance gate before it makes it into the feed.
+//
+// Two positive lists. An article qualifies if it matches at least one of:
+//   1) cardKeywords  — issuer brands, card product names, "credit card", etc.
+//   2) pointsKeywords — loyalty program names, "miles", "redeem", "transfer", etc.
+// Anything matching neither is dropped at aggregation time.
+
+var (
+	cardKeywords = regexp.MustCompile(`(?i)` + strings.Join([]string{
+		// Generic vocabulary
+		`\bcredit\s+card`, `\brewards?\s+card`, `\bcharge\s+card`,
+		`\bannual\s+fee`, `\bwelcome\s+bonus`, `\bsign[-\s]?up\s+bonus`, `\bSUB\b`,
+		`\bsignup\s+offer`, `\bpublic\s+offer`, `\btargeted\s+offer`, `\belevated\s+offer`,
+		`\bcashback\b`, `\bcash\s+back\b`, `\bearn\s+rate`, `\bmultiplier`,
+		`\bminimum\s+spend`, `\bspend\s+threshold`,
+		`\bcategory\s+cap`, `\bspend\s+cap`,
+		`\b\d+\s*x\s+(?:points?|miles?)`,
+		// Canadian issuer brands
+		`\bRBC\b`, `\bTD\b`, `\bBMO\b`, `\bCIBC\b`, `\bScotia(?:bank)?\b`,
+		`\bNational\s+Bank`, `\bDesjardins\b`, `\bMBNA\b`, `\bTangerine\b`,
+		`\bSimplii\b`, `\bRogers\s+Bank`, `\bBrim\b`, `\bPC\s+Financial`,
+		`\bCanadian\s+Tire\s+(?:Triangle|Mastercard)`,
+		// US issuer brands (still relevant — many users transfer/value)
+		`\bAmex\b`, `\bAmerican\s+Express`, `\bChase\b`, `\bCiti\b`, `\bCapital\s+One`,
+		`\bWells\s+Fargo`, `\bUS\s+Bank`, `\bBarclays\b`, `\bSynchrony`,
+		// Major card product names
+		`\bCobalt\b`, `\bAventura\b`, `\bAvion\b`, `\bInfinite\b`,
+		`\bWorld\s+Elite`, `\bPlatinum\b`, `\bSapphire\b`, `\bMomentum\b`,
+		`\bPassport\b`, `\bGold\s+Card`, `\bGold\s+Rewards`,
+		`\bAir\s+Miles\b`, `\bPC\s+Optimum`, `\bCostco\s+Mastercard`,
+	}, "|"))
+
+	pointsKeywords = regexp.MustCompile(`(?i)` + strings.Join([]string{
+		// Program names
+		`\bAeroplan\b`, `\bAir\s+Canada\s+(?:Rewards|Vacations|Bistro)`,
+		`\bSPG\b`, `\bMarriott\s+Bonvoy`, `\bBonvoy\b`,
+		`\bHyatt\b`, `\bHilton\s+Honors`, `\bIHG\s+One\s+Rewards?`, `\bAccor\s+Live`,
+		`\bUnited\s+MileagePlus`, `\bDelta\s+SkyMiles?`, `\bAmerican\s+AAdvantage`,
+		`\bAlaska\s+Mileage(?:\s+Plan)?`, `\bJetBlue\s+TrueBlue`,
+		`\bSouthwest\s+Rapid\s+Rewards?`, `\bBritish\s+Airways?\s+(?:Avios|Executive)`,
+		`\bAvios\b`, `\bSingapore\s+KrisFlyer`, `\bANA\s+Mileage`,
+		`\bLifeMiles?\b`, `\bFlying\s+Blue`, `\bTAP\s+Miles`, `\bVirgin\s+(?:Red|Atlantic)`,
+		`\bWestJet\s+Rewards?`, `\bScene\s*\+`, `\bScene\b\+`, `\bMembership\s+Rewards`, `\bMR\s+(?:points|transfer|rate)`,
+		`\bUltimate\s+Rewards`, `\bThankYou\s+(?:points|rewards)`, `\bVenture\s+Miles`,
+		// Generic
+		`\bpoints?\s+transfer`, `\btransfer\s+partner`, `\bredeem(?:ed|ing)?\s+(?:points?|miles?)`,
+		`\bsweet\s+spot`, `\baward\s+(?:chart|space|seat|booking|sale)`,
+		`\bpoints?\s+devalu`, `\bmiles?\s+devalu`,
+		`\bCPP\b`, `\bcents?\s+per\s+(?:point|mile)`,
+		`\bSQC\b`, `\bstatus\s+qualifying`,
+		`\belite\s+status`, `\b(?:loyalty|frequent\s+flyer)\s+program`,
+		`\bbuy\s+points?`, `\bpoints?\s+sale`, `\bmiles?\s+bonus`,
+	}, "|"))
+)
+
+func isCardRelevant(title, summary string) bool {
+	combined := title + " " + summary
+	return cardKeywords.MatchString(combined) || pointsKeywords.MatchString(combined)
+}
+
 // ── Category classification ──────────────────────────────────────────────────
 // Cheap keyword-based bucketing on title + summary. The first category
-// whose keywords match wins. Default is "news". The categories map 1:1
-// to the filter pills on the frontend.
+// whose keywords match wins. Default for relevant-but-uncategorized articles
+// is "news". The categories map 1:1 to the filter pills on the frontend.
 
 type category struct {
 	slug     string
@@ -93,8 +160,8 @@ type category struct {
 
 var feedCategories = []category{
 	{"devaluation", regexp.MustCompile(`(?i)\b(devalu|sunset|retired?|dropped|cut|reduce[sd]?|nerf|worse|losing|losing\s+value|increase[sd]?\s+award)\b`)},
-	{"bonus",       regexp.MustCompile(`(?i)\b(welcome\s+bonus|sign[-\s]?up\s+bonus|sub|elevated|increased\s+offer|public\s+offer|new\s+highest|targeted|best\s+ever)\b`)},
-	{"offer",       regexp.MustCompile(`(?i)\b(promotion|offer|cashback|points?\s+earn|earn\s+points?|rebate|discount|deal|coupon|amex\s+offer)\b`)},
+	{"bonus",       regexp.MustCompile(`(?i)\b(welcome\s+bonus|sign[-\s]?up\s+bonus|\bSUB\b|elevated|increased\s+offer|public\s+offer|new\s+highest|targeted|best\s+ever)\b`)},
+	{"offer",       regexp.MustCompile(`(?i)\b(promotion|cashback|points?\s+earn|earn\s+points?|rebate|amex\s+offer|points?\s+sale|bonus\s+points?)\b`)},
 	{"guide",       regexp.MustCompile(`(?i)\b(guide|how\s+to|review|comparison|vs\.?\s|sweet\s+spot|best\s+way)\b`)},
 }
 
@@ -314,6 +381,13 @@ func parseRSS(body []byte, sourceName string) []FeedArticle {
 		}
 		title := htmlTextOnly(item.Title)
 		summary := excerpt(item.Description, item.Content)
+		/* Relevance gate — drop items unrelated to credit cards / points
+		 * BEFORE they get aggregated. Source blogs publish lots of
+		 * adjacent content (airline operational news, retail gift-card
+		 * promos) that we don't want surfacing here. */
+		if !isCardRelevant(title, summary) {
+			continue
+		}
 		published := parseFeedDate(item.PubDate)
 
 		image := firstNonEmpty(item.Media.URL, item.Thumbnail.URL)
@@ -367,6 +441,10 @@ func parseAtom(body []byte, sourceName string) []FeedArticle {
 
 		title := htmlTextOnly(entry.Title)
 		summary := excerpt(entry.Summary, entry.Content)
+		/* Same relevance gate as RSS path — credit-card/points only. */
+		if !isCardRelevant(title, summary) {
+			continue
+		}
 		dateStr := entry.Published
 		if dateStr == "" {
 			dateStr = entry.Updated
