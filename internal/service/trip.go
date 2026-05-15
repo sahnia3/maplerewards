@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
+	"maplerewards/internal/cache"
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
 )
@@ -23,6 +26,8 @@ type TripService struct {
 	transferRepo TransferRepository
 	tavilySvc    *TavilyService
 	flightSvc    *SerpAPIService
+	apifySvc     *ApifyAwardService // optional; nil disables live award probes
+	cache        *cache.Cache       // optional; nil disables Apify probe caching
 	kb           *knowledge.KnowledgeBase
 }
 
@@ -32,6 +37,8 @@ func NewTripService(
 	transferRepo TransferRepository,
 	tavilySvc *TavilyService,
 	flightSvc *SerpAPIService,
+	apifySvc *ApifyAwardService,
+	cacheClient *cache.Cache,
 	kb *knowledge.KnowledgeBase,
 ) *TripService {
 	return &TripService{
@@ -40,6 +47,8 @@ func NewTripService(
 		transferRepo: transferRepo,
 		tavilySvc:    tavilySvc,
 		flightSvc:    flightSvc,
+		apifySvc:     apifySvc,
+		cache:        cacheClient,
 		kb:           kb,
 	}
 }
@@ -435,7 +444,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 	// ── Direct redemption options ───────────────────────────────────────
 	for _, pb := range programMap {
 		ptReq, propertyName, hotelCat, propertyCash := s.resolvePointsRequired(
-			pb.programSlug, req.Origin, req.Destination, cabin, req.TripType)
+			ctx, pb.programSlug, req.Origin, req.Destination, cabin, req.TripType, req.Date)
 		if ptReq <= 0 {
 			continue
 		}
@@ -521,7 +530,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 			}
 
 			ptReq, propertyName, hotelCat, propertyCash := s.resolvePointsRequired(
-				edge.toProgramSlug, req.Origin, req.Destination, cabin, req.TripType)
+				ctx, edge.toProgramSlug, req.Origin, req.Destination, cabin, req.TripType, req.Date)
 			if ptReq <= 0 {
 				continue
 			}
@@ -606,7 +615,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 // Returns (ptsPerUnit, propertyName, hotelCategory, cashCADPerUnit).
 // ptsPerUnit is one-way per person (flights) or per night (hotels).
 
-func (s *TripService) resolvePointsRequired(slug, origin, dest, cabin, tripType string) (int64, string, int, float64) {
+func (s *TripService) resolvePointsRequired(ctx context.Context, slug, origin, dest, cabin, tripType, date string) (int64, string, int, float64) {
 	if s.kb == nil {
 		return 0, "", 0, 0
 	}
@@ -616,11 +625,31 @@ func (s *TripService) resolvePointsRequired(slug, origin, dest, cabin, tripType 
 	if tripType == "hotel" {
 		return s.resolveHotelPoints(key, dest, cabin)
 	}
-	return s.resolveFlightPoints(key, slug, origin, dest, cabin)
+	return s.resolveFlightPoints(ctx, key, slug, origin, dest, cabin, date)
 }
 
-// resolveFlightPoints looks up flight award pricing from the knowledge base.
-func (s *TripService) resolveFlightPoints(yamlKey, slug, origin, dest, cabin string) (int64, string, int, float64) {
+// resolveFlightPoints looks up flight award pricing. For Aeroplan with a live
+// Apify integration wired and a 24h-warm cache, returns the cheapest probed
+// point cost — that's strictly more accurate than zone-chart estimates which
+// can't see dynamic pricing. Cold misses fall back to the static chart and
+// trigger a background prime so the next call (theirs or a different user's
+// same route) reads live data.
+//
+// `date` (YYYY-MM-DD) drives the cache key and Apify scrape window. Empty
+// date skips the live path entirely — the existing zone-chart logic is the
+// only sensible answer when the caller doesn't know when they're flying.
+func (s *TripService) resolveFlightPoints(ctx context.Context, yamlKey, slug, origin, dest, cabin, date string) (int64, string, int, float64) {
+	// Live-data fast path: Aeroplan only for v1, where Apify coverage is good.
+	if (yamlKey == "aeroplan" || slug == "aeroplan") && date != "" && s.cache != nil && s.apifySvc != nil && s.apifySvc.IsAvailable() {
+		if pts, ok, _ := s.cache.GetApifyFlightMinPoints(ctx, "aeroplan", origin, dest, date, cabin); ok && pts > 0 {
+			return int64(pts), "", 0, 0
+		}
+		// Cache cold — kick off background prime so future calls are warm.
+		// Use a fresh context: the request's ctx dies when EvaluateTrip
+		// returns, and Apify takes 60-120s to complete.
+		go s.primeApifyFlightProbe(origin, dest, date, cabin)
+	}
+
 	// 1. Try exact route match from kb.Flights
 	for _, f := range s.kb.Flights {
 		if !strings.EqualFold(f.From, origin) || !strings.EqualFold(f.To, dest) {
@@ -681,6 +710,69 @@ func (s *TripService) resolveFlightPoints(yamlKey, slug, origin, dest, cabin str
 		return int64(pts), "", 0, 0
 	}
 	return 0, "", 0, 0
+}
+
+// primeApifyFlightProbe runs an Apify scrape for the given route/cabin/date,
+// finds the cheapest result, and writes it to the 24h cache. Best-effort;
+// failures are logged and discarded — the cache simply stays cold so the next
+// caller falls through to the static chart again.
+//
+// Designed to run in its own goroutine kicked off from resolveFlightPoints;
+// uses its own background context with a 3-minute ceiling because Apify
+// actor runs commonly take 60-120s.
+func (s *TripService) primeApifyFlightProbe(origin, dest, date, cabin string) {
+	// Background goroutine: a panic here would crash the entire API process
+	// because the parent http handler has already returned. Recover and log.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("[trip-apify-prime] panic recovered",
+				"err", r, "origin", origin, "dest", dest, "date", date, "cabin", cabin)
+		}
+	}()
+	if s.apifySvc == nil || s.cache == nil || !s.apifySvc.IsAvailable() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// Apify can't scrape dates more than 60 days out — gate before paying for
+	// an actor run that will just return an error.
+	if t, err := time.Parse("2006-01-02", date); err == nil {
+		if t.Before(time.Now()) || t.After(time.Now().AddDate(0, 0, 60)) {
+			return
+		}
+	}
+
+	items, err := s.apifySvc.SearchAwards(ctx, origin, dest, date, date, cabin, []string{"aeroplan"})
+	if err != nil {
+		slog.Warn("[trip-apify-prime] scrape failed",
+			"origin", origin, "dest", dest, "date", date, "cabin", cabin, "err", err)
+		return
+	}
+
+	min := 0
+	for _, it := range items {
+		if it.MileageCost <= 0 {
+			continue
+		}
+		if min == 0 || it.MileageCost < min {
+			min = it.MileageCost
+		}
+	}
+	if min == 0 {
+		// No availability — don't poison the cache with zero; let it expire
+		// naturally so subsequent searches retry.
+		slog.Info("[trip-apify-prime] no live availability",
+			"origin", origin, "dest", dest, "date", date, "cabin", cabin)
+		return
+	}
+
+	if err := s.cache.SetApifyFlightMinPoints(ctx, "aeroplan", origin, dest, date, cabin, min, 24*time.Hour); err != nil {
+		slog.Warn("[trip-apify-prime] cache set failed", "err", err)
+		return
+	}
+	slog.Info("[trip-apify-prime] primed",
+		"origin", origin, "dest", dest, "date", date, "cabin", cabin, "min_points", min)
 }
 
 // resolveHotelPoints looks up hotel points pricing from the knowledge base.
@@ -995,6 +1087,13 @@ func (s *TripService) fetchFlightPrices(ctx context.Context, req model.TripReque
 				wg.Add(1)
 				go func(s2 string) {
 					defer wg.Done()
+					// Tavily / price-extract can panic on weird HTML; survive it.
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("[trip] tavily-price goroutine panic recovered",
+								"err", r, "program", s2)
+						}
+					}()
 					airline := airlineForProgram[s2]
 					// Specific query targeting actual ticket prices, not blog posts
 					query := fmt.Sprintf("%s %s class one way %s to %s cash fare price CAD booking",

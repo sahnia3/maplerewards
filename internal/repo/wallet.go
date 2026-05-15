@@ -32,7 +32,7 @@ func (r *WalletRepo) GetUserBySession(ctx context.Context, sessionID string) (*m
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, `
 		SELECT id, email, session_id, created_at
-		FROM users WHERE session_id = $1
+		FROM users WHERE session_id = $1 AND deleted_at IS NULL
 	`, sessionID).Scan(&u.ID, &u.Email, &u.SessionID, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil

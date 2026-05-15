@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +23,10 @@ func (r *CardRepo) ListCards(ctx context.Context) ([]model.Card, error) {
 		SELECT
 			c.id, c.name, c.issuer, c.network, c.loyalty_program_id,
 			c.annual_fee, c.welcome_bonus_points, c.welcome_bonus_min_spend,
-			c.welcome_bonus_months, c.is_active, c.created_at,
+			c.welcome_bonus_months,
+			c.welcome_bonus_offer_expires_at, c.welcome_bonus_offer_source,
+			c.affiliate_url,
+			c.is_active, c.created_at,
 			lp.id, lp.name, lp.slug, lp.currency_name, lp.program_type,
 			lp.base_cpp, lp.is_active, lp.updated_at
 		FROM cards c
@@ -38,16 +42,24 @@ func (r *CardRepo) ListCards(ctx context.Context) ([]model.Card, error) {
 	var cards []model.Card
 	for rows.Next() {
 		var c model.Card
+		var offerExpiresAt *time.Time
 		c.LoyaltyProgram = &model.LoyaltyProgram{}
 		if err := rows.Scan(
 			&c.ID, &c.Name, &c.Issuer, &c.Network, &c.LoyaltyProgramID,
 			&c.AnnualFee, &c.WelcomeBonusPoints, &c.WelcomeBonusMinSpend,
-			&c.WelcomeBonusMonths, &c.IsActive, &c.CreatedAt,
+			&c.WelcomeBonusMonths,
+			&offerExpiresAt, &c.WelcomeBonusOfferSource,
+			&c.AffiliateURL,
+			&c.IsActive, &c.CreatedAt,
 			&c.LoyaltyProgram.ID, &c.LoyaltyProgram.Name, &c.LoyaltyProgram.Slug,
 			&c.LoyaltyProgram.CurrencyName, &c.LoyaltyProgram.ProgramType,
 			&c.LoyaltyProgram.BaseCPP, &c.LoyaltyProgram.IsActive, &c.LoyaltyProgram.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if offerExpiresAt != nil {
+			s := offerExpiresAt.Format("2006-01-02")
+			c.WelcomeBonusOfferExpiresAt = &s
 		}
 		cards = append(cards, c)
 	}
@@ -56,26 +68,43 @@ func (r *CardRepo) ListCards(ctx context.Context) ([]model.Card, error) {
 
 func (r *CardRepo) GetCard(ctx context.Context, id string) (*model.Card, error) {
 	c := &model.Card{LoyaltyProgram: &model.LoyaltyProgram{}}
+	var offerExpiresAt *time.Time
+	// Accept either a UUID OR a name-derived slug (lower-case, spaces→dashes).
+	// The cards table doesn't have a dedicated slug column, so we derive one
+	// inline. This unlocks readable URLs like /compare/amex-cobalt/scotia-gold
+	// without a migration.
 	err := r.db.QueryRow(ctx, `
 		SELECT
 			c.id, c.name, c.issuer, c.network, c.loyalty_program_id,
 			c.annual_fee, c.welcome_bonus_points, c.welcome_bonus_min_spend,
-			c.welcome_bonus_months, c.is_active, c.created_at,
+			c.welcome_bonus_months,
+			c.welcome_bonus_offer_expires_at, c.welcome_bonus_offer_source,
+			c.affiliate_url,
+			c.is_active, c.created_at,
 			lp.id, lp.name, lp.slug, lp.currency_name, lp.program_type,
 			lp.base_cpp, lp.is_active, lp.updated_at
 		FROM cards c
 		JOIN loyalty_programs lp ON lp.id = c.loyalty_program_id
-		WHERE c.id = $1
+		WHERE c.id::text = $1
+		   OR lower(regexp_replace(c.name, '[^a-zA-Z0-9]+', '-', 'g')) = lower($1)
+		LIMIT 1
 	`, id).Scan(
 		&c.ID, &c.Name, &c.Issuer, &c.Network, &c.LoyaltyProgramID,
 		&c.AnnualFee, &c.WelcomeBonusPoints, &c.WelcomeBonusMinSpend,
-		&c.WelcomeBonusMonths, &c.IsActive, &c.CreatedAt,
+		&c.WelcomeBonusMonths,
+		&offerExpiresAt, &c.WelcomeBonusOfferSource,
+		&c.AffiliateURL,
+		&c.IsActive, &c.CreatedAt,
 		&c.LoyaltyProgram.ID, &c.LoyaltyProgram.Name, &c.LoyaltyProgram.Slug,
 		&c.LoyaltyProgram.CurrencyName, &c.LoyaltyProgram.ProgramType,
 		&c.LoyaltyProgram.BaseCPP, &c.LoyaltyProgram.IsActive, &c.LoyaltyProgram.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if offerExpiresAt != nil {
+		s := offerExpiresAt.Format("2006-01-02")
+		c.WelcomeBonusOfferExpiresAt = &s
 	}
 	return c, nil
 }

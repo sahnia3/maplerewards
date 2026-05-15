@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"net/http"
 
+	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/model"
 	"maplerewards/internal/service"
 )
 
 // AwardSearchHandler handles POST /api/v1/trip/award-search.
 type AwardSearchHandler struct {
-	svc *service.AwardSearchService
+	svc           *service.AwardSearchService
+	sessionLookup mw.SessionOwnerLookup // may be nil in tests
 }
 
-// NewAwardSearchHandler creates the handler.
-func NewAwardSearchHandler(svc *service.AwardSearchService) *AwardSearchHandler {
-	return &AwardSearchHandler{svc: svc}
+// NewAwardSearchHandler requires a session-owner lookup (pass nil in tests).
+// Positional argument closes the IDOR variadic-fallback footgun.
+func NewAwardSearchHandler(svc *service.AwardSearchService, sessionLookup mw.SessionOwnerLookup) *AwardSearchHandler {
+	return &AwardSearchHandler{svc: svc, sessionLookup: sessionLookup}
 }
 
 // Search handles the award search request.
@@ -28,6 +31,13 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	if req.SessionID == "" {
 		jsonError(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+
+	// Body-sessionID IDOR fix: the search loads wallet balances so the
+	// "can_afford" badge is per-user. Without this, a logged-in user could
+	// peek at any wallet's balance distribution.
+	if !requireBodySessionOwner(w, r, h.sessionLookup, req.SessionID) {
 		return
 	}
 	if req.Origin == "" {
@@ -51,7 +61,7 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	results, err := h.svc.Search(r.Context(), req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonInternalError(w, "award_search.search", err)
 		return
 	}
 

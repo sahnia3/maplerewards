@@ -62,6 +62,17 @@ func (c *ApifySmokeChecker) Start(ctx context.Context) {
 }
 
 func (c *ApifySmokeChecker) loop(ctx context.Context) {
+	// Recover at the loop level — a panic in runOnce (e.g., a downstream
+	// nil-deref in the award search path) would otherwise terminate the
+	// entire API process, which we saw happen ~1 minute after each restart.
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("[apify-smoke] loop panic recovered, checker disabled",
+				"panic", rec,
+			)
+		}
+	}()
+
 	// Initial delay so the smoke check doesn't fire during application startup
 	// while the rest of the system is still warming caches.
 	timer := time.NewTimer(90 * time.Second)
@@ -74,7 +85,18 @@ func (c *ApifySmokeChecker) loop(ctx context.Context) {
 		case <-timer.C:
 		}
 
-		c.runOnce(ctx)
+		// Wrap each tick in its own recover so one bad run doesn't kill the
+		// loop — we want continuous monitoring even if one search panics.
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Error("[apify-smoke] runOnce panic recovered",
+						"panic", rec,
+					)
+				}
+			}()
+			c.runOnce(ctx)
+		}()
 		timer.Reset(c.interval)
 	}
 }

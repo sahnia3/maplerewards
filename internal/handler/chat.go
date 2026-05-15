@@ -1,34 +1,68 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 
 	mw "maplerewards/internal/middleware"
+	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 	"maplerewards/internal/service"
 )
 
-type ChatHandler struct {
-	svc *service.AIService
-	rdb *redis.Client
+// freeChatMonthlyCap is the per-user monthly cap on AI chat messages for the
+// free tier. Pro users are unlimited (no Redis check). Bumped from 1 to 5
+// as part of the chat-history backed conversations release — users were
+// signing up, burning the single message, and never coming back.
+const freeChatMonthlyCap int64 = 5
+
+// chatRequestBody is the wire shape for /chat and /chat/stream POSTs. It
+// extends service.ChatRequest with an optional conversation_id so authenticated
+// users can append to an existing conversation; absent → create a new one.
+type chatRequestBody struct {
+	service.ChatRequest
+	ConversationID int64 `json:"conversation_id,omitempty"`
 }
 
-func NewChatHandler(svc *service.AIService, rdb ...*redis.Client) *ChatHandler {
-	h := &ChatHandler{svc: svc}
-	if len(rdb) > 0 {
-		h.rdb = rdb[0]
+type ChatHandler struct {
+	svc           *service.AIService
+	rdb           *redis.Client
+	sessionLookup mw.SessionOwnerLookup // may be nil in tests
+	chatRepo      *repo.ChatRepo        // nil disables persistence (e.g. unit tests)
+}
+
+// NewChatHandler keeps a positional signature for unit tests that don't
+// need chat-history persistence. Pass nil for sessionLookup to skip the
+// body-sessionID check in tests. Production wiring goes through
+// NewChatHandlerWithRepo so the conversation repo is plumbed in.
+func NewChatHandler(svc *service.AIService, rdb *redis.Client, sessionLookup mw.SessionOwnerLookup) *ChatHandler {
+	return &ChatHandler{svc: svc, rdb: rdb, sessionLookup: sessionLookup}
+}
+
+// NewChatHandlerWithRepo is the persistence-aware constructor used by cmd/api.
+func NewChatHandlerWithRepo(svc *service.AIService, rdb *redis.Client, sessionLookup mw.SessionOwnerLookup, chatRepo *repo.ChatRepo) *ChatHandler {
+	return &ChatHandler{
+		svc:           svc,
+		rdb:           rdb,
+		sessionLookup: sessionLookup,
+		chatRepo:      chatRepo,
 	}
-	return h
 }
 
 // Chat handles a POST with a user message and returns an AI response.
 func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
-	var req service.ChatRequest
+	var req chatRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -44,9 +78,26 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Body-sessionID IDOR fix: chat injects the wallet context into the
+	// system prompt, so a logged-in user passing another user's session_id
+	// would receive AI responses computed against that user's wallet.
+	if req.SessionID != "" && !requireBodySessionOwner(w, r, h.sessionLookup, req.SessionID) {
+		return
+	}
+
 	// Pro gating: check monthly usage for non-pro users
 	isPro := mw.IsProFromContext(r.Context())
 	userID := mw.UserIDFromContext(r.Context())
+
+	// Anonymous-user spam guard: cap by client IP so an attacker can't burn
+	// our Anthropic budget without ever signing up. Authenticated users are
+	// already gated by the per-user monthly Pro check below; this branch only
+	// fires for userID == "".
+	if !isPro && userID == "" && h.rdb != nil {
+		if !checkAnonymousChatQuota(w, r, h.rdb) {
+			return
+		}
+	}
 
 	if !isPro && h.rdb != nil && userID != "" {
 		month := time.Now().Format("2006-01")
@@ -55,20 +106,29 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		count, err := h.rdb.Get(r.Context(), key).Int64()
 		if err != nil && err != redis.Nil {
 			// Redis error — allow the request but log
-			fmt.Printf("warn: redis get chat usage: %v\n", err)
+			slog.Warn("redis get chat usage failed", "err", err, "user_id", userID)
 		}
 
-		if count >= 1 {
+		if count >= freeChatMonthlyCap {
 			jsonErrorCode(w, "UPGRADE_REQUIRED",
-				"Free users get 1 AI message per month. Upgrade to Pro for unlimited access.",
+				fmt.Sprintf("Free users get %d AI messages per month. Upgrade to Pro for unlimited access.", freeChatMonthlyCap),
 				http.StatusForbidden)
 			return
 		}
 	}
 
-	resp, err := h.svc.ChatWithTools(r.Context(), req, isPro)
+	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro)
 	if err != nil {
-		jsonErrorCode(w, "AI_ERROR", err.Error(), http.StatusInternalServerError)
+		// P0: do NOT leak Anthropic error bodies / tool-call internals to the
+		// client. Log full error server-side, return a stable code + short
+		// message. Specific upstream failures (rate-limit, timeout) get hinted
+		// at by class but not by raw payload.
+		slog.Error("AI chat failed", "err", err, "user_id", userID, "is_pro", isPro)
+		hint := "the AI assistant is having trouble right now — please try again"
+		if strings.Contains(err.Error(), "context deadline") || strings.Contains(err.Error(), "timeout") {
+			hint = "the AI assistant took too long to respond — please try again with a shorter question"
+		}
+		jsonErrorCode(w, "AI_ERROR", hint, http.StatusInternalServerError)
 		return
 	}
 
@@ -81,11 +141,21 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		// Expire at end of next month (safety buffer)
 		pipe.Expire(r.Context(), key, 62*24*time.Hour)
 		if _, err := pipe.Exec(r.Context()); err != nil {
-			fmt.Printf("warn: redis incr chat usage: %v\n", err)
+			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
 		}
 	}
 
-	jsonOK(w, resp)
+	// Persist conversation for authenticated users. Anonymous → no persistence;
+	// they're storage-cheap on Redis quota only. Failures here are non-fatal:
+	// we already have the assistant reply, so we return it even if the DB
+	// write fails (logged).
+	convoID := h.persistChat(r.Context(), userID, req.ConversationID, req.Message, resp.Reply)
+
+	jsonOK(w, map[string]any{
+		"reply":           resp.Reply,
+		"history":         resp.History,
+		"conversation_id": convoID,
+	})
 }
 
 // ChatStream is the Server-Sent Events variant of Chat. The user's question
@@ -104,12 +174,29 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 //   tool_start   {id, name, args}
 //   tool_done    {id, name, summary}
 //   round_end    {round, has_more}
-//   done         {reply, history}
+//   done         {reply, history, conversation_id}
 //   error        {message}
 //
 // Pro gating + monthly usage limits are enforced exactly as in Chat().
 func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
-	var req service.ChatRequest
+	// Recover from panics in the tool-use loop or Apify response decode. Without
+	// this, a single nil-pointer in apify_awards.convertResults brings down the
+	// whole API process, manifesting client-side as ERR_INCOMPLETE_CHUNKED_ENCODING.
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("[chat-stream] panic recovered",
+				"panic", rec,
+				"stack", string(debug.Stack()),
+			)
+			// Best-effort SSE error frame; if w is already closed this is a no-op.
+			if f, ok := w.(http.Flusher); ok {
+				fmt.Fprintf(w, "event: error\ndata: {\"message\":\"internal error — see server logs\"}\n\n")
+				f.Flush()
+			}
+		}
+	}()
+
+	var req chatRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -123,8 +210,20 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Body-sessionID IDOR fix: same reasoning as Chat() above.
+	if req.SessionID != "" && !requireBodySessionOwner(w, r, h.sessionLookup, req.SessionID) {
+		return
+	}
+
 	isPro := mw.IsProFromContext(r.Context())
 	userID := mw.UserIDFromContext(r.Context())
+
+	// Anonymous-IP cap mirrors Chat(): protect Anthropic spend from anonymous spam.
+	if !isPro && userID == "" && h.rdb != nil {
+		if !checkAnonymousChatQuota(w, r, h.rdb) {
+			return
+		}
+	}
 
 	// Pro gating — same logic as Chat() above.
 	if !isPro && h.rdb != nil && userID != "" {
@@ -132,11 +231,11 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		key := fmt.Sprintf("chat_usage:%s:%s", userID, month)
 		count, err := h.rdb.Get(r.Context(), key).Int64()
 		if err != nil && err != redis.Nil {
-			fmt.Printf("warn: redis get chat usage: %v\n", err)
+			slog.Warn("redis get chat usage failed", "err", err, "user_id", userID)
 		}
-		if count >= 1 {
+		if count >= freeChatMonthlyCap {
 			jsonErrorCode(w, "UPGRADE_REQUIRED",
-				"Free users get 1 AI message per month. Upgrade to Pro for unlimited access.",
+				fmt.Sprintf("Free users get %d AI messages per month. Upgrade to Pro for unlimited access.", freeChatMonthlyCap),
 				http.StatusForbidden)
 			return
 		}
@@ -166,8 +265,55 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	resp, err := h.svc.ChatWithToolsStream(r.Context(), req, isPro, emit)
+	// Apify award searches can run 60-120s. Without traffic on the wire,
+	// browsers and reverse proxies cut "idle" SSE connections — that's the
+	// ERR_INCOMPLETE_CHUNKED_ENCODING we saw on prompt 1 during QA.
+	// Emit a comment line every 15s so the connection stays warm.
+	keepaliveCtx, stopKeepalive := context.WithCancel(r.Context())
+	defer stopKeepalive()
+	go func() {
+		// Recover here too — a panic in this goroutine would otherwise kill
+		// the whole API process, since the handler's own recover() can't see
+		// across goroutine boundaries.
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("[chat-stream] keepalive goroutine panic recovered",
+					"panic", rec,
+				)
+			}
+		}()
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-keepaliveCtx.Done():
+				return
+			case <-t.C:
+				mu.Lock()
+				// Re-check ctx after acquiring the lock — the handler may have
+				// returned between the ticker firing and us getting here, in
+				// which case writing to w is unsafe.
+				if keepaliveCtx.Err() != nil {
+					mu.Unlock()
+					return
+				}
+				fmt.Fprint(w, ": keepalive\n\n")
+				flusher.Flush()
+				mu.Unlock()
+			}
+		}
+	}()
+
+	resp, err := h.svc.ChatWithToolsStream(r.Context(), req.ChatRequest, isPro, emit)
 	if err != nil {
+		// Log server-side too — emit() only reaches the client via SSE, and if
+		// the client already disconnected (which produces ctx.Canceled errors),
+		// the SSE write silently no-ops and we lose the error completely.
+		slog.Error("[chat-stream] tool loop failed",
+			"err", err.Error(),
+			"user_id", userID,
+			"ctx_err", r.Context().Err(),
+		)
 		emit("error", map[string]any{"message": err.Error()})
 		return
 	}
@@ -180,12 +326,120 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		pipe.Incr(r.Context(), key)
 		pipe.Expire(r.Context(), key, 62*24*time.Hour)
 		if _, err := pipe.Exec(r.Context()); err != nil {
-			fmt.Printf("warn: redis incr chat usage: %v\n", err)
+			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
 		}
 	}
 
+	// Persist for authenticated users. Use background-context-bounded write so
+	// a client disconnect (r.Context().Err() != nil) doesn't lose the message
+	// — the LLM call already completed, the user paid the token cost, and
+	// they'll want to see it in their history.
+	persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	convoID := h.persistChat(persistCtx, userID, req.ConversationID, req.Message, resp.Reply)
+
 	emit("done", map[string]any{
-		"reply":   resp.Reply,
-		"history": resp.History,
+		"reply":           resp.Reply,
+		"history":         resp.History,
+		"conversation_id": convoID,
 	})
 }
+
+// persistChat writes the user + assistant turn to the chat_messages table for
+// authenticated users. Anonymous users (userID == "") and missing repo are
+// silently skipped — anonymous chat is by design ephemeral.
+//
+// Returns the conversation_id (new or existing) so the caller can echo it
+// back to the client; the client uses it on follow-up turns to keep the
+// thread coherent.
+func (h *ChatHandler) persistChat(ctx context.Context, userID string, conversationID int64, userMsg, assistantReply string) int64 {
+	if userID == "" || h.chatRepo == nil {
+		return 0
+	}
+	convoID := conversationID
+	if convoID == 0 {
+		title := userMsg
+		if len(title) > 60 {
+			title = title[:60]
+		}
+		created, err := h.chatRepo.CreateConversation(ctx, userID, "", title)
+		if err != nil {
+			slog.Warn("chat persist: create conversation failed", "err", err, "user_id", userID)
+			return 0
+		}
+		convoID = created.ID
+	}
+	if err := h.chatRepo.AppendMessage(ctx, convoID, "user", userMsg); err != nil {
+		slog.Warn("chat persist: append user msg failed", "err", err, "conversation_id", convoID)
+	}
+	if err := h.chatRepo.AppendMessage(ctx, convoID, "assistant", assistantReply); err != nil {
+		slog.Warn("chat persist: append assistant msg failed", "err", err, "conversation_id", convoID)
+	}
+	return convoID
+}
+
+// ListConversations returns the authenticated user's chat conversation list,
+// newest first. Limit query param is clamped to [1, 100], default 25.
+func (h *ChatHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
+	if h.chatRepo == nil {
+		jsonError(w, "chat history not available", http.StatusServiceUnavailable)
+		return
+	}
+	userID := mw.UserIDFromContext(r.Context())
+	if userID == "" {
+		jsonError(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	limit := 25
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	convos, err := h.chatRepo.ListConversations(r.Context(), userID, limit)
+	if err != nil {
+		slog.Error("chat list conversations failed", "err", err, "user_id", userID)
+		jsonError(w, "failed to load conversations", http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]any{"conversations": convos})
+}
+
+// GetMessages returns all messages in a specific conversation, oldest first.
+// Owner check is enforced at the SQL layer (GetMessages requires user_id +
+// conversation_id pair); a stranger asking for someone else's conversation
+// gets an empty list rather than a 403, which is acceptable.
+func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
+	if h.chatRepo == nil {
+		jsonError(w, "chat history not available", http.StatusServiceUnavailable)
+		return
+	}
+	userID := mw.UserIDFromContext(r.Context())
+	if userID == "" {
+		jsonError(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		jsonError(w, "invalid conversation id", http.StatusBadRequest)
+		return
+	}
+	msgs, err := h.chatRepo.GetMessages(r.Context(), userID, id)
+	if err != nil {
+		slog.Error("chat get messages failed", "err", err, "user_id", userID, "conversation_id", id)
+		jsonError(w, "failed to load messages", http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]any{
+		"conversation_id": id,
+		"messages":        msgs,
+	})
+}
+
+// Compile-time guard: ensure model.ChatMessage is still the shape persistChat
+// expects. Catches future struct renames at build time.
+var _ = model.ChatMessage{Role: "user", Content: "ping"}

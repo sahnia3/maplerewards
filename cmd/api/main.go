@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -41,21 +40,28 @@ const devJWTFallback = "dev-jwt-secret-change-me-in-production"
 func main() {
 	_ = godotenv.Load()
 
-	// Dual-writer log: stdout (so terminal still shows live output) plus a
-	// rotating-style file so dump-ai-trace.sh can grep recent activity even
-	// when the process is detached. Path overridable via LOG_FILE — default
-	// /tmp/maple-api.log so it survives reboots only on macOS where /tmp
-	// isn't tmpfs by default.
-	logPath := getEnv("LOG_FILE", "/tmp/maple-api.log")
-	logSinks := []io.Writer{os.Stdout}
-	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-		logSinks = append(logSinks, f)
-	}
-	log := slog.New(slog.NewJSONHandler(io.MultiWriter(logSinks...), nil))
+	// Log to stdout only. File logging on a fixed path was a disk-fill DoS
+	// vector (mode 0644, no rotation, potential PII) and broke under container
+	// orchestrators that expect logs on stdout. Operators who want a file sink
+	// should capture stdout via systemd/journald/k8s/docker logging drivers.
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(log)
 
 	// ── Postgres ──────────────────────────────────────────────────────────
-	pool, err := pgxpool.New(context.Background(), mustEnv("DATABASE_URL"))
+	// Explicit pool sizing — pgxpool defaults to GREATEST(4, NumCPU) which
+	// saturates instantly under even modest concurrency. Tunable via env so
+	// we can pin per-environment without recompile.
+	pgxCfg, err := pgxpool.ParseConfig(mustEnv("DATABASE_URL"))
+	if err != nil {
+		log.Error("postgres parse config failed", "err", err)
+		os.Exit(1)
+	}
+	pgxCfg.MaxConns = int32(getEnvInt("DB_MAX_CONNS", 25))
+	pgxCfg.MinConns = int32(getEnvInt("DB_MIN_CONNS", 2))
+	pgxCfg.MaxConnLifetime = time.Duration(getEnvInt("DB_MAX_CONN_LIFETIME_SEC", 3600)) * time.Second
+	pgxCfg.MaxConnIdleTime = time.Duration(getEnvInt("DB_MAX_CONN_IDLE_SEC", 1800)) * time.Second
+	pgxCfg.HealthCheckPeriod = 60 * time.Second
+	pool, err := pgxpool.NewWithConfig(context.Background(), pgxCfg)
 	if err != nil {
 		log.Error("postgres connect failed", "err", err)
 		os.Exit(1)
@@ -102,6 +108,8 @@ func main() {
 	issuerPageRepo := repo.NewIssuerPageRepo(pool)
 	loyaltyAccountRepo := repo.NewLoyaltyAccountRepo(pool)
 	cardOfferRepo := repo.NewCardOfferRepo(pool)
+	affiliateRepo := repo.NewAffiliateRepo(pool)
+	applicationRepo := repo.NewApplicationRepo(pool)
 
 	// ── Services ──────────────────────────────────────────────────────────
 	appEnv := getEnv("APP_ENV", "development")
@@ -152,14 +160,18 @@ func main() {
 	csvImportSvc := service.NewCSVImportService(walletSvc)
 	cardOfferSvc := service.NewCardOfferService(walletRepo, cardOfferRepo)
 	emailVerifyRepo := repo.NewEmailVerifyRepo(pool)
-	emailVerifySvc := service.NewEmailVerifyService(emailVerifyRepo, nil) // nil → LogEmailSender (dev stub)
+	// Single project-wide Mailer. Picks ResendMailer when RESEND_API_KEY is
+	// set, else falls back to LogMailer (logs preview to stdout). All future
+	// notification-rail consumers will share this instance.
+	mailer := service.NewMailerFromEnv()
+	emailVerifySvc := service.NewEmailVerifyService(emailVerifyRepo, mailer)
 
 	// Flight data services: Apify (live awards), SerpAPI (cash prices), Seats.aero (awards, optional)
 	apifySvc := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""))
 	serpSvc := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), quotaClient)
 	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
 
-	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, kb)
+	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, apifySvc, redisCache, kb)
 	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb, redisCache)
 
 	aiSvc := service.NewAIService(
@@ -171,6 +183,8 @@ func main() {
 			Stack:         stackSvc,
 			MissedRewards: missedRewardsSvc,
 			SQC:           sqcSvc,
+			Devaluation:   devalSvc,
+			AwardWatch:    awardWatchSvc,
 		},
 	)
 
@@ -193,12 +207,16 @@ func main() {
 
 	// ── Handlers ──────────────────────────────────────────────────────────
 	cardH := handler.NewCardHandler(cardRepo)
+	affiliateH := handler.NewAffiliateHandler(affiliateRepo, getEnv("FRONTEND_URL", ""))
+	applicationSvc := service.NewApplicationService(applicationRepo, walletRepo, cardRepo)
+	applicationH := handler.NewApplicationHandler(applicationSvc)
 	walletH := handler.NewWalletHandler(walletSvc)
 	optimizerH := handler.NewOptimizerHandler(optimizerSvc, walletRepo)
 	spendH := handler.NewSpendHandler(walletSvc)
 	chatH := handler.NewChatHandlerWithRepo(aiSvc, rdb, walletRepo, chatRepo)
 	adminValuationH := handler.NewAdminValuationHandler(valuationRepo, redisCache)
 	adminQuotaH := handler.NewAdminQuotaHandler(quotaClient)
+	adminMetricsH := handler.NewAdminMetricsHandler()
 	summaryH := handler.NewSummaryHandler(walletRepo, transferRepo)
 	programH := handler.NewProgramHandler(cardRepo, transferRepo)
 	cardDetailH := handler.NewCardDetailHandler(cardRepo, transferRepo)
@@ -224,13 +242,40 @@ func main() {
 	loyaltyAccountH := handler.NewLoyaltyAccountHandler(loyaltyAccountSvc)
 	csvImportH := handler.NewCSVImportHandler(csvImportSvc)
 	cardOfferH := handler.NewCardOfferHandler(cardOfferSvc)
+	compareH := handler.NewCompareHandler(cardRepo, transferRepo)
+
+	// Welcome-bonus Mission Control. Enriches the raw bonus tracker with
+	// velocity, miss-risk projection, and per-card recommendations.
+	wbMissionSvc := service.NewWelcomeBonusMissionService(walletRepo, bonusRepo)
+	wbMissionH := handler.NewWelcomeBonusMissionHandler(wbMissionSvc)
+
+	// Transfer-promo log. Worker populates via the Promo Sentinel sweep;
+	// the public endpoint just reads the latest active rows.
+	transferBonusRepo := repo.NewTransferBonusRepo(pool)
+	transferPromoH := handler.NewTransferPromoHandler(transferBonusRepo)
+
+	// Web push: shared Pusher (WebPushSender when VAPID keys set, else stub),
+	// repo for subscriptions, handler exposing subscribe / unsubscribe / test
+	// / public-key endpoints. Worker reuses the same Pusher to fan out alerts
+	// alongside the email rail.
+	pushRepo := repo.NewPushRepo(pool)
+	pusher := service.NewPusherFromEnv()
+	if !pusher.IsAvailable() {
+		log.Warn("VAPID keys not set — push notifications will be logged only, not delivered")
+	}
+	pushH := handler.NewPushHandler(pushRepo, pusher)
+
 	billingSvc := service.NewBillingService(authRepo)
 	billingH := handler.NewBillingHandler(billingSvc)
 
 	// ── Router ────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// Trusted-proxy CIDR list — comma-separated. Empty means XFF is never
+	// trusted (correct for direct-to-internet). Behind Cloudflare/ALB/Nginx
+	// set TRUSTED_PROXIES to the proxy's IP ranges.
+	trustedProxies := strings.Split(getEnv("TRUSTED_PROXIES", ""), ",")
+	r.Use(mw.TrustedProxyRealIP(trustedProxies))
 	// Structured request log: one slog JSON record per request, tagged with
 	// request_id + user_id + status + bytes. Replaces chi's human-readable
 	// Logger so log aggregation (Loki/Cloudwatch) can parse cleanly.
@@ -312,15 +357,36 @@ func main() {
 		r.Get("/tangerine-categories", tangerineH.List)
 		r.Get("/buy-points/promos", buyPointsH.ListPromos)
 
-		// ── Anonymous-friendly mutation endpoints ───────────────────────
-		// Wallet creation has no sessionID yet — anyone may create one.
-		r.Post("/wallet", walletH.Create)
+		// Web push: VAPID public key is genuinely public — the browser
+		// fetches it before calling PushManager.subscribe(). No auth.
+		r.Get("/push/vapid-public-key", pushH.PublicVAPIDKey)
 
-		// Anonymous-friendly compute endpoints (session_id passed in body;
-		// IDOR for these is mitigated by session-id entropy + future body
-		// ownership checks in the handlers themselves).
-		r.Post("/optimize", optimizerH.GetBestCard)
-		r.Post("/recommend", recommendH.Recommend)
+		// Affiliate redirect — public, logs click + 302s to the affiliate URL.
+		r.Get("/affiliate/click/{cardID}", affiliateH.Click)
+
+		// Side-by-side card comparison. Powers SSG pages at
+		// /compare/[a]/[b]. Both params accept either UUID or slug.
+		r.Get("/compare/{a}/{b}", compareH.Compare)
+
+		// Transfer-bonus promo log (Promo Sentinel output). Public read.
+		r.Get("/transfer-promos/active", transferPromoH.ListActive)
+
+		// ── Anonymous-friendly mutation endpoints (fast — ≤30s) ─────────
+		// These are cheap, in-memory or single-query compute. Wrapped in a
+		// 30s request-context timeout so a slowloris write can't pin the
+		// process for the global 5-min server WriteTimeout.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(30 * time.Second))
+			r.Post("/wallet", walletH.Create)
+			r.Post("/optimize", optimizerH.GetBestCard)
+			r.Post("/recommend", recommendH.Recommend)
+		})
+
+		// ── Long-running compute (chat tool-loop + trip planner) ────────
+		// These legitimately run 60-180s (Apify polling, multi-round LLM
+		// tool calls). They inherit the server WriteTimeout of 5 minutes.
+		// IDOR for these is enforced by requireBodySessionOwner in the
+		// handlers themselves; rate limit + body-size limit still apply.
 		r.Post("/trip/evaluate", tripH.Evaluate)
 		r.Post("/trip/award-search", awardH.Search)
 		r.Post("/chat", chatH.Chat)
@@ -361,10 +427,12 @@ func main() {
 		// ── Authenticated user routes (JWT required + CSRF) ─────────────
 		// Account-mutating routes get CSRF on top of JWT so a malicious site
 		// embedded in a logged-in user's session can't escalate or destroy
-		// the account behind their back.
+		// the account behind their back. 30s request-context timeout — auth
+		// flows (bcrypt + DB write) run in ~200ms; anything longer is bad.
 		r.Group(func(r chi.Router) {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.CSRFProtect)
+			r.Use(middleware.Timeout(30 * time.Second))
 			r.Post("/auth/logout", authH.Logout)
 			r.Get("/auth/me", authH.GetMe)
 			r.Put("/auth/me", authH.UpdateMe)
@@ -372,15 +440,23 @@ func main() {
 			r.Post("/auth/change-password", authH.ChangePassword)
 			r.Post("/auth/verify-email/send", emailVerifyH.SendVerification)
 			r.Post("/billing/checkout", billingH.CreateCheckout)
+
+			// Web push subscription management — any authenticated user can
+			// register/unregister a browser. The Test endpoint is gated to
+			// Pro further down to avoid free-tier abuse.
+			r.Post("/push/subscribe", pushH.Subscribe)
+			r.Delete("/push/subscribe", pushH.Unsubscribe)
 		})
 
 		// ── Wallet-owner routes ─────────────────────────────────────────
 		// RequireSessionOwner permits anonymous wallets (sessionID is the
 		// bearer token) but requires JWT-matching ownership for any wallet
 		// that has been claimed by an authenticated user. Closes the IDOR
-		// class on every {sessionID} path-param route.
+		// class on every {sessionID} path-param route. 30s timeout because
+		// wallet CRUD is fast — anything slower is a query-plan regression.
 		r.Group(func(r chi.Router) {
 			r.Use(mw.RequireSessionOwner(walletRepo))
+			r.Use(middleware.Timeout(30 * time.Second))
 
 			// Wallet read + mutate
 			r.Get("/wallet/{sessionID}", walletH.Get)
@@ -416,6 +492,14 @@ func main() {
 
 			// Devaluation list with personalized "your wallet" flag
 			r.Get("/wallet/{sessionID}/devaluations", devalH.List)
+
+			// Card application tracker + per-card eligibility.
+			// Warns when applying again within an issuer's cooldown window
+			// (RBC 90d, TD 365d, BMO 90d, etc. — see issuer_rules table).
+			r.Get("/wallet/{sessionID}/applications", applicationH.List)
+			r.Post("/wallet/{sessionID}/applications", applicationH.Create)
+			r.Delete("/wallet/{sessionID}/applications/{applicationID}", applicationH.Delete)
+			r.Get("/wallet/{sessionID}/cards/{cardID}/eligibility", applicationH.Eligibility)
 		})
 
 		// ── Pro-tier routes (JWT + Pro required + session ownership) ────
@@ -424,6 +508,7 @@ func main() {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.RequirePro())
 			r.Use(mw.RequireSessionOwner(walletRepo))
+			r.Use(middleware.Timeout(30 * time.Second))
 
 			// Missed-rewards forensics
 			r.Get("/wallet/{sessionID}/missed-rewards", missedH.GetMissedRewards)
@@ -435,7 +520,16 @@ func main() {
 			// 2026 Aeroplan SQC projector
 			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)
 
-			// Aeroplan availability watcher (CRUD only — cron worker deferred)
+			// June 1 2026 Aeroplan long-haul-business chart hike — per-user
+			// dollar exposure projection. Drives the urgency banner.
+			r.Get("/wallet/{sessionID}/devaluation/aeroplan-june-2026", devalH.ProjectAeroplan)
+
+			// Welcome-Bonus Mission Control — velocity + miss-risk report.
+			r.Get("/wallet/{sessionID}/welcome-bonus-mission", wbMissionH.Get)
+
+			// Aeroplan availability watcher CRUD. The 4-hour sweep that probes
+			// each active watch and emails/pushes when availability opens
+			// lives in cmd/worker — run `make worker` alongside `make dev`.
 			r.Get("/wallet/{sessionID}/award-watches", awardWatchH.List)
 			r.Post("/wallet/{sessionID}/award-watches", awardWatchH.Create)
 			r.Delete("/wallet/{sessionID}/award-watches/{watchID}", awardWatchH.Delete)
@@ -467,8 +561,14 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.RequirePro())
+			r.Use(middleware.Timeout(30 * time.Second))
 			r.Post("/buy-points/evaluate", buyPointsH.Evaluate)
 			r.Post("/stack-recommend", stackH.Recommend)
+
+			// Self-send a synthetic push to every subscription belonging to
+			// the calling user. Pro-gated so free users can't burn the
+			// VAPID quota or use it as a probe surface.
+			r.Post("/push/test", pushH.Test)
 		})
 
 		// ── Chat conversation history (JWT required) ─────────────────────
@@ -488,8 +588,10 @@ func main() {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.RequireAdmin(adminEmails))
 			r.Use(mw.CSRFProtect)
+			r.Use(middleware.Timeout(30 * time.Second))
 			r.Post("/admin/valuations", adminValuationH.Push)
 			r.Get("/admin/quota", adminQuotaH.Get)
+			r.Get("/admin/metrics", adminMetricsH.Get)
 		})
 	})
 
@@ -497,15 +599,18 @@ func main() {
 	srv := &http.Server{
 		Addr:    ":" + getEnv("PORT", "8080"),
 		Handler: r,
+		// ReadHeaderTimeout is the slowloris defense. It must be short and
+		// independent of ReadTimeout/WriteTimeout — those are tuned for
+		// legitimate slow bodies (large CSV uploads) and slow responses (SSE
+		// chat streaming Apify polls for up to 5 minutes), respectively.
+		ReadHeaderTimeout: 10 * time.Second,
 		// ReadTimeout covers reading the full request body (generous for large bodies)
 		ReadTimeout: 30 * time.Second,
-		// WriteTimeout was 90s — but the SSE chat stream legitimately writes for
-		// 60-180s on flight+hotel prompts (parallel Apify polling 30-90s each +
-		// round 2 LLM synthesis 30-60s). The 90s cap was forcibly closing the
-		// connection mid-stream, which manifested client-side as ERR_INCOMPLETE_
-		// CHUNKED_ENCODING / "network error" and server-side as "context
-		// canceled" during apify polling. Bumping to 5min handles the slowest
-		// realistic chat without exposing the server to long-hold DoS.
+		// WriteTimeout: the SSE chat stream legitimately writes for 60-180s on
+		// flight+hotel prompts (parallel Apify polling 30-90s each + round 2 LLM
+		// synthesis 30-60s). 5min handles the slowest realistic chat without
+		// exposing the server to long-hold DoS, because ReadHeaderTimeout above
+		// already kills slowloris at the header stage.
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  120 * time.Second,
 	}

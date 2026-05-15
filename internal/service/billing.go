@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -19,6 +20,14 @@ type BillingRepository interface {
 	GetUserByStripeCustomerID(ctx context.Context, customerID string) (*model.User, error)
 	SetStripeCustomerID(ctx context.Context, userID, customerID string) error
 	SetUserPro(ctx context.Context, userID string, isPro bool) error
+	// RecordStripeEvent returns true if the event ID is new, false if it has
+	// already been processed (duplicate delivery from Stripe retry).
+	// Called AFTER successful processing to mark the event done.
+	RecordStripeEvent(ctx context.Context, eventID, eventType string) (bool, error)
+	// IsStripeEventProcessed returns true if the event has been processed
+	// before. Cheap lookup used at the START of the webhook to short-circuit
+	// duplicates without re-running the (potentially expensive) handler.
+	IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error)
 }
 
 // BillingService handles Stripe billing logic.
@@ -28,6 +37,7 @@ type BillingService struct {
 	webhookSecret  string
 	priceMonthly   string
 	priceAnnual    string
+	priceLifetime  string
 	successURL     string
 	cancelURL      string
 }
@@ -44,6 +54,7 @@ func NewBillingService(repo BillingRepository) *BillingService {
 		webhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		priceMonthly:  os.Getenv("STRIPE_PRICE_ID_MONTHLY"),
 		priceAnnual:   os.Getenv("STRIPE_PRICE_ID_ANNUAL"),
+		priceLifetime: os.Getenv("STRIPE_PRICE_ID_LIFETIME"),
 		successURL:    frontendURL + "/pricing?success=true",
 		cancelURL:     frontendURL + "/pricing?canceled=true",
 	}
@@ -51,15 +62,25 @@ func NewBillingService(repo BillingRepository) *BillingService {
 
 // CreateCheckoutSession creates a Stripe Checkout session via the Stripe API.
 // Uses raw HTTP calls to avoid adding the stripe-go SDK dependency.
+//
+// Supported intervals:
+//   - "monthly" / "month"  → recurring subscription
+//   - "annual"  / "year"   → recurring subscription
+//   - "lifetime"           → one-time payment, grants permanent Pro
 func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, interval string) (*model.CheckoutSession, error) {
 	if s.stripeKey == "" {
 		return nil, fmt.Errorf("stripe not configured")
 	}
 
-	// Determine price ID
+	// Determine price ID + checkout mode (subscription vs one-time payment).
 	priceID := s.priceMonthly
-	if interval == "annual" || interval == "year" {
+	mode := "subscription"
+	switch interval {
+	case "annual", "year":
 		priceID = s.priceAnnual
+	case "lifetime":
+		priceID = s.priceLifetime
+		mode = "payment"
 	}
 	if priceID == "" {
 		return nil, fmt.Errorf("stripe price ID not configured for interval: %s", interval)
@@ -74,26 +95,28 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 		return nil, fmt.Errorf("user not found")
 	}
 
-	// Build Stripe Checkout Session params
-	params := fmt.Sprintf(
-		"mode=subscription&success_url=%s&cancel_url=%s&line_items[0][price]=%s&line_items[0][quantity]=1&client_reference_id=%s",
-		s.successURL, s.cancelURL, priceID, userID,
-	)
+	// Build Stripe Checkout Session params. EVERY value must be url-encoded —
+	// `customer_email` is user-controlled and a naive concat would let a
+	// crafted email like "x&line_items[0][price]=price_FREE" smuggle params.
+	form := url.Values{}
+	form.Set("mode", mode)
+	form.Set("success_url", s.successURL)
+	form.Set("cancel_url", s.cancelURL)
+	form.Set("line_items[0][price]", priceID)
+	form.Set("line_items[0][quantity]", "1")
+	form.Set("client_reference_id", userID)
 
-	// If user already has a Stripe customer ID, use it
 	if user.StripeCustomerID != nil && *user.StripeCustomerID != "" {
-		params += "&customer=" + *user.StripeCustomerID
+		form.Set("customer", *user.StripeCustomerID)
 	} else {
-		// Pre-fill email for new customers
 		if user.Email != nil && *user.Email != "" {
-			params += "&customer_email=" + *user.Email
+			form.Set("customer_email", *user.Email)
 		}
-		// Allow promotion codes
-		params += "&allow_promotion_codes=true"
+		form.Set("allow_promotion_codes", "true")
 	}
 
 	// Create checkout session via Stripe API
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.stripe.com/v1/checkout/sessions", strings.NewReader(params))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.stripe.com/v1/checkout/sessions", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -232,4 +255,21 @@ func (s *BillingService) handleSubscriptionDeleted(ctx context.Context, data jso
 // GetWebhookSecret returns the configured webhook secret for signature verification.
 func (s *BillingService) GetWebhookSecret() string {
 	return s.webhookSecret
+}
+
+// RecordEvent persists the Stripe event ID for idempotency. Returns true if
+// the event is new and should be processed, false if it has already been seen.
+// CALL THIS ONLY AFTER successful event processing — see IsEventProcessed for
+// the read-only check used at the start of the webhook.
+func (s *BillingService) RecordEvent(ctx context.Context, eventID, eventType string) (bool, error) {
+	return s.repo.RecordStripeEvent(ctx, eventID, eventType)
+}
+
+// IsEventProcessed is the read-only short-circuit at the top of the webhook
+// handler. Returns true if the event ID is already in stripe_events.
+// Separating this from RecordEvent (which writes) means a failed processing
+// pass does NOT mark the event as done — Stripe's retry will re-attempt
+// processing instead of being silently dropped as a duplicate.
+func (s *BillingService) IsEventProcessed(ctx context.Context, eventID string) (bool, error) {
+	return s.repo.IsStripeEventProcessed(ctx, eventID)
 }

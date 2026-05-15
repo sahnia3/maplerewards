@@ -139,3 +139,42 @@ func TestRateLimiter_WindowResets(t *testing.T) {
 		t.Errorf("after reset: expected 200, got %d", w.Code)
 	}
 }
+
+// Regression: a fixed-window limiter would let an attacker fire `rate`
+// requests at the end of one window and `rate` again right after the
+// boundary, doubling the configured throughput. The token bucket should not.
+func TestRateLimiter_NoBoundaryBurst(t *testing.T) {
+	rl := NewRateLimiter(3, 100*time.Millisecond)
+	handler := rl.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "9.9.9.9:5555"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// Drain the bucket
+	for i := 0; i < 3; i++ {
+		if code := send(); code != http.StatusOK {
+			t.Fatalf("warmup request %d: expected 200, got %d", i+1, code)
+		}
+	}
+	if code := send(); code != http.StatusTooManyRequests {
+		t.Fatalf("post-burst request: expected 429, got %d", code)
+	}
+
+	// Sleep just under the full-refill duration. A fixed-window limiter
+	// would allow another full burst here; the token bucket should only
+	// have refilled ~1 token (10ms ≈ 1/3 of full window).
+	time.Sleep(35 * time.Millisecond)
+	if code := send(); code != http.StatusOK {
+		t.Fatalf("post-partial-refill: expected 200 from one refilled token, got %d", code)
+	}
+	// Next two should be blocked since we still only get steady-state refill.
+	if code := send(); code != http.StatusTooManyRequests {
+		t.Fatalf("immediate followup: expected 429 (no boundary burst), got %d", code)
+	}
+}

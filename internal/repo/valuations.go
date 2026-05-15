@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,4 +28,67 @@ func (r *ValuationRepo) GetCPP(ctx context.Context, programSlug, segment string)
 		LIMIT 1
 	`, programSlug, segment).Scan(&cpp)
 	return cpp, err
+}
+
+// UpsertValuation writes (or refreshes) the active CPP for a (program, segment).
+// effective_date defaults to today so a same-day re-push updates the row in
+// place via the (loyalty_program_id, segment, effective_date) unique key.
+// recorded_at is bumped on every call so the staleness chip resets.
+func (r *ValuationRepo) UpsertValuation(
+	ctx context.Context,
+	programSlug, segment string,
+	cppCents float64,
+	source string,
+) error {
+	if programSlug == "" || segment == "" {
+		return fmt.Errorf("program slug and segment required")
+	}
+	if source == "" {
+		source = "manual"
+	}
+	tag, err := r.db.Exec(ctx, `
+		INSERT INTO point_valuations
+			(loyalty_program_id, segment, cpp, source, effective_date, recorded_at)
+		SELECT lp.id, $2, $3, $4, CURRENT_DATE, now()
+		FROM loyalty_programs lp
+		WHERE lp.slug = $1
+		ON CONFLICT (loyalty_program_id, segment, effective_date)
+		DO UPDATE SET
+			cpp         = EXCLUDED.cpp,
+			source      = EXCLUDED.source,
+			recorded_at = now()
+	`, programSlug, segment, cppCents, source)
+	if err != nil {
+		return fmt.Errorf("upsert valuation: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("unknown program slug: %s", programSlug)
+	}
+	return nil
+}
+
+// InsertHistory appends one observation to point_valuation_history.
+// Append-only — never UPDATE; the table is the audit log used by the
+// /refresh-valuations job and any future trend-line chart.
+func (r *ValuationRepo) InsertHistory(
+	ctx context.Context,
+	programSlug, segment string,
+	cppCents float64,
+	source string,
+) error {
+	if programSlug == "" || segment == "" {
+		return fmt.Errorf("program slug and segment required")
+	}
+	if source == "" {
+		source = "manual"
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO point_valuation_history
+			(program_slug, segment, cpp_cents, source, recorded_at)
+		VALUES ($1, $2, $3, $4, now())
+	`, programSlug, segment, cppCents, source)
+	if err != nil {
+		return fmt.Errorf("insert history: %w", err)
+	}
+	return nil
 }

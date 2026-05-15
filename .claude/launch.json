@@ -13,7 +13,7 @@
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "cd /Users/adityasahni/Desktop/Claudecode/maplerewards/maplerewards-main/frontend && /opt/homebrew/bin/npx next dev"],
       "port": 3000,
-      "autoPort": true
+      "autoPort": false
     }
   ]
 }

@@ -7,11 +7,21 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/api ./cmd/api
 
+# ── Runtime ──────────────────────────────────────────────────────────────────
 FROM alpine:3.19
-RUN apk --no-cache add ca-certificates tzdata wget
+RUN apk --no-cache add ca-certificates tzdata wget \
+    && addgroup -S maple -g 10001 \
+    && adduser -S -D -H -u 10001 -G maple -s /sbin/nologin maple
 
 WORKDIR /app
 COPY --from=builder /app/bin/api .
+# knowledge YAML files are referenced via relative path internal/knowledge/*.yaml
+# in main.go — copy them into the image at the same path so the binary boots.
+COPY --from=builder /app/internal/knowledge ./internal/knowledge
+
+# Drop root before runtime — the runtime user only needs read access to
+# /app and write access to nothing (state lives in Postgres + Redis).
+USER 10001:10001
 
 EXPOSE 8080
 

@@ -85,7 +85,8 @@ func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 
 	// Parse the event
 	var event struct {
-		Type string          `json:"type"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
 		Data struct {
 			Object json.RawMessage `json:"object"`
 		} `json:"data"`
@@ -95,11 +96,46 @@ func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Idempotency check — does this event ID already have a "successfully
+	// processed" marker? If yes, skip and 200 so Stripe stops retrying.
+	// Critically: we DO NOT record the marker here. Recording happens AFTER
+	// HandleWebhookEvent returns nil — otherwise a transient processing
+	// failure would record the dedup row, Stripe would retry the same event
+	// to a healthy server, and we'd silently skip a real Pro grant.
+	if event.ID != "" {
+		alreadyDone, err := h.svc.IsEventProcessed(r.Context(), event.ID)
+		if err != nil {
+			// Don't fail the webhook on a lookup error — better to risk a
+			// duplicate side-effect than return 5xx and trigger Stripe's
+			// retry storm. Most handlers (SetUserPro) are idempotent at the
+			// DB layer anyway.
+			slog.Error("stripe event idempotency lookup failed", "err", err, "event_id", event.ID, "type", event.Type)
+		} else if alreadyDone {
+			slog.Info("duplicate stripe event ignored", "event_id", event.ID, "type", event.Type)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"received":true,"duplicate":true}`)) //nolint:errcheck
+			return
+		}
+	}
+
 	// Process the event
 	if err := h.svc.HandleWebhookEvent(r.Context(), event.Type, event.Data.Object); err != nil {
-		slog.Error("webhook event processing failed", "err", err, "type", event.Type)
+		// 500 lets Stripe retry with the SAME event.id. Because we didn't
+		// record the dedup row yet, the retry will re-attempt processing
+		// instead of seeing the event as already-handled.
+		slog.Error("webhook event processing failed", "err", err, "type", event.Type, "event_id", event.ID)
 		jsonError(w, "event processing failed", http.StatusInternalServerError)
 		return
+	}
+
+	// Processing succeeded — record the dedup row so future retries skip.
+	// A failure to record here means the next retry will re-process the
+	// event; most handlers (SetUserPro) are idempotent so the worst case is
+	// a redundant write, not a billing bug.
+	if event.ID != "" {
+		if _, err := h.svc.RecordEvent(r.Context(), event.ID, event.Type); err != nil {
+			slog.Error("stripe event dedup record failed (will allow safe retry)", "err", err, "event_id", event.ID, "type", event.Type)
+		}
 	}
 
 	// Acknowledge receipt

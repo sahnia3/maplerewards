@@ -141,3 +141,39 @@ func (c *Cache) SetMultipliers(ctx context.Context, cardID string, data any) err
 	}
 	return c.client.Set(ctx, key, b, 24*time.Hour).Err()
 }
+
+// ── Apify Flight Probe ───────────────────────────────────────────────────────
+// Caches the cheapest live point cost for a (program, origin, dest, date,
+// cabin) tuple. Apify scrapes are slow (60-120s) and rate-limited, so the
+// Trip Planner consults this cache first; cold misses fall back to the
+// static zone-chart estimate and may kick off a background prime. 24h TTL
+// keeps the data fresh against fast-moving Aeroplan dynamic pricing without
+// triggering scrapes on every search.
+
+func apifyFlightKey(program, origin, dest, date, cabin string) string {
+	return fmt.Sprintf("apify:flight:%s:%s-%s:%s:%s", program, origin, dest, date, cabin)
+}
+
+// GetApifyFlightMinPoints returns the cached minimum point cost, or (0, false,
+// nil) on a cold miss. Surface errors only for genuine Redis failures so
+// callers can distinguish "no data" from "broken".
+func (c *Cache) GetApifyFlightMinPoints(ctx context.Context, program, origin, dest, date, cabin string) (int, bool, error) {
+	val, err := c.client.Get(ctx, apifyFlightKey(program, origin, dest, date, cabin)).Int()
+	if errors.Is(err, redis.Nil) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return val, true, nil
+}
+
+// SetApifyFlightMinPoints caches the cheapest probed point cost. Callers
+// should write -1 (or skip the cache) when the probe returns no availability
+// at all — caching a zero would shadow the static fallback chart.
+func (c *Cache) SetApifyFlightMinPoints(ctx context.Context, program, origin, dest, date, cabin string, minPoints int, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	return c.client.Set(ctx, apifyFlightKey(program, origin, dest, date, cabin), minPoints, ttl).Err()
+}

@@ -83,18 +83,42 @@ func (r *SpendRepo) GetCapGroupForCard(ctx context.Context, cardID, categoryID s
 	return &cg, rows.Err()
 }
 
-// CreateSpendEntry inserts a new spend entry record.
+// CreateSpendEntry inserts a new spend entry record. The ON CONFLICT clause
+// uses the dedup index on (user_id, card_id, spent_at, amount, COALESCE(note,''))
+// — re-importing the same statement is a no-op rather than a duplicate.
+// When a conflict skips the insert, RETURNING produces no row, so we fall
+// back to fetching the existing row by the same key so the caller still
+// gets a valid SpendEntry pointer.
 func (r *SpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry) (*model.SpendEntry, error) {
 	var createdAt time.Time
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (user_id, card_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
 		RETURNING id, created_at
 	`, entry.UserID, entry.CardID, entry.CategoryID, entry.Amount,
 		entry.PointsEarned, entry.DollarValue, entry.SpentAt, entry.Note,
 	).Scan(&entry.ID, &createdAt)
 	if err == nil {
 		entry.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
+		return &entry, nil
+	}
+
+	// pgx returns ErrNoRows when ON CONFLICT skipped the insert. Fetch the
+	// existing row by the dedup key so the caller has a valid result.
+	if err.Error() == "no rows in result set" {
+		fetchErr := r.db.QueryRow(ctx, `
+			SELECT id, created_at
+			FROM spend_entries
+			WHERE user_id = $1 AND card_id = $2 AND spent_at = $3
+			  AND amount = $4 AND COALESCE(note,'') = COALESCE($5,'')
+			LIMIT 1
+		`, entry.UserID, entry.CardID, entry.SpentAt, entry.Amount, entry.Note,
+		).Scan(&entry.ID, &createdAt)
+		if fetchErr == nil {
+			entry.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
+			return &entry, nil
+		}
 	}
 	return &entry, err
 }

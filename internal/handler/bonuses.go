@@ -36,7 +36,7 @@ func (h *BonusHandler) ListBonuses(w http.ResponseWriter, r *http.Request) {
 
 	bonuses, err := h.bonusRepo.GetUserBonuses(r.Context(), user.ID)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonInternalError(w, "bonuses.list", err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *BonusHandler) ActivateBonus(w http.ResponseWriter, r *http.Request) {
 
 	bonus, err := h.bonusRepo.ActivateBonus(r.Context(), user.ID, cardID)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonInternalError(w, "bonuses.activate", err)
 		return
 	}
 

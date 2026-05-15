@@ -88,15 +88,27 @@ func IsProFromContext(ctx context.Context) bool {
 
 func extractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		return ""
+	if auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+			return strings.TrimSpace(parts[1])
+		}
 	}
-	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-		return ""
+	// Fallback to httpOnly access cookie. Lets the frontend authenticate via
+	// SameSite cookies without ever surfacing the JWT to JS (XSS hardening).
+	if c, err := r.Cookie(AccessCookieName); err == nil && c.Value != "" {
+		return c.Value
 	}
-	return strings.TrimSpace(parts[1])
+	return ""
 }
+
+// AccessCookieName is the httpOnly cookie that carries the JWT access token.
+// Exported so the auth handler can write it with matching name on login.
+const AccessCookieName = "mr_access"
+
+// RefreshCookieName is the httpOnly cookie that carries the rotating refresh
+// token. Read only by /auth/refresh, never by other endpoints.
+const RefreshCookieName = "mr_refresh"
 
 func writeAuthError(w http.ResponseWriter, code, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,13 +18,15 @@ import (
 )
 
 // ProServices bundles the Pro-tier service handles the AI exposes as gated tools.
-// Kept as a struct (rather than 4 separate AIService fields) because they're
+// Kept as a struct (rather than separate AIService fields) because they're
 // always passed together and the registry iterates them as a unit.
 type ProServices struct {
 	BuyPoints     *BuyPointsService
 	Stack         *StackService
 	MissedRewards *MissedRewardsService
 	SQC           *SQCService
+	Devaluation   *DevaluationService
+	AwardWatch    *AwardWatchService
 }
 
 // AIService provides AI-powered credit card rewards advice using Claude.
@@ -57,7 +60,13 @@ func NewAIService(
 	serpSvc *SerpAPIService,
 	pro ProServices,
 ) *AIService {
-	modelID := "claude-sonnet-4-5"
+	// Model is env-overridable so we can A/B against Haiku 4.5 for cost
+	// or move to a future Sonnet revision without a redeploy. Default
+	// stays on the most recent Sonnet alias Anthropic supports.
+	modelID := os.Getenv("ANTHROPIC_MODEL")
+	if modelID == "" {
+		modelID = "claude-sonnet-4-6"
+	}
 	s := &AIService{
 		apiKey:  apiKey,
 		modelID: modelID,
@@ -186,7 +195,8 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 		}
 	}
 
-	systemPrompt := s.buildSystemPrompt(walletContext, categoryContext, catalogContext, researchContext)
+	walletPrograms := s.collectWalletPrograms(ctx, req.SessionID)
+	systemPrompt := s.buildSystemPrompt(walletContext, categoryContext, catalogContext, researchContext, walletPrograms)
 
 	// Build message history for the API call
 	messages := s.buildMessages(req.History, req.Message)
@@ -342,36 +352,87 @@ func (s *AIService) buildCategoryContext(ctx context.Context) string {
 	return "Available spending categories: " + strings.Join(slugs, ", ")
 }
 
-// buildCardCatalogContext creates a compact summary of ALL cards in the database
-// so the AI can reference any card, even those not in the user's wallet.
+// buildCardCatalogContext used to inject every card (~5-7K tokens per request)
+// into the system prompt so the AI could reference any card by name. That was
+// expensive and mostly wasted — typical chats reference 1-3 cards. We now emit
+// a compact summary (counts + issuers) and rely on the `lookup_card` tool to
+// fetch detail on demand. Token usage dropped by ~80% per chat turn.
 func (s *AIService) buildCardCatalogContext(ctx context.Context) string {
 	cards, err := s.cardRepo.ListCards(ctx)
 	if err != nil || len(cards) == 0 {
 		return ""
 	}
 
-	var sb strings.Builder
-	sb.WriteString("## Complete Canadian Card Catalog\n")
-	sb.WriteString("All cards in our database (user may or may not have these):\n")
+	issuerCounts := map[string]int{}
+	freeCount := 0
 	for _, c := range cards {
-		sb.WriteString(fmt.Sprintf("- %s (%s)", c.Name, c.Issuer))
-		if c.LoyaltyProgram != nil {
-			sb.WriteString(fmt.Sprintf(" — %s", c.LoyaltyProgram.Name))
+		issuerCounts[c.Issuer]++
+		if c.AnnualFee == 0 {
+			freeCount++
 		}
-		if c.AnnualFee > 0 {
-			sb.WriteString(fmt.Sprintf(", $%.0f/yr", c.AnnualFee))
-		} else {
-			sb.WriteString(", no fee")
-		}
-		if c.WelcomeBonusPoints > 0 {
-			sb.WriteString(fmt.Sprintf(", welcome: %dk pts", c.WelcomeBonusPoints/1000))
-		}
-		sb.WriteString("\n")
 	}
+
+	// Order issuers by card count desc for a stable, scannable list.
+	type ic struct {
+		name  string
+		count int
+	}
+	rows := make([]ic, 0, len(issuerCounts))
+	for name, count := range issuerCounts {
+		rows = append(rows, ic{name, count})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].count > rows[j].count })
+
+	var sb strings.Builder
+	sb.WriteString("## Canadian Card Catalog (summary)\n")
+	sb.WriteString(fmt.Sprintf("We model %d Canadian cards (%d no-fee). ", len(cards), freeCount))
+	sb.WriteString("Issuer breakdown: ")
+	for i, r := range rows {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("%s (%d)", r.name, r.count))
+	}
+	sb.WriteString(".\n\n")
+	sb.WriteString("To pull details for any specific card, use the `lookup_card` tool with a name or issuer query — DO NOT guess card details from memory. The tool returns annual fee, welcome bonus, network, loyalty program, and category multipliers for matching cards.\n")
 	return sb.String()
 }
 
-func (s *AIService) buildSystemPrompt(walletContext, categoryContext, catalogContext, researchContext string) string {
+// collectWalletPrograms returns the slugs of all loyalty programs the user
+// holds points in (via cards in their wallet). Returns nil for anonymous
+// users so the FormatForPrompt filter falls through to "show everything".
+func (s *AIService) collectWalletPrograms(ctx context.Context, sessionID string) []string {
+	if sessionID == "" || s.walletRepo == nil {
+		return nil
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil || user == nil {
+		return nil
+	}
+	cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
+	if err != nil || len(cards) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(cards))
+	for _, uc := range cards {
+		if uc.Card == nil || uc.Card.LoyaltyProgram == nil {
+			continue
+		}
+		slug := uc.Card.LoyaltyProgram.Slug
+		if slug == "" {
+			slug = uc.Card.LoyaltyProgram.Name
+		}
+		if slug == "" || seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		out = append(out, slug)
+	}
+	return out
+}
+
+func (s *AIService) buildSystemPrompt(walletContext, categoryContext, catalogContext, researchContext string, walletPrograms []string) string {
 	var sb strings.Builder
 
 	sb.WriteString(`You are the MapleRewards AI Assistant, a friendly and expert Canadian credit card rewards advisor.
@@ -384,10 +445,12 @@ Your role:
 - Be conversational but concise — users want quick, actionable advice
 
 `)
-	// Inject knowledge base — prefer YAML-loaded data, fall back to hardcoded
+	// Inject knowledge base — prefer YAML-loaded data, fall back to hardcoded.
+	// Filter to the user's wallet programs when non-empty to keep the prompt
+	// focused and reduce token bloat for users who only hold a few currencies.
 	var knowledgeStr string
 	if s.knowledgeBase != nil {
-		knowledgeStr = s.knowledgeBase.FormatForPrompt(nil)
+		knowledgeStr = s.knowledgeBase.FormatForPrompt(walletPrograms)
 	} else {
 		knowledgeStr = buildStaticKnowledgeBase()
 	}

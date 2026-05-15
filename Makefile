@@ -1,12 +1,20 @@
-.PHONY: dev build test migrate-up migrate-down lint docker-up docker-down setup remote-setup remote-start web-dev dump-ai-trace
+.PHONY: dev build test migrate-up migrate-down lint docker-up docker-down setup remote-setup remote-start web-dev worker worker-build dump-ai-trace
 
 DATABASE_URL ?= postgres://postgres:password@localhost:5432/maplerewards?sslmode=disable
 
 dev:
 	@go run ./cmd/api
 
+# Background worker that runs award-watch + issuer-watch + digest sweeps.
+# Run alongside `make dev` in a separate terminal during development.
+worker:
+	@go run ./cmd/worker
+
 build:
 	@go build -o bin/api ./cmd/api
+
+worker-build:
+	@go build -o bin/worker ./cmd/worker
 
 test:
 	@go test ./... -v -race

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,6 +23,7 @@ type AuthRepository interface {
 	CreateAuthUser(ctx context.Context, email, passwordHash, displayName, sessionID string) (*model.User, error)
 	UpsertGoogleUser(ctx context.Context, googleID, email, displayName, sessionID string) (*model.User, error)
 	UpdateProfile(ctx context.Context, userID, displayName string) (*model.User, error)
+	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
 	MergeAnonymousUser(ctx context.Context, authUserID, anonUserID string) error
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt interface{}) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*model.RefreshToken, error)
@@ -35,6 +37,22 @@ type AuthService struct {
 	repo       AuthRepository
 	walletRepo WalletRepository
 	jwtSecret  []byte
+}
+
+// dummyBcryptHash is a real bcrypt hash with the standard cost factor.
+// It's compared against during Login when a user is missing or has no password
+// (Google-only accounts) so total work — and therefore response time — stays
+// constant regardless of account state. Without this, an attacker can probe
+// /login response time to enumerate registered emails and to discover which
+// accounts are Google-only vs. password-bearing.
+var dummyBcryptHash []byte
+
+func init() {
+	h, err := bcrypt.GenerateFromPassword([]byte("invalid-credentials-placeholder"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("auth: failed to precompute dummy bcrypt hash: %v", err))
+	}
+	dummyBcryptHash = h
 }
 
 // NewAuthService creates a new auth service.
@@ -92,7 +110,7 @@ func (s *AuthService) Register(ctx context.Context, req model.RegisterRequest) (
 	if req.SessionID != "" {
 		if err := s.mergeAnonymous(ctx, user.ID, req.SessionID); err != nil {
 			// Log but don't fail registration
-			fmt.Printf("warn: failed to merge anonymous data: %v\n", err)
+			slog.Warn("failed to merge anonymous data", "err", err, "user_id", user.ID)
 		}
 	}
 
@@ -110,14 +128,14 @@ func (s *AuthService) Login(ctx context.Context, req model.LoginRequest) (*model
 	if err != nil {
 		return nil, fmt.Errorf("looking up user: %w", err)
 	}
-	if user == nil {
-		return nil, fmt.Errorf("invalid credentials")
-	}
-	if user.PasswordHash == nil {
-		return nil, fmt.Errorf("invalid credentials")
-	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password)); err != nil {
+	hashToCompare := dummyBcryptHash
+	if user != nil && user.PasswordHash != nil {
+		hashToCompare = []byte(*user.PasswordHash)
+	}
+	bcryptErr := bcrypt.CompareHashAndPassword(hashToCompare, []byte(req.Password))
+
+	if user == nil || user.PasswordHash == nil || bcryptErr != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
@@ -145,7 +163,7 @@ func (s *AuthService) GoogleAuth(ctx context.Context, googleID, email, displayNa
 	// Merge anonymous session data if provided
 	if anonSessionID != "" {
 		if err := s.mergeAnonymous(ctx, user.ID, anonSessionID); err != nil {
-			fmt.Printf("warn: failed to merge anonymous data for google auth: %v\n", err)
+			slog.Warn("failed to merge anonymous data for google auth", "err", err, "user_id", user.ID)
 		}
 	}
 
@@ -153,6 +171,11 @@ func (s *AuthService) GoogleAuth(ctx context.Context, googleID, email, displayNa
 }
 
 // RefreshToken validates a refresh token and issues a new token pair.
+// Reuse-detection: if the presented token has already been revoked (i.e.,
+// previously used in a rotation), assume it was stolen and revoke ALL of
+// the user's refresh tokens. The legitimate user will have to log in again
+// — small inconvenience vs. allowing an attacker free reign on a stolen
+// long-lived token.
 func (s *AuthService) RefreshToken(ctx context.Context, rawToken string) (*model.TokenPair, error) {
 	if rawToken == "" {
 		return nil, fmt.Errorf("refresh token is required")
@@ -165,6 +188,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, rawToken string) (*model
 		return nil, fmt.Errorf("looking up refresh token: %w", err)
 	}
 	if stored == nil {
+		return nil, fmt.Errorf("invalid or expired refresh token")
+	}
+
+	// Reuse detection — the repo's GetRefreshToken returns nil for
+	// already-revoked or expired rows in the happy path. If we got a non-nil
+	// stored token whose RevokedAt is set, this is a replay. Revoke everything.
+	if stored.RevokedAt != nil {
+		slog.Warn("refresh token reuse detected — revoking all user tokens", "user_id", stored.UserID)
+		_ = s.repo.RevokeAllUserTokens(ctx, stored.UserID)
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
@@ -208,6 +240,41 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req mode
 		return nil, fmt.Errorf("display_name is required")
 	}
 	return s.repo.UpdateProfile(ctx, userID, req.DisplayName)
+}
+
+// ChangePassword rotates the user's password. Verifies the current password
+// first to thwart session hijack (an attacker with a stolen JWT shouldn't be
+// able to take over the account by rotating the password without knowing the
+// existing one). All other refresh tokens are revoked on success — other
+// devices need to log in again with the new password.
+func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if currentPassword == "" || newPassword == "" {
+		return fmt.Errorf("current and new password are required")
+	}
+	if len(newPassword) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("looking up user: %w", err)
+	}
+	if user == nil || user.PasswordHash == nil {
+		// User signed in via Google OAuth — no password to change.
+		return fmt.Errorf("password change unavailable for this account")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(currentPassword)); err != nil {
+		return fmt.Errorf("current password is incorrect")
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+	if err := s.repo.UpdatePasswordHash(ctx, userID, string(newHash)); err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+	// Force re-login on every other device for safety.
+	_ = s.repo.RevokeAllUserTokens(ctx, userID)
+	return nil
 }
 
 // DeleteAccount permanently removes a user and all associated data.
@@ -292,16 +359,35 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (
 }
 
 // mergeAnonymous transfers data from an anonymous session to the authenticated user.
+//
+// SECURITY: an attacker who learns a session_id (from logs, URL leaks, shared
+// devices) could otherwise register a fresh account and pass the victim's
+// session_id to capture their wallet. To mitigate without restructuring auth,
+// reject the merge unless (1) the target session belongs to a genuinely
+// anonymous user — no email set — and (2) the session was created within the
+// last 30 days. The cookie-bound session token is the long-term answer; this
+// is the short-term hardening that doesn't break the client contract.
 func (s *AuthService) mergeAnonymous(ctx context.Context, authUserID, anonSessionID string) error {
 	anonUser, err := s.walletRepo.GetUserBySession(ctx, anonSessionID)
 	if err != nil {
 		return fmt.Errorf("looking up anonymous session: %w", err)
 	}
 	if anonUser == nil {
-		return nil // No anonymous data to merge
+		return nil
 	}
 	if anonUser.ID == authUserID {
-		return nil // Same user, nothing to merge
+		return nil
+	}
+	if anonUser.Email != nil {
+		slog.Warn("anon-merge rejected: target session belongs to a registered user",
+			"auth_user", authUserID, "target_user", anonUser.ID)
+		return fmt.Errorf("session is not anonymous")
+	}
+	if time.Since(anonUser.CreatedAt) > 30*24*time.Hour {
+		slog.Warn("anon-merge rejected: target session is too old",
+			"auth_user", authUserID, "target_user", anonUser.ID,
+			"age_days", int(time.Since(anonUser.CreatedAt).Hours()/24))
+		return fmt.Errorf("session is too old to merge")
 	}
 	return s.repo.MergeAnonymousUser(ctx, authUserID, anonUser.ID)
 }

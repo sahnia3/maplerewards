@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -11,6 +12,28 @@ import (
 
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
+)
+
+// AwardCache is the minimal cache contract award search needs. Satisfied by
+// *cache.Cache; declared here so the service stays decoupled from Redis and
+// tests can plug in an in-memory double.
+type AwardCache interface {
+	GetAwardSearch(ctx context.Context, key string) ([]byte, bool, error)
+	SetAwardSearch(ctx context.Context, key string, payload []byte, ttl time.Duration) error
+}
+
+// awardCacheTTL is the freshness window for award-search responses. Set to
+// 45 minutes — long enough to absorb burst traffic on a popular route, short
+// enough that an Aeroplan availability flip won't go stale for an hour.
+const awardCacheTTL = 45 * time.Minute
+
+// Source labels exposed to the frontend so the user sees provenance. Keep
+// these strings stable — the SPA pattern-matches on them.
+const (
+	sourceLabelGoogleFlights = "Google Flights"
+	sourceLabelSeatsAero     = "Seats.aero"
+	sourceLabelApify         = "Apify"
+	sourceLabelEstimate      = "estimate"
 )
 
 // AwardSearchService combines YAML knowledge base (award chart costs per program)
@@ -23,15 +46,18 @@ type AwardSearchService struct {
 	flightSvc    *SerpAPIService
 	walletRepo   WalletRepository
 	kb           *knowledge.KnowledgeBase
+	cache        AwardCache
 }
 
-// NewAwardSearchService creates the award search service.
+// NewAwardSearchService creates the award search service. cache may be nil
+// (tests / cmd/worker) — when nil, every call hits live data sources.
 func NewAwardSearchService(
 	apifySvc *ApifyAwardService,
 	seatsAeroSvc *SeatsAeroService,
 	flightSvc *SerpAPIService,
 	walletRepo WalletRepository,
 	kb *knowledge.KnowledgeBase,
+	cache AwardCache,
 ) *AwardSearchService {
 	return &AwardSearchService{
 		apifySvc:     apifySvc,
@@ -39,6 +65,7 @@ func NewAwardSearchService(
 		flightSvc:    flightSvc,
 		walletRepo:   walletRepo,
 		kb:           kb,
+		cache:        cache,
 	}
 }
 
@@ -94,7 +121,9 @@ var yamlFallbackPrograms = []string{}
 
 // Search runs both APIs (Seats.aero + Amadeus) in parallel and returns sorted
 // AwardSearchResult. Both APIs are synchronous (~2-5s each), so the total
-// response time is ~3-5 seconds.
+// response time is ~3-5 seconds. Successful searches are written to Redis
+// with a 45-minute TTL so repeated probes of a popular route (Aeroplan
+// alerters, ICP debugging) hit warm cache.
 func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRequest) ([]model.AwardSearchResult, error) {
 	start := time.Now()
 
@@ -110,6 +139,37 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		"date", req.Date, "cabin", req.Cabin,
 	)
 
+	// ── Cache lookup ──────────────────────────────────────────────────────
+	// Key intentionally omits session/wallet — wallet-relative fields
+	// (PointsAvailable, CanAfford, CardBreakdowns) are recomputed below from
+	// the live wallet snapshot. Cache only the program/points/CPP body.
+	//
+	// Refresh=true skips the GET so the user can force a fresh upstream pull
+	// (used by the "Refresh live" button on the SPA). The SET path still
+	// runs, so the next normal request will hit the warm copy.
+	cacheKey := awardCacheKey(req)
+	if s.cache != nil && !req.Refresh {
+		if data, hit, err := s.cache.GetAwardSearch(ctx, cacheKey); err != nil {
+			slog.Warn("[award-search] cache get failed", "err", err)
+		} else if hit {
+			var cached []model.AwardSearchResult
+			if err := json.Unmarshal(data, &cached); err == nil && len(cached) > 0 {
+				// FetchedAt on the first row is the canonical timestamp for
+				// the whole bundle — all rows are written together.
+				age := time.Since(cached[0].FetchedAt)
+				if age < awardCacheTTL {
+					slog.Info("[award-search] cache hit",
+						"key", cacheKey, "ageSec", int(age.Seconds()),
+						"count", len(cached))
+					// Re-overlay live wallet state — balances change between
+					// hits even if the route data is still fresh.
+					return s.overlayWallet(ctx, req, cached), nil
+				}
+				slog.Info("[award-search] cache hit but stale", "ageSec", int(age.Seconds()))
+			}
+		}
+	}
+
 	// ── Load wallet ───────────────────────────────────────────────────────
 	walletBalances, err := s.loadWalletBalances(ctx, req.SessionID)
 	if err != nil {
@@ -122,19 +182,40 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 
 	// ── Run data sources in parallel ─────────────────────────────────────
 	var (
-		apifyItems   []AwardItem
-		awardItems   []AwardItem
-		flightPrices []FlightResult
-		apifyErr     error
-		awardErr     error
-		wg           sync.WaitGroup
+		apifyItems          []AwardItem
+		awardItems          []AwardItem
+		flightPrices        []FlightResult
+		economyFlightPrices []FlightResult // populated only when cabin != "economy"
+		apifyErr            error
+		awardErr            error
+		wg                  sync.WaitGroup
 	)
 
-	wg.Add(3)
+	cabinIsPremium := strings.ToLower(req.Cabin) != "economy" && strings.ToLower(req.Cabin) != ""
+	if cabinIsPremium {
+		wg.Add(4)
+	} else {
+		wg.Add(3)
+	}
+
+	// Goroutines below all wrap with a panic recovery — without it any nil-deref
+	// or schema-drift unmarshal in an external API path would kill the whole API
+	// process (unrecovered goroutine panics terminate Go programs).
+	recoverGoroutine := func(name string, errOut *error) {
+		if rec := recover(); rec != nil {
+			slog.Error("[award-search] goroutine panic recovered",
+				"goroutine", name, "panic", rec,
+			)
+			if errOut != nil {
+				*errOut = fmt.Errorf("%s panicked: %v", name, rec)
+			}
+		}
+	}
 
 	// Goroutine 1: Apify flight-award-scraper — REAL live award availability
 	go func() {
 		defer wg.Done()
+		defer recoverGoroutine("apify", &apifyErr)
 		if s.apifySvc == nil || !s.apifySvc.IsAvailable() {
 			slog.Info("[award-search] apify not available (no APIFY_TOKEN)")
 			return
@@ -157,6 +238,7 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 	// Goroutine 2: Seats.aero — award availability (mileage costs per program)
 	go func() {
 		defer wg.Done()
+		defer recoverGoroutine("seats.aero", &awardErr)
 		if !s.seatsAeroSvc.IsAvailable() {
 			awardErr = fmt.Errorf("seats.aero not configured")
 			slog.Info("[award-search] seats.aero not available (no SEATSAERO_API_KEY)")
@@ -180,6 +262,7 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 	// Goroutine 3: SerpAPI Google Flights — real cash price for this cabin in CAD
 	go func() {
 		defer wg.Done()
+		defer recoverGoroutine("serpapi", nil)
 		if s.flightSvc == nil || !s.flightSvc.IsAvailable() {
 			slog.Warn("[award-search] serpapi not available (no SERPAPI_KEY)")
 			return
@@ -197,36 +280,100 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		}
 	}()
 
+	// Goroutine 4 (premium cabins only): a second SerpAPI call for economy
+	// cash on the same route. Surfaces the "would I actually pay this in cash?"
+	// baseline — a 9.96¢ biz redemption looks magical until you realize you'd
+	// have bought economy for $1200, not business for $8000. Costs one extra
+	// SerpAPI quota call per biz/first search; small price for honesty.
+	if cabinIsPremium {
+		go func() {
+			defer wg.Done()
+			defer recoverGoroutine("serpapi-economy", nil)
+			if s.flightSvc == nil || !s.flightSvc.IsAvailable() {
+				return
+			}
+			prices, err := s.flightSvc.SearchFlights(
+				ctx,
+				req.Origin, req.Destination, req.Date, "economy", req.Passengers,
+			)
+			if err != nil {
+				slog.Warn("[award-search] economy cash lookup failed", "err", err)
+				return
+			}
+			economyFlightPrices = prices
+			slog.Info("[award-search] economy cash baseline fetched", "prices", len(prices))
+		}()
+	}
+
 	wg.Wait()
 	slog.Info("[award-search] all APIs done", "elapsed", time.Since(start))
 
 	// ── Merge Apify results into awardItems (Apify takes priority) ───────
+	// Source-label tracking: we tag every retained item with the upstream
+	// that produced it so the UI can render an honest provenance line.
+	itemSource := map[string]string{} // key=issuer|date → label
 	if apifyErr == nil && len(apifyItems) > 0 {
-		// Apify results are LIVE — they override Seats.aero for same issuer+date
-		apifySeen := map[string]bool{}
+		// Apify results are LIVE — they override Seats.aero for same issuer+date.
+		// When the two collide, prefer Apify's TaxesCash (Seats.aero never
+		// supplies taxes), but only if Apify actually returned a number.
+		apifyByKey := map[string]AwardItem{}
 		for _, item := range apifyItems {
-			apifySeen[item.Issuer+"|"+item.Date] = true
+			apifyByKey[item.Issuer+"|"+item.Date] = item
+			itemSource[item.Issuer+"|"+item.Date] = sourceLabelApify
 		}
-		// Keep Seats.aero results that Apify didn't cover
+
 		var mergedSeats []AwardItem
 		for _, item := range awardItems {
-			if !apifySeen[item.Issuer+"|"+item.Date] {
-				mergedSeats = append(mergedSeats, item)
+			key := item.Issuer + "|" + item.Date
+			if apifyItem, collision := apifyByKey[key]; collision {
+				// Collision — Apify wins, but if Apify lacks taxes and
+				// Seats.aero somehow has them, keep them. (Almost never
+				// happens today but cheap insurance.)
+				if apifyItem.TaxesCash == nil && item.TaxesCash != nil {
+					apifyItem.TaxesCash = item.TaxesCash
+					apifyItem.TaxesIncluded = true
+					apifyByKey[key] = apifyItem
+				}
+				continue
 			}
+			mergedSeats = append(mergedSeats, item)
+			itemSource[key] = sourceLabelSeatsAero
 		}
-		awardItems = append(apifyItems, mergedSeats...)
+
+		// Reassemble in Apify-first order.
+		var merged []AwardItem
+		for _, item := range apifyItems {
+			merged = append(merged, apifyByKey[item.Issuer+"|"+item.Date])
+		}
+		merged = append(merged, mergedSeats...)
+		awardItems = merged
 		awardErr = nil // We have live data
 		slog.Info("[award-search] merged apify+seats.aero", "total", len(awardItems))
+	} else {
+		for _, item := range awardItems {
+			itemSource[item.Issuer+"|"+item.Date] = sourceLabelSeatsAero
+		}
 	}
 
 	// ── Determine cash price (CAD) ────────────────────────────────────────
 	cashPriceCAD := s.pickCashPrice(flightPrices, req.Origin, req.Destination, req.Cabin, req.Passengers)
+	cashFromGoogle := len(flightPrices) > 0
 	cashSource := "zone_fallback"
-	if len(flightPrices) > 0 {
+	if cashFromGoogle {
 		cashSource = "google_flights"
 	}
+	// Economy cash baseline for premium-cabin searches. Falls through to 0 if
+	// the parallel economy probe came up empty — in that case the frontend
+	// hides the secondary CPP and only shows the cabin-matched one.
+	var economyCashCAD float64
+	if cabinIsPremium && len(economyFlightPrices) > 0 {
+		economyCashCAD = s.pickCashPrice(economyFlightPrices, req.Origin, req.Destination, "economy", req.Passengers)
+	}
 	slog.Info("[award-search] cash price determined",
-		"cashPriceCAD", cashPriceCAD, "source", cashSource)
+		"cashPriceCAD", cashPriceCAD, "source", cashSource,
+		"economyCashCAD", economyCashCAD)
+
+	fetchedAt := time.Now().UTC()
 
 	// ── Build results from live Seats.aero data ──────────────────────────
 	var results []model.AwardSearchResult
@@ -244,6 +391,22 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 			seen[key] = true
 
 			r := s.buildResult(item, cashPriceCAD, req, walletBalances)
+			r.FetchedAt = fetchedAt
+			r.SourceLabel = itemSource[key]
+			if r.SourceLabel == "" {
+				r.SourceLabel = sourceLabelSeatsAero
+			}
+			// A live award row whose CashPriceCAD comes from the zone
+			// fallback is half-real, half-guess. Marking source="estimated"
+			// here is conservative — the CPP is necessarily approximate
+			// and the SPA should chip it accordingly.
+			if !cashFromGoogle {
+				r.Source = "estimated"
+			}
+			if economyCashCAD > 0 && r.PointsCost > 0 {
+				r.EconomyCashCAD = economyCashCAD
+				r.RealisticCPP = computeCPP(economyCashCAD, r.PointsCost)
+			}
 			results = append(results, r)
 		}
 		slog.Info("[award-search] live results built", "count", len(results))
@@ -268,6 +431,12 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		}
 		r := s.buildYAMLResult(prog, req, cashPriceCAD, walletBalances, startDate)
 		if r != nil {
+			r.FetchedAt = fetchedAt
+			r.SourceLabel = sourceLabelEstimate
+			if economyCashCAD > 0 && r.PointsCost > 0 {
+				r.EconomyCashCAD = economyCashCAD
+				r.RealisticCPP = computeCPP(economyCashCAD, r.PointsCost)
+			}
 			results = append(results, *r)
 			fallbackCount++
 		}
@@ -279,10 +448,60 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		return results[i].CPP > results[j].CPP
 	})
 
+	// ── Cache write ───────────────────────────────────────────────────────
+	// Cache even when results is empty — saves a future "no availability"
+	// route from re-burning the Seats.aero/Apify quotas for 45 minutes.
+	if s.cache != nil && len(results) > 0 {
+		if payload, err := json.Marshal(results); err == nil {
+			if err := s.cache.SetAwardSearch(ctx, cacheKey, payload, awardCacheTTL); err != nil {
+				slog.Warn("[award-search] cache set failed", "err", err)
+			}
+		}
+	}
+
 	slog.Info("[award-search] done",
-		"totalResults", len(results), "totalElapsed", time.Since(start))
+		"totalResults", len(results), "totalElapsed", time.Since(start),
+		"cashFromGoogle", cashFromGoogle)
 
 	return results, nil
+}
+
+// awardCacheKey constructs the Redis suffix from the route inputs. Programs
+// are NOT part of the key because the service always consults the same
+// hard-coded seatsAeroSources list — if that ever becomes per-request,
+// hash the sorted slice into the key.
+func awardCacheKey(req model.AwardSearchRequest) string {
+	return fmt.Sprintf("%s:%s:%s:%s:%d:%d",
+		strings.ToUpper(req.Origin),
+		strings.ToUpper(req.Destination),
+		req.Date,
+		strings.ToLower(req.Cabin),
+		req.Passengers,
+		req.FlexDays,
+	)
+}
+
+// overlayWallet refreshes the wallet-relative fields on a cached bundle.
+// The cache stores route data; balances are live so users see correct
+// CanAfford / CardBreakdowns even on a warm hit.
+func (s *AwardSearchService) overlayWallet(
+	ctx context.Context,
+	req model.AwardSearchRequest,
+	cached []model.AwardSearchResult,
+) []model.AwardSearchResult {
+	balances, err := s.loadWalletBalances(ctx, req.SessionID)
+	if err != nil {
+		// Wallet load failure on the warm path shouldn't poison the
+		// response — just zero the wallet fields and ship the route data.
+		balances = map[string]walletEntry{}
+	}
+	for i := range cached {
+		wb, _ := balances[cached[i].Program]
+		cached[i].PointsAvailable = wb.balance
+		cached[i].CanAfford = wb.balance >= int64(cached[i].PointsCost)
+		cached[i].CardBreakdowns = wb.breakdowns
+	}
+	return cached
 }
 
 // ── buildResult constructs an AwardSearchResult from a live AwardItem. ───────
@@ -296,7 +515,7 @@ func (s *AwardSearchService) buildResult(
 	totalPoints := item.MileageCost * req.Passengers
 
 	cpp := computeCPP(cashPriceCAD, totalPoints)
-	valueRating := rateValue(cpp)
+	valueRating := rateValue(cpp, req.Cabin)
 
 	wb, _ := walletBalances[item.Issuer]
 	canAfford := wb.balance >= int64(totalPoints)
@@ -319,8 +538,10 @@ func (s *AwardSearchService) buildResult(
 		Date:            item.Date,
 		Program:         item.Issuer,
 		ProgramName:     resolveIssuerName(item.Issuer),
+		Cabin:           req.Cabin,
 		PointsCost:      totalPoints,
 		TaxesCash:       item.TaxesCash,
+		TaxesIncluded:   item.TaxesIncluded,
 		CashPriceCAD:    cashPriceCAD,
 		CPP:             cpp,
 		ValueRating:     valueRating,
@@ -363,22 +584,31 @@ func (s *AwardSearchService) buildYAMLResult(
 
 	totalPts := int(pts) * req.Passengers
 	cpp := computeCPP(cashPriceCAD, totalPts)
-	valueRating := rateValue(cpp)
+	valueRating := rateValue(cpp, req.Cabin)
 
 	wb, _ := walletBalances[prog]
 	canAfford := wb.balance >= int64(totalPts)
 
+	// YAML fallback: we have no upstream tax figure. Leave TaxesCash nil and
+	// TaxesIncluded=false so the UI clearly marks this as an estimate-only
+	// row. Source="estimated" likewise prevents downstream code (e.g. the
+	// future award_search_log → medians job) from treating zone-fallback
+	// CPPs as observed live data.
 	return &model.AwardSearchResult{
 		Date:            date,
 		Program:         prog,
 		ProgramName:     resolveIssuerName(prog),
+		Cabin:           req.Cabin,
 		PointsCost:      totalPts,
-		TaxesCash:       0,
+		TaxesCash:       nil,
+		TaxesIncluded:   false,
 		CashPriceCAD:    cashPriceCAD,
 		CPP:             cpp,
 		ValueRating:     valueRating,
 		SeatsAvailable:  0,
 		Source:          "estimated",
+		SourceLabel:     sourceLabelEstimate,
+		FetchedAt:       time.Now().UTC(),
 		BookingURL:      awardBookingURL(prog, req.Origin, req.Destination, date, req.Cabin, req.Passengers),
 		PointsAvailable: wb.balance,
 		CanAfford:       canAfford,
@@ -395,9 +625,18 @@ type walletEntry struct {
 }
 
 func (s *AwardSearchService) loadWalletBalances(ctx context.Context, sessionID string) (map[string]walletEntry, error) {
+	// Worker probes pass the watch's owner-session, which may be empty (or
+	// stale) — return an empty wallet so the caller can proceed with no
+	// personalization rather than crashing the sweep.
+	if sessionID == "" {
+		return map[string]walletEntry{}, nil
+	}
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
+	}
+	if user == nil {
+		return map[string]walletEntry{}, nil
 	}
 	userCards, err := s.walletRepo.GetUserCards(ctx, user.ID)
 	if err != nil {
@@ -521,14 +760,58 @@ func computeCPP(cashPriceCAD float64, totalPoints int) float64 {
 	return (cashPriceCAD / float64(totalPoints)) * 100
 }
 
-func rateValue(cpp float64) string {
-	if cpp >= 7.0 {
-		return "excellent"
+// rateValue grades a CPP relative to realistic cabin baselines. Cash prices
+// scale wildly by cabin — a $8000 TATL business fare divided by 80k points
+// looks "excellent" at 10¢, but only if the user would actually pay $8000 in
+// cash. Most people who fly business on points wouldn't, so the rating must
+// reflect the cabin context, not the absolute number.
+//
+// Thresholds calibrated against industry consensus (TPG / Prince of Travel /
+// Frequent Miler points valuations, 2026): the floor for "excellent" rises
+// with the cash baseline so a partner biz redemption needs to clear a higher
+// bar than a transcon economy hop to earn the badge. Floors raised in May
+// 2026 to prevent last-minute-fare inflation (panic-priced biz cash makes
+// every redemption look like 9-12¢) from auto-flagging as "excellent".
+func rateValue(cpp float64, cabin string) string {
+	c := strings.ToLower(strings.TrimSpace(cabin))
+	switch c {
+	case "first":
+		switch {
+		case cpp >= 12.0:
+			return "excellent"
+		case cpp >= 7.0:
+			return "good"
+		default:
+			return "poor"
+		}
+	case "business":
+		switch {
+		case cpp >= 10.0:
+			return "excellent"
+		case cpp >= 5.0:
+			return "good"
+		default:
+			return "poor"
+		}
+	case "premium_economy":
+		switch {
+		case cpp >= 3.0:
+			return "excellent"
+		case cpp >= 2.0:
+			return "good"
+		default:
+			return "poor"
+		}
+	default: // economy or unknown
+		switch {
+		case cpp >= 2.5:
+			return "excellent"
+		case cpp >= 1.5:
+			return "good"
+		default:
+			return "poor"
+		}
 	}
-	if cpp >= 4.0 {
-		return "good"
-	}
-	return "poor"
 }
 
 // ── Booking URL builder ───────────────────────────────────────────────────────

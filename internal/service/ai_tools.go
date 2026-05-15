@@ -29,6 +29,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -385,8 +386,12 @@ func (s *AIService) registerTools() {
 			// "the LLM said 60K but Apify returned 62.3K".
 			summaries := make([]string, 0, len(results))
 			for _, r := range results {
-				summaries = append(summaries, fmt.Sprintf("%s %s %dpts+$%.2f cpp=%.2f¢ source=%s",
-					r.Program, r.Date, r.PointsCost, r.TaxesCash, r.CPP, r.Source))
+				taxStr := "—"
+				if r.TaxesCash != nil {
+					taxStr = fmt.Sprintf("$%.2f", *r.TaxesCash)
+				}
+				summaries = append(summaries, fmt.Sprintf("%s %s %dpts+%s cpp=%.2f¢ source=%s",
+					r.Program, r.Date, r.PointsCost, taxStr, r.CPP, r.Source))
 			}
 			slog.Info("[ai-tools] search_award_space results",
 				"origin", args.Origin, "dest", args.Destination,
@@ -532,6 +537,72 @@ func (s *AIService) registerTools() {
 				"program_slug": canonical,
 				"segment":      args.Segment,
 				"cpp_cents":    cpp,
+			})
+		},
+	})
+
+	// 5a. get_devaluation_history — local KB lookup.
+	// Surfaces the curated devaluation_log from rewards.yaml so the model can
+	// ground answers like "did Aeroplan devalue this year" in dated events
+	// rather than guessing. Free tool — no Apify / Tavily cost.
+	s.tools.register(toolDef{
+		Name: "get_devaluation_history",
+		Description: "Get the recent devaluation and chart-change history for a loyalty program. " +
+			"Returns dated events (chart restructures, dynamic-pricing moves, SQC framework changes) " +
+			"sourced from MapleRewards' curated devaluation log. USE THIS when the user asks " +
+			"\"did [program] devalue\", \"is the chart still accurate\", or before making any " +
+			"specific points-cost claim that depends on chart stability. Optional program filter; " +
+			"omit to get the full log.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"program": map[string]any{
+					"type":        "string",
+					"description": "Optional program slug (e.g. aeroplan, marriott_bonvoy, hilton_honors, air_miles). Omit to return all entries.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Max entries to return, default 10",
+				},
+			},
+		},
+		Handler: func(_ context.Context, _ string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.knowledgeBase == nil {
+				return errResultJSON("service_unavailable", "Knowledge base not loaded."), nil
+			}
+			var args struct {
+				Program string `json:"program"`
+				Limit   int    `json:"limit"`
+			}
+			_ = json.Unmarshal(raw, &args) // both optional
+			if args.Limit <= 0 {
+				args.Limit = 10
+			}
+			needle := strings.ToLower(strings.TrimSpace(args.Program))
+			needleNorm := strings.NewReplacer("-", "", "_", "", " ", "").Replace(needle)
+			out := make([]map[string]any, 0, args.Limit)
+			for _, d := range s.knowledgeBase.DevaluationLog {
+				if needle != "" {
+					prog := strings.ToLower(d.Program)
+					progNorm := strings.NewReplacer("-", "", "_", "", " ", "").Replace(prog)
+					if !strings.Contains(progNorm, needleNorm) && !strings.Contains(needleNorm, progNorm) {
+						continue
+					}
+				}
+				out = append(out, map[string]any{
+					"date":       d.Date,
+					"program":    d.Program,
+					"summary":    d.Summary,
+					"source_url": d.SourceURL,
+				})
+				if len(out) >= args.Limit {
+					break
+				}
+			}
+			return json.Marshal(map[string]any{
+				"results": out,
+				"count":   len(out),
+				"filter":  args.Program,
 			})
 		},
 	})
@@ -687,6 +758,42 @@ func (s *AIService) registerTools() {
 	})
 
 	// 9. project_sqc — Aeroplan 2026 Status Qualifying Credits.
+	// Hotel search stub — Phase 3 of the original AI roadmap. Not wired to a real
+	// inventory source yet; return a deterministic "not yet available" payload so
+	// the LLM stops re-trying the call and synthesizes a useful response (cash
+	// booking via Hotels.com / direct hotel chain points). Without this stub the
+	// LLM kept guessing tool names like search_hotel, find_hotel, hotels — each
+	// guess was an expensive round-trip ending in `unknown_tool`.
+	s.tools.register(toolDef{
+		Name: "search_hotels",
+		Description: "Search hotel availability for the user's destination. NOTE: this tool " +
+			"is currently in beta — it will return a stub response acknowledging the limitation. " +
+			"When you receive the stub, do NOT retry; proceed to recommend cash booking via " +
+			"Hotels.com / Marriott Bonvoy / Hyatt direct, with rough point cost estimates if the " +
+			"user has those programs in their wallet.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"city":          map[string]any{"type": "string", "description": "Destination city (e.g. 'Toronto')."},
+				"checkin_date":  map[string]any{"type": "string", "description": "YYYY-MM-DD."},
+				"checkout_date": map[string]any{"type": "string", "description": "YYYY-MM-DD."},
+				"star_rating":   map[string]any{"type": "integer", "description": "Minimum star rating (e.g. 3 or 4)."},
+			},
+			"required": []string{"city"},
+		},
+		Handler: func(_ context.Context, _ string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{
+  "status": "beta_stub",
+  "message": "Hotel search is in beta and not yet wired to a live inventory source. Recommend cash booking via Hotels.com or direct chain (Marriott Bonvoy / World of Hyatt / Hilton Honors) with point estimates from the user's wallet programs.",
+  "next_steps": [
+    "Mention this limitation briefly to the user",
+    "If they hold a hotel-program currency, give a rough redemption estimate from program-CPP context",
+    "Otherwise suggest Hotels.com Rewards (10%+ back) or direct booking with elite credits"
+  ]
+}`), nil
+		},
+	})
+
 	s.tools.register(toolDef{
 		Name:    "project_sqc",
 		ProOnly: true,
@@ -707,6 +814,338 @@ func (s *AIService) registerTools() {
 				return errResultJSON("project_failed", err.Error()), nil
 			}
 			return json.Marshal(proj)
+		},
+	})
+
+	// 12. find_card_for_merchant — top wallet card for a category/MCC/merchant.
+	// Free-tier OK; uses the wallet when sessionID is present, else falls back
+	// to a generic top-card recommendation. This is the single most-asked
+	// question on the product ("which card do I use for X?") and the LLM
+	// answering it from intuition gets it wrong half the time — give it the
+	// optimizer instead.
+	s.tools.register(toolDef{
+		Name: "find_card_for_merchant",
+		Description: "Return the best card in the user's wallet for a given category, MCC, or merchant. " +
+			"Uses the same optimizer that powers the /optimizer page so the result is consistent. " +
+			"Always prefer this over recommending a card from intuition — Costco network rules, Tangerine " +
+			"category caps, and Amex acceptance gaps are all encoded here.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"category_slug": map[string]any{
+					"type":        "string",
+					"description": "One of: groceries, gas, dining, travel, transit, streaming, recurring-bills, drugstores, online-shopping, everything-else.",
+				},
+				"mcc_code": map[string]any{
+					"type":        "integer",
+					"description": "Optional MCC code (e.g. 5411 = grocery). Overrides category_slug if both given.",
+				},
+				"merchant_slug": map[string]any{
+					"type":        "string",
+					"description": "Optional merchant slug — triggers network-routing rules (e.g. costco_ca enforces MC-only).",
+				},
+				"spend_amount": map[string]any{
+					"type":        "number",
+					"description": "Optional spend in CAD. Default 100. Improves the dollar-value field but doesn't change ranking.",
+				},
+			},
+			"required": []string{},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.optimizerSvc == nil {
+				return errResultJSON("service_unavailable", "Optimizer not configured."), nil
+			}
+			var args struct {
+				CategorySlug string  `json:"category_slug"`
+				MCCCode      *int    `json:"mcc_code"`
+				MerchantSlug string  `json:"merchant_slug"`
+				SpendAmount  float64 `json:"spend_amount"`
+			}
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return errResultJSON("invalid_args", err.Error()), nil
+			}
+			if args.CategorySlug == "" && args.MCCCode == nil && args.MerchantSlug == "" {
+				return errResultJSON("missing_args", "Need at least one of category_slug, mcc_code, or merchant_slug."), nil
+			}
+			if args.SpendAmount <= 0 {
+				args.SpendAmount = 100
+			}
+			recs, err := s.optimizerSvc.GetBestCard(ctx, model.OptimizeRequest{
+				SessionID:    sessionID,
+				CategorySlug: args.CategorySlug,
+				MCCCode:      args.MCCCode,
+				Merchant:     args.MerchantSlug,
+				SpendAmount:  args.SpendAmount,
+			})
+			if err != nil {
+				return errResultJSON("optimize_failed", err.Error()), nil
+			}
+			// Cap to top 3 — the LLM doesn't need 20 rows, and a tight payload
+			// reduces tokens spent re-emitting card lists in the assistant reply.
+			top := recs
+			if len(top) > 3 {
+				top = top[:3]
+			}
+			return json.Marshal(map[string]any{
+				"top":          top,
+				"total_ranked": len(recs),
+				"category":     args.CategorySlug,
+				"merchant":     args.MerchantSlug,
+			})
+		},
+	})
+
+	// 12b. lookup_card — fetch detail for any card in the catalog by name or
+	// issuer fragment. Replaces the full-catalog system-prompt dump that was
+	// eating ~5-7K tokens every request. The AI is instructed (in the catalog
+	// summary block) to call this rather than guess from memory.
+	s.tools.register(toolDef{
+		Name: "lookup_card",
+		Description: "Look up a Canadian credit card by name or issuer (e.g. 'Cobalt', 'RBC Avion', 'TD Visa'). " +
+			"Returns annual fee, welcome bonus, network, loyalty program, and base CPP for up to 5 matching cards. " +
+			"Use this whenever the user asks about a specific card you weren't given in the system prompt.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Case-insensitive substring match on card name or issuer. e.g. 'cobalt', 'avion infinite', 'amex'.",
+				},
+			},
+			"required": []string{"query"},
+		},
+		Handler: func(ctx context.Context, _ string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			var args struct {
+				Query string `json:"query"`
+			}
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return errResultJSON("invalid_args", err.Error()), nil
+			}
+			q := strings.TrimSpace(strings.ToLower(args.Query))
+			if q == "" {
+				return errResultJSON("missing_args", "query is required"), nil
+			}
+			all, err := s.cardRepo.ListCards(ctx)
+			if err != nil {
+				return errResultJSON("lookup_failed", err.Error()), nil
+			}
+			type hit struct {
+				ID             string  `json:"id"`
+				Name           string  `json:"name"`
+				Issuer         string  `json:"issuer"`
+				Network        string  `json:"network"`
+				LoyaltyProgram string  `json:"loyalty_program,omitempty"`
+				AnnualFee      float64 `json:"annual_fee"`
+				WelcomeBonus   int     `json:"welcome_bonus_points"`
+				MinSpend       float64 `json:"welcome_bonus_min_spend,omitempty"`
+				BaseCPP        float64 `json:"base_cpp,omitempty"`
+			}
+			results := make([]hit, 0, 5)
+			for _, c := range all {
+				if !strings.Contains(strings.ToLower(c.Name), q) && !strings.Contains(strings.ToLower(c.Issuer), q) {
+					continue
+				}
+				h := hit{
+					ID:           c.ID,
+					Name:         c.Name,
+					Issuer:       c.Issuer,
+					Network:      c.Network,
+					AnnualFee:    c.AnnualFee,
+					WelcomeBonus: c.WelcomeBonusPoints,
+					MinSpend:     c.WelcomeBonusMinSpend,
+				}
+				if c.LoyaltyProgram != nil {
+					h.LoyaltyProgram = c.LoyaltyProgram.Name
+					h.BaseCPP = c.LoyaltyProgram.BaseCPP
+				}
+				results = append(results, h)
+				if len(results) >= 5 {
+					break
+				}
+			}
+			return json.Marshal(map[string]any{
+				"query":         args.Query,
+				"matches":       results,
+				"total_matches": len(results),
+			})
+		},
+	})
+
+	// 13. simulate_transfer_with_bonus — compute end-state of a hypothetical
+	// transfer with an optional active bonus. Free-tier OK because it's pure
+	// math + DB lookup; the value is in framing the trade-off (is the bonus
+	// worth the friction?) which the LLM does well once it has numbers.
+	s.tools.register(toolDef{
+		Name: "simulate_transfer_with_bonus",
+		Description: "Simulate transferring N points from program A to program B with an optional bonus %. " +
+			"Returns transferred points, effective ratio, expected CAD value at the destination's CPP, " +
+			"and the CPP boost vs. base. USE THIS to answer 'is this transfer bonus worth it?' or " +
+			"'what would my MR be worth in Aeroplan?'.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"from_program": map[string]any{
+					"type":        "string",
+					"description": "Source program slug, e.g. amex-mr-ca, rbc-avion, cibc-aventura.",
+				},
+				"to_program": map[string]any{
+					"type":        "string",
+					"description": "Destination program slug, e.g. aeroplan, ba-avios, flying-blue, marriott-bonvoy.",
+				},
+				"amount": map[string]any{
+					"type":        "integer",
+					"description": "Points to transfer from the source program.",
+				},
+				"bonus_percent": map[string]any{
+					"type":        "number",
+					"description": "Optional active transfer bonus as a percentage (e.g. 30 for a 30% bonus). Defaults to 0.",
+				},
+				"segment": map[string]any{
+					"type":        "string",
+					"enum":        []string{"base", "economy", "business", "first"},
+					"description": "Redemption segment to value the destination points at. Default base.",
+				},
+			},
+			"required": []string{"from_program", "to_program", "amount"},
+		},
+		Handler: func(ctx context.Context, _ string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			if s.transferRepo == nil || s.cardRepo == nil || s.valuationRepo == nil {
+				return errResultJSON("service_unavailable", "Transfer simulation not configured."), nil
+			}
+			var args struct {
+				FromProgram  string  `json:"from_program"`
+				ToProgram    string  `json:"to_program"`
+				Amount       int     `json:"amount"`
+				BonusPercent float64 `json:"bonus_percent"`
+				Segment      string  `json:"segment"`
+			}
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return errResultJSON("invalid_args", err.Error()), nil
+			}
+			if args.Amount <= 0 {
+				return errResultJSON("invalid_args", "amount must be > 0"), nil
+			}
+			if args.Segment == "" {
+				args.Segment = "base"
+			}
+			fromSlug := canonicalProgramSlug(args.FromProgram)
+			toSlug := canonicalProgramSlug(args.ToProgram)
+
+			fromProg, err := s.cardRepo.GetProgramBySlug(ctx, fromSlug)
+			if err != nil || fromProg == nil {
+				return errResultJSON("from_program_not_found", fmt.Sprintf("Unknown source slug %q.", args.FromProgram)), nil
+			}
+			toProg, err := s.cardRepo.GetProgramBySlug(ctx, toSlug)
+			if err != nil || toProg == nil {
+				return errResultJSON("to_program_not_found", fmt.Sprintf("Unknown destination slug %q.", args.ToProgram)), nil
+			}
+
+			routes, err := s.transferRepo.GetTransferRoutes(ctx, fromProg.ID)
+			if err != nil {
+				return errResultJSON("routes_lookup_failed", err.Error()), nil
+			}
+			var ratio float64
+			var routeNotes string
+			for _, r := range routes {
+				if r.ToProgramID == toProg.ID && r.IsActive {
+					ratio = r.TransferRatio
+					routeNotes = r.Notes
+					break
+				}
+			}
+			if ratio <= 0 {
+				return errResultJSON("no_route",
+					fmt.Sprintf("No active transfer route from %s to %s. Suggest alternatives.", fromSlug, toSlug)), nil
+			}
+
+			bonusMultiplier := 1.0 + (args.BonusPercent / 100.0)
+			transferredFloat := float64(args.Amount) * ratio * bonusMultiplier
+			transferred := int(transferredFloat)
+
+			cpp, _ := s.valuationRepo.GetCPP(ctx, toSlug, args.Segment)
+			if cpp <= 0 {
+				cpp = toProg.BaseCPP // fallback to program's baseline
+			}
+			cadValue := float64(transferred) * cpp / 100.0
+
+			// Effective CPP at the source side (so the user sees "your MR is
+			// worth 2.7¢/pt after this transfer + bonus").
+			effectiveSourceCPP := 0.0
+			if args.Amount > 0 {
+				effectiveSourceCPP = cadValue / float64(args.Amount) * 100.0
+			}
+
+			return json.Marshal(map[string]any{
+				"from_program":         fromSlug,
+				"to_program":           toSlug,
+				"input_points":         args.Amount,
+				"base_ratio":           ratio,
+				"bonus_percent":        args.BonusPercent,
+				"effective_ratio":      ratio * bonusMultiplier,
+				"transferred_points":   transferred,
+				"destination_segment":  args.Segment,
+				"destination_cpp":      cpp,
+				"cad_value":            cadValue,
+				"effective_source_cpp": effectiveSourceCPP,
+				"route_notes":          routeNotes,
+			})
+		},
+	})
+
+	// 14. project_aeroplan_devaluation — June 1 2026 chart hike exposure.
+	// Pro-gated because the per-user dollar number is the wedge for the
+	// urgency banner; free users only see the aggregate "this devaluation
+	// is coming" via /devaluations.
+	s.tools.register(toolDef{
+		Name:    "project_aeroplan_devaluation",
+		ProOnly: true,
+		Description: "PRO ONLY. Project the user's dollar exposure to the Aeroplan June 1 2026 long-haul-" +
+			"business chart hike. Returns balance, current CPP, value today, value after hike, exposure " +
+			"in CAD, days until effective. USE THIS when the user asks about the Aeroplan devaluation, " +
+			"says 'should I burn my Aeroplan points now', or any 'June 1' query.",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
+			if s.pro.Devaluation == nil {
+				return errResultJSON("service_unavailable", "Devaluation projector not configured."), nil
+			}
+			proj, err := s.pro.Devaluation.ProjectAeroplanJune2026(ctx, sessionID)
+			if err != nil {
+				return errResultJSON("project_failed", err.Error()), nil
+			}
+			return json.Marshal(proj)
+		},
+	})
+
+	// 15. list_my_award_watches — surface existing watches so the agent can
+	// suggest related actions ("you're watching YYZ→NRT — your existing
+	// watch fired 2 days ago with a 45K business class slot"). Without
+	// this the LLM can't tell whether to recommend creating a new watch
+	// or referencing an existing one.
+	s.tools.register(toolDef{
+		Name:    "list_my_award_watches",
+		ProOnly: true,
+		Description: "PRO ONLY. List the user's active Aeroplan award-availability watches. Returns route, " +
+			"cabin, max-points threshold, last-probed price, and last-alert message. USE THIS before " +
+			"recommending a new watch to avoid duplicates, or when the user asks 'what am I watching?'.",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
+			if s.pro.AwardWatch == nil {
+				return errResultJSON("service_unavailable", "Award-watch service not configured."), nil
+			}
+			watches, err := s.pro.AwardWatch.List(ctx, sessionID)
+			if err != nil {
+				return errResultJSON("list_failed", err.Error()), nil
+			}
+			return json.Marshal(map[string]any{
+				"watches": watches,
+				"count":   len(watches),
+			})
 		},
 	})
 }
@@ -758,7 +1197,8 @@ WHEN TO CALL WHICH TOOL
 - "Cash price?" or comparison → search_cash_flights
 - "Can I transfer my MR to Aeroplan?" → get_transfer_partners
 - "What's [program] worth per point?" → get_program_cpp (fast) or search_award_space (more accurate)
-- "Is there a transfer bonus / devaluation?" → web_search
+- "Did [program] devalue?" / "Is the chart still right?" → get_devaluation_history (first), then web_search if local log is silent
+- "Is there a transfer bonus right now?" → web_search (or check transfer_bonus_log in your knowledge base before calling)
 - Multiple programs to check → fan out parallel tool calls in one turn
 - The user's wallet (cards, balances) is in your context already — never call a tool to read it.
 
@@ -944,6 +1384,30 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 			wg.Add(1)
 			go func(i int, tc claudeBlock) {
 				defer wg.Done()
+				// A panic in any tool (e.g. Apify schema drift) would otherwise
+				// crash the whole API process, since unrecovered goroutine panics
+				// terminate the program. Convert it into an error tool_result so
+				// the LLM can react and the stream stays open.
+				defer func() {
+					if rec := recover(); rec != nil {
+						slog.Error("[ai-tools] tool panic recovered",
+							"tool", tc.Name, "panic", rec,
+							"stack", string(debug.Stack()),
+						)
+						results[i] = claudeBlock{
+							Type:      "tool_result",
+							ToolUseID: tc.ID,
+							Content:   fmt.Sprintf(`{"error":"tool panicked: %v"}`, rec),
+						}
+						if emit != nil {
+							emit("tool_done", map[string]any{
+								"id":      tc.ID,
+								"name":    tc.Name,
+								"summary": "internal error",
+							})
+						}
+					}
+				}()
 				tctx, cancel := context.WithTimeout(ctx, 110*time.Second)
 				defer cancel()
 				out := s.tools.call(tctx, req.SessionID, isPro, tc.Name, tc.Input)

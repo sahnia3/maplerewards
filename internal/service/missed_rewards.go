@@ -39,8 +39,12 @@ func NewMissedRewardsService(
 
 // ComputeMissedRewards re-ranks each spend entry against the current wallet,
 // using the optimizer (which considers cap blending, transfer partners, MCC fallback).
-// sinceDays bounds how far back to look (0 = all history).
+// sinceDays bounds how far back to look (0 → defaults to 180 days).
 // topN bounds the per-entry list returned in TopMissed (0 → 10).
+//
+// The scan is hard-capped to maxEntries to prevent O(N) optimizer fan-out on
+// large histories. The optimizer call per entry is the hot path; a CSV-imported
+// 5K-entry wallet was previously triggering 5K optimizer passes per request.
 func (s *MissedRewardsService) ComputeMissedRewards(
 	ctx context.Context,
 	sessionID string,
@@ -50,6 +54,12 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 	if topN <= 0 {
 		topN = 10
 	}
+	// Bound the lookback even when caller passes 0 ("all"). Without this, a
+	// long-tenured user's full history blows up the optimizer fan-out below.
+	if sinceDays <= 0 {
+		sinceDays = 180
+	}
+	const maxEntries = 1000
 
 	// Verify session.
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
@@ -57,7 +67,9 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
 
-	// Pull spend history (all entries, paginated by repo).
+	// Pull spend history (paginated). Break early once we hit maxEntries —
+	// repo returns rows ordered most-recent-first, so the cap keeps the
+	// freshest behaviour.
 	const pageSize = 500
 	var allEntries []model.SpendEntry
 	for offset := 0; ; offset += pageSize {
@@ -69,24 +81,24 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 			break
 		}
 		allEntries = append(allEntries, batch...)
-		if len(batch) < pageSize {
+		if len(allEntries) >= maxEntries || len(batch) < pageSize {
 			break
 		}
 	}
+	if len(allEntries) > maxEntries {
+		allEntries = allEntries[:maxEntries]
+	}
 
 	// Apply since-days floor.
-	sinceISO := ""
-	if sinceDays > 0 {
-		floor := time.Now().AddDate(0, 0, -sinceDays).Format("2006-01-02")
-		sinceISO = floor
-		filtered := allEntries[:0]
-		for _, e := range allEntries {
-			if e.SpentAt >= floor {
-				filtered = append(filtered, e)
-			}
+	floor := time.Now().AddDate(0, 0, -sinceDays).Format("2006-01-02")
+	sinceISO := floor
+	filtered := allEntries[:0]
+	for _, e := range allEntries {
+		if e.SpentAt >= floor {
+			filtered = append(filtered, e)
 		}
-		allEntries = filtered
 	}
+	allEntries = filtered
 
 	report := &model.MissedRewardsReport{
 		Since:          sinceISO,
@@ -152,6 +164,7 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 			missedEntries = append(missedEntries, model.MissedRewardEntry{
 				SpendEntryID:    e.ID,
 				SpentAt:         e.SpentAt,
+				Description:     e.Note,
 				CategorySlug:    e.CategorySlug,
 				CategoryName:    e.CategoryName,
 				Amount:          e.Amount,

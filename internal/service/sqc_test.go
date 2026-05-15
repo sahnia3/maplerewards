@@ -33,7 +33,7 @@ func defaultTiers() []model.SQCTier {
 		{StatusLevel: "35K", SQCRequired: 35_000},
 		{StatusLevel: "50K", SQCRequired: 50_000},
 		{StatusLevel: "75K", SQCRequired: 75_000, MinRevenueCAD: 9_000},
-		{StatusLevel: "Super Elite", SQCRequired: 100_000, MinRevenueCAD: 20_000},
+		{StatusLevel: "Super Elite", SQCRequired: 125_000, MinRevenueCAD: 20_000},
 	}
 }
 
@@ -109,7 +109,7 @@ func TestSQC_AtTierThresholdShowsCurrentAndNext(t *testing.T) {
 
 func TestSQC_AtTopTierNoNext(t *testing.T) {
 	cards := []model.SQCCardContribution{
-		{CardID: "c1", CardName: "Reserve", DollarsPerSQC: 4, YTDSpend: 500_000, SQCEarned: 120_000},
+		{CardID: "c1", CardName: "Reserve", DollarsPerSQC: 4, YTDSpend: 600_000, SQCEarned: 150_000},
 	}
 	r, err := newSQCSvc(cards, defaultTiers()).Project(context.Background(), "sess")
 	if err != nil {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -72,6 +73,12 @@ func (s *OptimizerService) GetBestCard(
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	// pgx returns (nil, nil) for "no row matches" — this branch was missing
+	// before and a typo'd session_id panicked the whole API process when
+	// dereferencing user.ID below.
+	if user == nil {
+		return nil, ErrSessionNotFound
+	}
 	userCards, err := s.walletRepo.GetUserCards(ctx, user.ID)
 	if err != nil {
 		return nil, err
@@ -109,6 +116,17 @@ func (s *OptimizerService) GetBestCard(
 	for i, uc := range userCards {
 		go func(idx int, userCard model.UserCard) {
 			defer wg.Done()
+			// Per-card scoring is fan-out: a panic in one (nil multiplier deref,
+			// bad transfer-partner data) would otherwise crash the whole process.
+			// Record the panic as a scoring error so the result row is simply
+			// dropped and the optimizer still returns the survivors.
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("optimizer card-score panic recovered",
+						"err", r, "card_id", userCard.CardID)
+					results[idx] = result{err: fmt.Errorf("card-score panic: %v", r)}
+				}
+			}()
 			rec, err := s.scoreCard(ctx, userCard, category.ID, req.SpendAmount, segment)
 			results[idx] = result{rec: rec, err: err}
 		}(i, uc)

@@ -24,7 +24,7 @@ func (h *SQCHandler) GetProjection(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.svc.Project(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "sqc.project", err, "could not compute SQC projection", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)

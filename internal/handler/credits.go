@@ -26,7 +26,7 @@ func (h *CreditsHandler) ListCredits(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.svc.ListCredits(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "credits.list", err, "could not load credits", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)
@@ -47,7 +47,7 @@ func (h *CreditsHandler) RecordRedemption(w http.ResponseWriter, r *http.Request
 	}
 	out, err := h.svc.RecordRedemption(r.Context(), sessionID, creditDefID, req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "credits.redeem", err, "could not record redemption", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)

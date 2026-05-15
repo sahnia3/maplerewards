@@ -195,7 +195,7 @@ type rssFeed struct {
 			Thumbnail struct {
 				URL string `xml:"url,attr"`
 			} `xml:"http://search.yahoo.com/mrss/ thumbnail"`
-			_ struct{} `xml:",any"`
+			Other struct{} `xml:"-"` // catch-all placeholder; ignored on marshal
 		} `xml:"item"`
 	} `xml:"channel"`
 }
@@ -294,6 +294,13 @@ func (s *FeedAggregatorService) fetchAll(ctx context.Context) []FeedArticle {
 		wg.Add(1)
 		go func(src feedSource) {
 			defer wg.Done()
+			// Recover panics so a malformed feed (HTML schema drift, nil deref)
+			// doesn't crash the entire API process. WaitGroup still releases.
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("feed source panic recovered", "source", src.Name, "err", r)
+				}
+			}()
 			items, err := s.fetchSource(ctx, src)
 			if err != nil {
 				s.logger.Warn("feed source fetch failed", "source", src.Name, "err", err)

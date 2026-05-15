@@ -40,7 +40,7 @@ func (h *MissedRewardsHandler) GetMissedRewards(w http.ResponseWriter, r *http.R
 
 	report, err := h.svc.ComputeMissedRewards(r.Context(), sessionID, sinceDays, topN)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "missed_rewards.compute", err, "could not compute missed rewards report", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, report)

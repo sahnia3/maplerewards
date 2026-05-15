@@ -171,15 +171,15 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 	// Update monthly spend aggregate for cap tracking
 	parsedDate, _ := time.Parse("2006-01-02", spentAt)
 	month := time.Date(parsedDate.Year(), parsedDate.Month(), 1, 0, 0, 0, 0, time.UTC)
-	go func() {
+	safeGo("wallet-upsert-monthly", func() {
 		_ = s.spendRepo.UpsertMonthlySpend(context.Background(), user.ID, req.CardID, category.ID, month, req.Amount)
-	}()
+	})
 
 	// Update bonus spend tracking (if bonus exists for this card)
 	if s.bonusRepo != nil {
-		go func() {
+		safeGo("wallet-update-bonus-spend", func() {
 			_ = s.bonusRepo.UpdateBonusSpend(context.Background(), user.ID, req.CardID, req.Amount)
-		}()
+		})
 	}
 
 	return saved, nil

@@ -10,9 +10,11 @@ import (
 
 // KnowledgeBase holds the full parsed rewards knowledge.
 type KnowledgeBase struct {
-	Programs       map[string]*Program `yaml:",inline"`
-	Flights        []FlightRoute       `yaml:"flights"`
-	StrategyPrompt string              // pre-formatted supplementary strategy content for the AI prompt
+	Programs         map[string]*Program `yaml:",inline"`
+	Flights          []FlightRoute       `yaml:"flights"`
+	DevaluationLog   []DevaluationEntry  `yaml:"devaluation_log"`
+	TransferBonusLog []TransferBonusEntry `yaml:"transfer_bonus_log"`
+	StrategyPrompt   string              // pre-formatted supplementary strategy content for the AI prompt
 }
 
 // Program represents a loyalty program's data.
@@ -69,6 +71,26 @@ type FlightRoute struct {
 	Notes       string `yaml:"notes"`
 }
 
+// DevaluationEntry is one row of the devaluation_log — a dated event where a
+// program changed its award chart, status framework, or earning rules.
+type DevaluationEntry struct {
+	Date      string `yaml:"date" json:"date"`
+	Program   string `yaml:"program" json:"program"`
+	Summary   string `yaml:"summary" json:"summary"`
+	SourceURL string `yaml:"source_url,omitempty" json:"source_url,omitempty"`
+}
+
+// TransferBonusEntry is one row of the transfer_bonus_log — a time-bounded
+// promotion where a flexible-points program offered a bonus on transfers
+// out to a partner (e.g. Amex MR → Aeroplan 25%).
+type TransferBonusEntry struct {
+	DateRange   string `yaml:"date_range" json:"date_range"`
+	Source      string `yaml:"source" json:"source"`
+	Destination string `yaml:"destination" json:"destination"`
+	BonusPct    int    `yaml:"bonus_pct" json:"bonus_pct"`
+	Note        string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
 // Load reads and parses the rewards YAML knowledge base from the given path.
 func Load(path string) (*KnowledgeBase, error) {
 	data, err := os.ReadFile(path)
@@ -120,6 +142,11 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 							unit, _ := rateMap["unit"].(string)
 							sb.WriteString(fmt.Sprintf("  - %s: %dx (%s)\n", cat, mult, unit))
 						}
+					}
+				}
+				if notes, ok := cardMap["notes"].([]interface{}); ok {
+					for _, n := range notes {
+						sb.WriteString(fmt.Sprintf("  - %v\n", n))
 					}
 				}
 			}
@@ -179,6 +206,63 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 		}
 	}
 
+	// transfer_strategies — surface key transfer routing tips so the model
+	// always sees the canonical "transfer MR to Aeroplan, never to portal" rule.
+	if ts, ok := raw["transfer_strategies"]; ok {
+		sb.WriteString("### Transfer Strategies\n")
+		if tsMap, ok := ts.(map[string]interface{}); ok {
+			for _, val := range tsMap {
+				entry, ok := val.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				src, _ := entry["source"].(string)
+				if src != "" {
+					sb.WriteString(fmt.Sprintf("**%s:**\n", src))
+				}
+				if rule, ok := entry["critical_rule"].(string); ok {
+					sb.WriteString(fmt.Sprintf("  - Rule: %s\n", rule))
+				}
+				if partners, ok := entry["partners"].([]interface{}); ok {
+					for _, p := range partners {
+						pm, ok := p.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						prog, _ := pm["program"].(string)
+						ratio, _ := pm["ratio"].(string)
+						best, _ := pm["best_use"].(string)
+						sb.WriteString(fmt.Sprintf("  - %s (%s): %s\n", prog, ratio, best))
+					}
+				}
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	// walkthroughs — step-by-step booking guides. Highest CPP sweet spots
+	// Canadians can hit from YYZ/YVR/YUL. Surfaced inline so the model can
+	// quote the exact steps verbatim instead of hallucinating booking flow.
+	if wts, ok := raw["walkthroughs"]; ok {
+		sb.WriteString("### Booking Walkthroughs (high-CPP Canadian sweet spots)\n")
+		if wList, ok := wts.([]interface{}); ok {
+			for _, w := range wList {
+				wm, ok := w.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				title, _ := wm["title"].(string)
+				sb.WriteString(fmt.Sprintf("**%s:**\n", title))
+				if steps, ok := wm["steps"].([]interface{}); ok {
+					for i, st := range steps {
+						sb.WriteString(fmt.Sprintf("  %d. %v\n", i+1, st))
+					}
+				}
+				sb.WriteString("\n")
+			}
+		}
+	}
+
 	// redemption_tips
 	if tips, ok := raw["redemption_tips"]; ok {
 		sb.WriteString("### Redemption Tips\n")
@@ -206,6 +290,14 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 	return nil
 }
 
+// reservedTopLevelKeys are keys in rewards.yaml that are NOT loyalty programs.
+// loadSimple skips these when iterating program entries.
+var reservedTopLevelKeys = map[string]bool{
+	"flights":            true,
+	"devaluation_log":    true,
+	"transfer_bonus_log": true,
+}
+
 // loadSimple parses the YAML into a raw map and extracts programs and flights.
 func loadSimple(data []byte) (*KnowledgeBase, error) {
 	var raw map[string]interface{}
@@ -218,8 +310,8 @@ func loadSimple(data []byte) (*KnowledgeBase, error) {
 	}
 
 	for key, val := range raw {
-		if key == "flights" {
-			// Parse flights separately
+		switch key {
+		case "flights":
 			flightsData, err := yaml.Marshal(val)
 			if err != nil {
 				continue
@@ -229,8 +321,30 @@ func loadSimple(data []byte) (*KnowledgeBase, error) {
 				continue
 			}
 			kb.Flights = flights
-		} else {
-			// Parse as a program
+		case "devaluation_log":
+			b, err := yaml.Marshal(val)
+			if err != nil {
+				continue
+			}
+			var entries []DevaluationEntry
+			if err := yaml.Unmarshal(b, &entries); err != nil {
+				continue
+			}
+			kb.DevaluationLog = entries
+		case "transfer_bonus_log":
+			b, err := yaml.Marshal(val)
+			if err != nil {
+				continue
+			}
+			var entries []TransferBonusEntry
+			if err := yaml.Unmarshal(b, &entries); err != nil {
+				continue
+			}
+			kb.TransferBonusLog = entries
+		default:
+			if reservedTopLevelKeys[key] {
+				continue
+			}
 			progData, err := yaml.Marshal(val)
 			if err != nil {
 				continue
@@ -246,8 +360,50 @@ func loadSimple(data []byte) (*KnowledgeBase, error) {
 	return kb, nil
 }
 
+// programInUserSet returns true when the program key/name matches one of the
+// userPrograms slugs (case-insensitive substring match in either direction).
+// We accept the user's slug as a noisy free-form input ("amex-mr-ca",
+// "amex-mr", "amex_mr") and try to be generous about matching it against the
+// YAML key (e.g. "amex_mr") or program display name ("Amex MR").
+func programInUserSet(yamlKey, displayName string, userPrograms []string) bool {
+	if len(userPrograms) == 0 {
+		return true
+	}
+	keyNorm := normalizeProgKey(yamlKey)
+	nameNorm := normalizeProgKey(displayName)
+	for _, p := range userPrograms {
+		pn := normalizeProgKey(p)
+		if pn == "" {
+			continue
+		}
+		if pn == keyNorm || pn == nameNorm {
+			return true
+		}
+		if keyNorm != "" && strings.Contains(pn, keyNorm) {
+			return true
+		}
+		if keyNorm != "" && strings.Contains(keyNorm, pn) {
+			return true
+		}
+		if nameNorm != "" && strings.Contains(pn, nameNorm) {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeProgKey lowercases and strips separators so "amex-mr-ca",
+// "amex_mr", "Amex MR" all collapse to "amexmr"-style tokens for comparison.
+func normalizeProgKey(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	repl := strings.NewReplacer("-", "", "_", "", " ", "", ".", "")
+	return repl.Replace(s)
+}
+
 // FormatForPrompt converts the knowledge base into a string suitable for an AI system prompt.
-// If userPrograms is non-empty, only include programs the user has in their wallet.
+// If userPrograms is non-empty, only include programs the user has in their wallet —
+// the supplementary strategy_principles + transfer_strategies are ALWAYS included
+// because they're cross-program rules, not per-program facts.
 func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 	var sb strings.Builder
 
@@ -260,19 +416,25 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 	sb.WriteString("### CPP Benchmarks (cents per point)\n")
 	sb.WriteString("| Program | Base CPP | Sweet Spot |\n")
 	sb.WriteString("|---------|----------|------------|\n")
-	for _, prog := range kb.Programs {
+	for key, prog := range kb.Programs {
 		if prog.Name == "" {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("| %s | %.1f\u2013%.1f\u00a2 | %s |\n",
+		if !programInUserSet(key, prog.Name, userPrograms) {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("| %s | %.1f–%.1f¢ | %s |\n",
 			prog.Name, prog.CPPRange.Low, prog.CPPRange.High, prog.CPPRange.SweetSpot))
 	}
 	sb.WriteString("\n")
 
 	// Transfer partners
 	sb.WriteString("### Transfer Partners\n")
-	for _, prog := range kb.Programs {
+	for key, prog := range kb.Programs {
 		if len(prog.TransfersTo) == 0 {
+			continue
+		}
+		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("- **%s →** ", prog.Name))
@@ -291,8 +453,11 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 
 	// Award charts for relevant programs
 	sb.WriteString("### Award Charts (one-way per person)\n")
-	for _, prog := range kb.Programs {
+	for key, prog := range kb.Programs {
 		if len(prog.AwardChart) == 0 {
+			continue
+		}
+		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("**%s:**\n", prog.Name))
@@ -308,8 +473,11 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 
 	// Sweet spots
 	sb.WriteString("### Sweet Spots & Tips\n")
-	for _, prog := range kb.Programs {
+	for key, prog := range kb.Programs {
 		if len(prog.SweetSpots) == 0 {
+			continue
+		}
+		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
 		for _, ss := range prog.SweetSpots {
@@ -320,11 +488,14 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 
 	// Hotel programs
 	sb.WriteString("### Hotel Programs\n")
-	for _, prog := range kb.Programs {
+	for key, prog := range kb.Programs {
 		if len(prog.CategoryChart) == 0 && len(prog.AwardTiers) == 0 {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("**%s** (%.1f\u2013%.1f\u00a2/pt):\n", prog.Name, prog.CPPRange.Low, prog.CPPRange.High))
+		if !programInUserSet(key, prog.Name, userPrograms) {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("**%s** (%.1f–%.1f¢/pt):\n", prog.Name, prog.CPPRange.Low, prog.CPPRange.High))
 		if prog.Note != "" {
 			sb.WriteString(fmt.Sprintf("  Note: %s\n", prog.Note))
 		}
@@ -357,27 +528,72 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		sb.WriteString("\n")
 	}
 
-	// Flights
+	// Flights — only if there's no wallet filter, OR the flight's program
+	// matches the user's wallet. Flights are large; trimming them when the
+	// user holds few programs keeps the prompt small.
 	if len(kb.Flights) > 0 {
 		sb.WriteString("### Popular Flights from Canada\n")
 		sb.WriteString("| Route | Airline | Program | Economy | Business | Duration |\n")
 		sb.WriteString("|-------|---------|---------|---------|----------|----------|\n")
 		for _, f := range kb.Flights {
-			econ := "\u2014"
-			biz := "\u2014"
+			if !programInUserSet(f.Program, f.Program, userPrograms) {
+				continue
+			}
+			econ := "—"
+			biz := "—"
 			if f.EconomyPts > 0 {
 				econ = fmt.Sprintf("%dk", f.EconomyPts/1000)
 			}
 			if f.BusinessPts > 0 {
 				biz = fmt.Sprintf("%dk", f.BusinessPts/1000)
 			}
-			sb.WriteString(fmt.Sprintf("| %s\u2192%s | %s | %s | %s | %s | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s→%s | %s | %s | %s | %s | %s |\n",
 				f.From, f.To, f.Airline, f.Program, econ, biz, f.Duration))
 		}
 		sb.WriteString("\n")
 	}
 
-	// Supplementary credit card strategy content
+	// Recent devaluations — only show entries that touch a wallet program
+	// when filtering is active. Always include up to 5 most recent overall.
+	if len(kb.DevaluationLog) > 0 {
+		sb.WriteString("### Recent Devaluations / Chart Changes\n")
+		count := 0
+		for _, d := range kb.DevaluationLog {
+			if !programInUserSet(d.Program, d.Program, userPrograms) {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", d.Date, d.Program, d.Summary))
+			count++
+			if count >= 8 {
+				break
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Active / recent transfer bonuses — same filtering as devaluations.
+	if len(kb.TransferBonusLog) > 0 {
+		sb.WriteString("### Recent Transfer Bonuses (Canadian programs)\n")
+		count := 0
+		for _, t := range kb.TransferBonusLog {
+			// Match on either source OR destination — a wallet-holder of MR cares
+			// about MR→Aeroplan bonuses even if they don't "have" Aeroplan yet.
+			if !(programInUserSet(t.Source, t.Source, userPrograms) || programInUserSet(t.Destination, t.Destination, userPrograms)) {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- %s: **%s → %s** %+d%% — %s\n",
+				t.DateRange, t.Source, t.Destination, t.BonusPct, t.Note))
+			count++
+			if count >= 8 {
+				break
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Supplementary credit card strategy content — ALWAYS included regardless
+	// of userPrograms filter. These are cross-program principles (card-count
+	// rule, partner-strategy, transfer routing) that apply to every user.
 	if kb.StrategyPrompt != "" {
 		sb.WriteString(kb.StrategyPrompt)
 	}

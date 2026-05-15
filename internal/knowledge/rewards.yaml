@@ -7,34 +7,56 @@
 aeroplan:
   name: "Aeroplan"
   description: "Air Canada's loyalty program, Star Alliance partner awards"
+  chart_version: "2026-06-01"
+  chart_change_notice: |
+    Award chart updated effective June 1, 2026 — bookings made on/after that
+    date use the new chart. Tickets already issued retain old rates.
+    Long-haul business and first jumped (most transatlantic biz +5K, US-Asia
+    biz +15K, first-class +20K). Some short-haul biz/economy got cheaper.
+    Source: Milesopedia, Prince of Travel, Rewards Canada (Apr 2026 reads).
   cpp_range:
-    low: 1.5
-    high: 2.2
-    sweet_spot: "3–6¢ on partner Business/First class"
+    low: 1.4
+    high: 2.0
+    sweet_spot: "3–5¢ on partner Business/First class (post-June 2026 chart)"
   award_chart:
     north_america:
       economy: 12500
-      business: 30000
-      first: 45000
+      business: 35000
+      first: 50000
     atlantic:
-      economy: 30000
-      business: 55000
-      first: 75000
-    pacific:
-      economy: 40000
-      business: 65000
-      first: 90000
-    middle_east_africa:
       economy: 35000
-      business: 60000
-      first: 85000
+      business: 75000
+      first: 120000
+    pacific:
+      economy: 45000
+      business: 102500
+      first: 140000
+    middle_east_africa:
+      economy: 40000
+      business: 75000
+      first: 100000
   sweet_spots:
-    - "YYZ→LHR business 55k Aeroplan — best transatlantic CDN value"
+    - "YYZ→LHR business 75k Aeroplan (was 55k pre-June 2026) — still strong CDN value"
     - "Star Alliance partners (Lufthansa, Swiss, ANA) often have better availability than AC metal"
-    - "ANA Business class: ~65k pts, lie-flat, world-class service"
+    - "ANA Business class: ~75k pts post-chart-change, lie-flat, world-class service"
     - "Short-haul North America under 500mi: 6,000 pts one-way economy"
-    - "Add stopovers to round-trips for 5,000 pts — massive value"
+    - "Add stopovers to round-trips for 5,000 pts — massive value, retained post-June 2026"
     - "Mini Round-the-World: up to 2 stopovers + 1 open jaw on long-haul RT"
+    - "Lock in pre-June 2026 rates by ticketing before June 1 — old chart applies if issued"
+  status_program:
+    name: "Aeroplan Elite Status (2026 SQC framework)"
+    notice: |
+      In 2026 Air Canada collapsed the legacy SQM/SQS/SQD metrics into a single
+      Status Qualifying Credits (SQC) currency. Earn 2 SQC/CAD on Standard
+      fares, 4 SQC/CAD on Flex+. Up to 25K SQC from credit-card spend + 25K SQC
+      from partners. Aeroplan Premium cardholders requalifying for status get a
+      10% SQC Head Start (no cap) replacing the retired Rollover SQM benefit.
+    tiers:
+      "25K":          25000
+      "35K":          35000
+      "50K":          50000
+      "75K":          75000
+      "Super Elite":  125000
   booking_url: "https://www.aircanada.com/aeroplan"
 
 avios:
@@ -502,27 +524,41 @@ bmo_rewards:
   cpp_range:
     low: 0.7
     high: 1.5
-    sweet_spot: "1.5¢ via Air Miles Dream transfer for flights"
+    sweet_spot: "1.0–1.5¢ via Air Miles transfer for flight redemptions"
   transfers_to:
     - { program: "Air Miles", ratio: "varies", note: "Check current promotion rates" }
   sweet_spots:
-    - "Transfer to Air Miles Dream Miles for flights: best CPP"
+    - "Transfer to Air Miles for flight redemptions: best CPP"
     - "BMO Travel portal: ~0.7¢/pt — use as last resort"
-    - "Air Miles Cash Miles: lower value but more flexible"
+    - "Air Miles in-store cash redemption is fixed-value (~10.5¢/Mile)"
 
 air_miles:
   name: "Air Miles"
-  description: "Canadian coalition program — Dream Miles (flights/hotels) vs Cash Miles (in-store)"
+  description: "Canadian coalition program — single unified Miles currency since Jan 25 2026 (Cash and Dream merged 1:1)"
+  unified_since: "2026-01-25"
+  merge_notice: |
+    Air Miles eliminated the Cash / Dream split on January 25, 2026. Existing
+    balances merged 1:1 (e.g. 100 Dream + 200 Cash → 300 unified Miles). The
+    "Transfer Miles" feature was removed because it is no longer needed.
+    Existing point values were preserved.
   cpp_range:
     low: 10.0
     high: 15.0
-    sweet_spot: "15¢+ per Dream Mile on domestic flights"
+    sweet_spot: "15¢+ per Mile on domestic flight redemptions"
+  redemption_options:
+    in_store_cash:
+      rate: "95 Miles = $10 in-store"
+      cpp: 10.53
+      notes: "Fixed-value, accepted at most coalition partners (Shell, Metro, Rexall, etc.)"
+    travel:
+      cpp: "12–15"
+      notes: "Variable. Domestic flights and hotels typically yield highest value per Mile."
   sweet_spots:
-    - "Dream Miles for flights: 12–15¢ per mile — always better than Cash"
-    - "Cash Miles at in-store partners: ~10¢ per mile — more convenient"
+    - "Domestic flight redemptions: 12–15¢ per Mile (highest variable value)"
+    - "In-store cash redemption: ~10.5¢ per Mile fixed (95 Miles = $10)"
     - "Onyx status: 25% bonus + free lounge access"
     - "Gold status: 25% bonus + priority check-in"
-  note: "Air Miles are worth ~10-15x more per unit than Aeroplan points — different scale"
+  note: "Air Miles are worth ~10-15x more per unit than Aeroplan points — different scale. Cash vs Dream split was retired Jan 25 2026."
 
 # ── HOTEL PROGRAMS ───────────────────────────────────────────────────────────
 
@@ -771,3 +807,54 @@ flights:
     duration: "18h via 1 stop"
     amenities: "Suites (First class), world's best airline"
     notes: "Singapore Airlines via Aeroplan — exceptional value"
+
+# ── DEVALUATION LOG ─────────────────────────────────────────────────────────
+# Chronological log of program devaluations and chart restructures. Used by
+# the get_devaluation_history AI tool so the model can ground its answers in
+# real, dated events instead of guessing. Most-recent first.
+
+devaluation_log:
+  - date: "2026-06-01"
+    program: aeroplan
+    summary: "Aeroplan partner award chart restructured; long-haul J went from 70K to 75K-90K depending on partner. Some short-haul slots improved."
+    source_url: "https://www.aircanada.com/ca/en/aco/home/aeroplan/use-miles/flight-rewards.html"
+  - date: "2025-09-01"
+    program: marriott_bonvoy
+    summary: "Marriott category-shift removed published award chart entirely; now fully dynamic pricing. Off-peak protections gone."
+    source_url: "https://www.marriott.com/loyalty/redeem/category-1-5-hotels.mi"
+  - date: "2025-04-04"
+    program: hilton_honors
+    summary: "Hilton confirmed dynamic-only pricing; previously charted at ~5K-95K. Now ranges 5K-150K+ for top-tier."
+  - date: "2024-09-01"
+    program: aeroplan
+    summary: "Aeroplan SQC framework moved to flight-spend + segment hybrid for 2026 status year."
+  - date: "2024-01-01"
+    program: air_miles
+    summary: "Air Miles unified Cash and Dream miles into single 'Miles' balance. Some old Dream redemptions deprecated."
+
+# ── TRANSFER BONUS LOG ──────────────────────────────────────────────────────
+# Time-bounded promotions where a flexible-points program offered a transfer
+# bonus to a partner. Helps the AI answer "is there a transfer bonus right now"
+# without hitting the web_search tool every time.
+
+transfer_bonus_log:
+  - date_range: "2026-02-01 to 2026-03-15"
+    source: amex_mr
+    destination: aeroplan
+    bonus_pct: 25
+    note: "First MR→Aeroplan bonus since program launch; max 100K MR transferred."
+  - date_range: "2025-11-01 to 2025-11-30"
+    source: amex_mr
+    destination: british_airways_avios
+    bonus_pct: 30
+    note: "Avios transfer bonus on Amex Canada MR; doesn't apply on US side."
+  - date_range: "2025-08-15 to 2025-09-15"
+    source: rbc_avion
+    destination: aeroplan
+    bonus_pct: 20
+    note: "Avion Visa Infinite holders got the higher bonus; Privilege got 15%."
+  - date_range: "2024-12-01 to 2024-12-31"
+    source: marriott_bonvoy
+    destination: aeroplan
+    bonus_pct: 10
+    note: "Bonvoy transfers normally 3:1 + 5K bonus per 60K; promo bumped to 3.3:1 effective."

@@ -15,7 +15,11 @@ type StackRepo struct {
 func NewStackRepo(db *pgxpool.Pool) *StackRepo { return &StackRepo{db: db} }
 
 func (r *StackRepo) ListMerchants(ctx context.Context) ([]model.Merchant, error) {
-	rows, err := r.db.Query(ctx, `SELECT slug, name, COALESCE(category_slug,''), COALESCE(primary_url,'') FROM merchants ORDER BY name`)
+	rows, err := r.db.Query(ctx, `
+		SELECT slug, name, COALESCE(category_slug,''), COALESCE(primary_url,''),
+		       accepts_amex, accepts_visa, accepts_mastercard, COALESCE(notes,'')
+		FROM merchants ORDER BY name
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +27,8 @@ func (r *StackRepo) ListMerchants(ctx context.Context) ([]model.Merchant, error)
 	var out []model.Merchant
 	for rows.Next() {
 		var m model.Merchant
-		if err := rows.Scan(&m.Slug, &m.Name, &m.CategorySlug, &m.PrimaryURL); err != nil {
+		if err := rows.Scan(&m.Slug, &m.Name, &m.CategorySlug, &m.PrimaryURL,
+			&m.AcceptsAmex, &m.AcceptsVisa, &m.AcceptsMastercard, &m.Notes); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -33,9 +38,12 @@ func (r *StackRepo) ListMerchants(ctx context.Context) ([]model.Merchant, error)
 
 func (r *StackRepo) GetMerchant(ctx context.Context, slug string) (*model.Merchant, error) {
 	var m model.Merchant
-	err := r.db.QueryRow(ctx,
-		`SELECT slug, name, COALESCE(category_slug,''), COALESCE(primary_url,'') FROM merchants WHERE slug = $1`, slug,
-	).Scan(&m.Slug, &m.Name, &m.CategorySlug, &m.PrimaryURL)
+	err := r.db.QueryRow(ctx, `
+		SELECT slug, name, COALESCE(category_slug,''), COALESCE(primary_url,''),
+		       accepts_amex, accepts_visa, accepts_mastercard, COALESCE(notes,'')
+		FROM merchants WHERE slug = $1
+	`, slug).Scan(&m.Slug, &m.Name, &m.CategorySlug, &m.PrimaryURL,
+		&m.AcceptsAmex, &m.AcceptsVisa, &m.AcceptsMastercard, &m.Notes)
 	if err != nil {
 		return nil, err
 	}

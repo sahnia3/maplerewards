@@ -288,7 +288,792 @@ card_earning_rates:
       - "Unlimited transactions"
     best_for: "No-FX-fee Mastercard for international use; no credit needed"
 
-# ── RECOMMENDED CREDIT CARD COMBOS ───────────────────────────────────────
+  # ── BACKFILL CARDS (canonical names from migration 000007) ──────────────
+
+  hsbc_world_elite_mc:
+    name: "HSBC World Elite Mastercard"
+    issuer: "HSBC"
+    network: "Mastercard"
+    annual_fee_cad: 149.00
+    currency: "HSBC Rewards"
+    earning_rates:
+      travel: { multiplier: 6, unit: "HSBC pts per $1" }
+      everything_else: { multiplier: 3, unit: "HSBC pts per $1" }
+    welcome_bonus_pattern: "Up to 100,000 HSBC Rewards on $6K spend in 180 days (~$500 travel value)"
+    perks:
+      - "$100 annual travel enhancement credit"
+      - "Comprehensive travel insurance suite"
+      - "Lounge access via LoungeKey (6 visits/yr)"
+    best_for: "Travel-heavy spenders post-RBC migration"
+    notes: |
+      HSBC Canada was acquired by RBC in 2024 and the card has been migrated
+      onto RBC rails — earning rate is grandfathered for existing cardholders
+      but no new applications are accepted. Treat this as a wind-down product
+      for advice purposes. Existing holders should plan to product-switch
+      to an Avion VI or ION+ Visa before final program sunset.
+
+  capital_one_aspire_travel_we_mc:
+    name: "Capital One Aspire Travel World Elite Mastercard"
+    issuer: "Capital One"
+    network: "Mastercard"
+    annual_fee_cad: 150.00
+    currency: "Capital One Rewards"
+    earning_rates:
+      travel: { multiplier: 10, unit: "miles per $1" }
+      everything_else: { multiplier: 2, unit: "miles per $1" }
+    welcome_bonus_pattern: "35,000 bonus miles (~$350 travel) after first purchase + spend req"
+    perks:
+      - "$120 annual travel credit"
+      - "10,000 mile renewal bonus"
+      - "Comprehensive travel insurance"
+    best_for: "Travel-spend focused users wanting flat 2 mi/$ everywhere with 10x on travel"
+    notes: |
+      Capital One Canada cards run on a fixed-value miles system (1 mile = 1¢
+      against travel charged to the card). No transfer partners, no airline
+      transfers — strictly cashback-against-travel. Good for users who don't
+      want to think about award charts. The $120 travel credit covers most
+      of the annual fee on its own.
+
+  mbna_rewards_we_mc:
+    name: "MBNA Rewards World Elite Mastercard"
+    issuer: "MBNA (TD)"
+    network: "Mastercard"
+    annual_fee_cad: 120.00
+    currency: "MBNA Rewards"
+    earning_rates:
+      grocery_restaurants_digital_media_streaming: { multiplier: 5, unit: "MBNA pts per $1", note: "First $50K/yr" }
+      everything_else: { multiplier: 2, unit: "MBNA pts per $1" }
+    welcome_bonus_pattern: "Up to 30,000 bonus MBNA Rewards after qualifying spend"
+    perks:
+      - "Concierge service"
+      - "Cellphone insurance"
+      - "Birthday bonus 10% on annual earnings"
+    best_for: "Restaurants/groceries/streaming spenders who want simple cashback"
+    notes: |
+      MBNA Rewards redeem at 1 cpp against statement credit, cash deposit, or
+      travel — no transfer partners, but no portal markup either. The 5x on
+      groceries + restaurants + streaming is one of the broadest 5x category
+      buckets in Canada. The $50K annual cap is generous enough that most
+      households won't hit it. Birthday bonus is a quiet sweetener.
+
+  triangle_we_mc:
+    name: "Triangle World Elite Mastercard"
+    issuer: "Canadian Tire Bank"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Canadian Tire Money (CT Money)"
+    earning_rates:
+      gas_at_gas_plus: { multiplier: 4, unit: "% CT$ at Gas+ stations" }
+      groceries: { multiplier: 3, unit: "% CT$", note: "Excluding Costco/Walmart" }
+      everything_else: { multiplier: 1.5, unit: "% CT$" }
+    welcome_bonus_pattern: "Occasional $200 in CT Money targeted offers"
+    perks:
+      - "No annual fee"
+      - "5¢/L off gas at Gas+ stations"
+      - "Roadside assistance bundle ($89/yr add-on)"
+    best_for: "Households that already shop Canadian Tire / Mark's / SportChek"
+    notes: |
+      CT Money redeems 1:1 against purchases at Canadian Tire stores, Mark's,
+      SportChek, and partygowest.ca — best return when you'd shop there anyway.
+      3% grocery is solid for a no-fee card. Pair with a true grocery 5x card
+      (Cobalt, Scotia Gold Amex) only if your grocery spend is high; otherwise
+      Triangle alone is fine for a "set-and-forget" secondary.
+
+  desjardins_cash_back_we_visa:
+    name: "Desjardins Cash Back World Elite Visa"
+    issuer: "Desjardins"
+    network: "Visa"
+    annual_fee_cad: 130.00
+    currency: "Cashback"
+    earning_rates:
+      groceries: { multiplier: 4.0, unit: "% cashback", note: "Up to $1,500/mo" }
+      gas_recurring_bills: { multiplier: 2.0, unit: "% cashback" }
+      everything_else: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "Up to $250 cashback after $3K spend in 3 months"
+    perks:
+      - "Mobile device insurance up to $1,000"
+      - "Travel insurance suite"
+      - "Concierge"
+    best_for: "Quebec-region members wanting structured cashback without coop fees"
+    notes: |
+      Strongest cashback offering inside the Desjardins ecosystem. The 4% on
+      groceries is competitive with BMO CashBack WE but the $1,500/mo cap is
+      slightly tighter. Coop members effectively pay less when you net out
+      Desjardins membership patronage dividends. Off-Quebec applicants accepted
+      via Caisse Desjardins Ontario branches.
+
+  national_bank_allure_mc:
+    name: "National Bank Allure Mastercard"
+    issuer: "National Bank of Canada"
+    network: "Mastercard"
+    annual_fee_cad: 75.00
+    currency: "À la carte rewards"
+    earning_rates:
+      everything: { multiplier: 1.5, unit: "pts per $1" }
+      restaurants_grocery: { multiplier: 2.5, unit: "pts per $1" }
+    welcome_bonus_pattern: "20,000 pts (~$200) on $3K spend in 3 months"
+    perks:
+      - "Mobile device insurance"
+      - "Purchase protection"
+    best_for: "NBC clients in Quebec wanting modest cashback with a low fee"
+    notes: |
+      Allure points redeem at ~1 cpp against statement credit. Best value comes
+      from the À la carte "choose your perks" model — pick travel insurance or
+      device insurance based on need. Fee is waived for clients on certain NBC
+      banking packages. Not a primary card for most users but a useful third
+      slot for QC households already inside the NBC ecosystem.
+
+  td_aeroplan_vi_privilege:
+    name: "TD Aeroplan Visa Infinite Privilege"
+    issuer: "TD"
+    network: "Visa"
+    annual_fee_cad: 599.00
+    currency: "Aeroplan"
+    earning_rates:
+      air_canada_groceries_gas_dining: { multiplier: 2, unit: "Aeroplan pts per $1" }
+      everything_else: { multiplier: 1.25, unit: "Aeroplan pts per $1" }
+    welcome_bonus_pattern: "Up to 85K Aeroplan + status fast-track after qualifying spend"
+    perks:
+      - "Aeroplan 25K SQC head-start for status"
+      - "Maple Leaf Lounge visits + Air Canada Cafe access"
+      - "Free first checked bag for primary + companion"
+      - "$200 Air Canada travel credit"
+    best_for: "Frequent Air Canada flyers chasing 50K/75K status"
+    notes: |
+      The fee is steep, but for users who fly Air Canada metal 6+ trips a year
+      the bag waiver + lounge access + 25K SQC head-start easily clears $599.
+      Combine with the Aeroplan 35K spend bonus and you're effectively buying
+      status outright. Do NOT hold this card if you can't actually use Maple
+      Leaf Lounge visits — they're the bulk of perceived value.
+
+  bmo_eclipse_vi_privilege:
+    name: "BMO eclipse Visa Infinite Privilege"
+    issuer: "BMO"
+    network: "Visa"
+    annual_fee_cad: 499.00
+    currency: "BMO Rewards"
+    earning_rates:
+      dining_groceries_gas_transit_streaming: { multiplier: 5, unit: "BMO pts per $1" }
+      everything_else: { multiplier: 2, unit: "BMO pts per $1" }
+    welcome_bonus_pattern: "Up to 100K BMO Rewards (~$700 travel) after qualifying spend"
+    perks:
+      - "$200 lifestyle credit (dining/entertainment)"
+      - "VIP airport lounge (Mastercard Travel Pass, ~6 visits)"
+      - "Comprehensive travel insurance + emergency medical"
+    best_for: "Heavy lifestyle spenders who can absorb the $499 fee with the credit"
+    notes: |
+      The $200 lifestyle credit + the welcome bonus largely cover Year 1's fee.
+      5x on the lifestyle bucket is wide enough that most household spend lands
+      inside it. BMO Rewards transfer to Air Miles at 100:1 — meh. Best
+      redemption is BMO Travel at ~0.71 cpp, so treat earned points as quasi-
+      cashback rather than airline currency.
+
+  cibc_aeroplan_vi:
+    name: "CIBC Aeroplan Visa Infinite"
+    issuer: "CIBC"
+    network: "Visa"
+    annual_fee_cad: 139.00
+    currency: "Aeroplan"
+    earning_rates:
+      groceries_gas_air_canada: { multiplier: 1.5, unit: "Aeroplan pts per $1" }
+      everything_else: { multiplier: 1, unit: "Aeroplan pts per $1" }
+    welcome_bonus_pattern: "Up to 50K Aeroplan after qualifying spend in first 4 months"
+    perks:
+      - "Free first checked bag on Air Canada"
+      - "Preferred Aeroplan pricing on AC redemptions"
+      - "Travel medical insurance (15 days, under 65)"
+    best_for: "CIBC banking customers who want Aeroplan without leaving the bank"
+    notes: |
+      Functionally similar to the TD Aeroplan VI — same preferred-pricing,
+      same first-bag-free. CIBC's twist is the welcome offer often runs richer
+      (60K-70K targeted). If you're already on CIBC banking it slots in cleanly;
+      otherwise TD's Aeroplan VI has a marginally better insurance package.
+
+  marriott_bonvoy_amex:
+    name: "Marriott Bonvoy American Express"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 120.00
+    currency: "Marriott Bonvoy"
+    earning_rates:
+      marriott_bonvoy_stays: { multiplier: 5, unit: "Bonvoy pts per $1" }
+      everything_else: { multiplier: 2, unit: "Bonvoy pts per $1" }
+    welcome_bonus_pattern: "Up to 60K Bonvoy after qualifying spend (~1 free night at Cat 6)"
+    perks:
+      - "Annual free-night certificate (up to 35K pts redemption)"
+      - "15 elite night credits/yr toward Bonvoy status"
+      - "Silver Elite status by default"
+    best_for: "Marriott loyalists wanting a free anniversary night that easily covers the fee"
+    notes: |
+      The 35K-cert anniversary night alone typically clears the $120 fee at a
+      mid-tier Westin or Sheraton. Pair with the Cobalt → MR → Bonvoy 1:1.2
+      transfer pipeline for big top-ups. Bonvoy moved to fully dynamic pricing
+      Sept 2025 (see devaluation_log) — be cautious about hoarding points; spend
+      them on dated certificates or near-term stays.
+
+  amex_business_aeroplan_reserve:
+    name: "Amex Business Aeroplan Reserve"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 599.00
+    currency: "Aeroplan"
+    earning_rates:
+      air_canada: { multiplier: 3, unit: "Aeroplan pts per $1" }
+      dining_eligible_purchases: { multiplier: 2, unit: "Aeroplan pts per $1" }
+      everything_else: { multiplier: 1.25, unit: "Aeroplan pts per $1" }
+    welcome_bonus_pattern: "Up to 90K Aeroplan after qualifying business spend"
+    perks:
+      - "Maple Leaf Lounge access"
+      - "Annual Worldwide Companion Pass"
+      - "Free first checked bag for primary + companion"
+      - "25K SQC head-start"
+    best_for: "Business owners with $5K+/mo card-able expenses + AC travel"
+    notes: |
+      Mirrors the personal Aeroplan Reserve in benefits but the welcome bonus
+      is consistently higher and the spend categories favor business expenses
+      (advertising, supplies). The Worldwide Companion Pass alone — book a J
+      class for two for the price of one in Aeroplan points — is worth >$2K
+      per use. Best held by incorporated business owners separating personal
+      from business spend.
+
+  amex_platinum_business:
+    name: "Amex Business Platinum"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 799.00
+    currency: "Amex Membership Rewards (MR)"
+    earning_rates:
+      everything: { multiplier: 1.25, unit: "MR pts per $1" }
+      eligible_advertising_spend: { multiplier: 2, unit: "MR pts per $1" }
+    welcome_bonus_pattern: "Up to 150K MR after $10K spend in 3 months"
+    perks:
+      - "Unlimited Priority Pass + Centurion lounges"
+      - "$200 annual travel credit"
+      - "Marriott Bonvoy Gold + Hilton Honors Gold status"
+      - "Nexus rebate every 4 years"
+    best_for: "Founders / heavy travelers whose travel-perk consumption clears $799"
+    notes: |
+      The math on Business Platinum lives or dies on lounge usage. If you fly
+      8+ trips/yr through major hubs, the unlimited Priority Pass + Centurion
+      access alone is worth $1K+. MR earn rate is weak (1.25x), so it's a
+      benefits card, not a driver — pair with a Cobalt or Business Gold for
+      actual earn.
+
+  rbc_cash_back_preferred_we_mc:
+    name: "RBC Cash Back Preferred World Elite Mastercard"
+    issuer: "RBC"
+    network: "Mastercard"
+    annual_fee_cad: 99.00
+    currency: "Cashback"
+    earning_rates:
+      groceries: { multiplier: 2.0, unit: "% cashback" }
+      everything_else: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "Occasional $100-$150 anniversary statement credit promos"
+    perks:
+      - "Mobile device insurance"
+      - "Up to $1,000 hotel/motor vehicle accident insurance"
+    best_for: "RBC clients who want flat grocery cashback with no category gymnastics"
+    notes: |
+      Simple, predictable. 2% groceries with no cap is rare in cashback land —
+      most caps kick in at $5K-10K/yr. If your grocery spend is moderate and
+      you don't want to chase categories, this is a reasonable "primary" card.
+      Pair with a Mastercard backup if your only other card is Amex.
+
+  rbc_westjet_we_mc:
+    name: "RBC WestJet World Elite Mastercard"
+    issuer: "RBC"
+    network: "Mastercard"
+    annual_fee_cad: 119.00
+    currency: "WestJet Dollars"
+    earning_rates:
+      westjet_purchases: { multiplier: 3.0, unit: "% in WJ$" }
+      everything_else: { multiplier: 1.5, unit: "% in WJ$" }
+    welcome_bonus_pattern: "$250 WJ$ + annual $99 companion voucher"
+    perks:
+      - "Annual companion voucher ($99 base fare for second passenger)"
+      - "Free first checked bag for primary + companions"
+    best_for: "WestJet flyers from YVR/YYC/YEG where AC isn't dominant"
+    notes: |
+      The $99 companion voucher is the entire reason to hold this. One use on
+      a Vancouver→Toronto round-trip clears the annual fee twice over. Earn
+      rate is mediocre — don't use this as a primary driver. Hold it, use the
+      voucher, swipe it at WestJet to keep status alive, and earn on other
+      cards.
+
+  scotia_platinum_amex:
+    name: "Scotiabank Platinum American Express"
+    issuer: "Scotiabank"
+    network: "Amex"
+    annual_fee_cad: 399.00
+    currency: "Scene+"
+    earning_rates:
+      sobeys_safeway_freshco_foodland: { multiplier: 8, unit: "Scene+ pts per $1" }
+      dining_entertainment_groceries: { multiplier: 4, unit: "Scene+ pts per $1" }
+      gas_transit_recurring_streaming: { multiplier: 3, unit: "Scene+ pts per $1" }
+      everything_else: { multiplier: 1, unit: "Scene+ pts per $1" }
+    welcome_bonus_pattern: "Up to 80K Scene+ after qualifying spend (~$800 hotel value)"
+    perks:
+      - "Unlimited Priority Pass lounge access (Cardholder + 1 guest)"
+      - "Concierge"
+      - "Comprehensive travel insurance"
+    best_for: "Sobeys-family loyalists wanting unlimited lounge access at a Canadian-friendly fee"
+    notes: |
+      8x at Sobeys-family stores is the highest grocery earn rate in Canada
+      bar none. The unlimited Priority Pass (with a guest) is the killer perk —
+      that alone is worth $400+ for anyone flying internationally a few times
+      a year. Scene+ redeems via Expedia for Scotia at ~1 cpp, so think of
+      the 8x grocery as 8% back on top of the lounge value.
+
+  scotia_passport_visa_infinite:
+    name: "Scotiabank Passport Visa Infinite"
+    issuer: "Scotiabank"
+    network: "Visa"
+    annual_fee_cad: 150.00
+    currency: "Scene+"
+    earning_rates:
+      dining_entertainment_grocery_transit_streaming: { multiplier: 3, unit: "Scene+ pts per $1" }
+      everything_else: { multiplier: 1, unit: "Scene+ pts per $1" }
+    welcome_bonus_pattern: "Up to 35K Scene+ after qualifying spend"
+    perks:
+      - "No foreign exchange fee"
+      - "6 Priority Pass lounge visits/yr"
+      - "25-day travel medical insurance"
+    best_for: "Travelers who want a no-FX-fee Visa with lounge access at a reasonable fee"
+    notes: |
+      The defining no-FX-fee Visa in Canada. If you travel internationally
+      and pair this with an Amex Cobalt for domestic spend, you'll never pay
+      the 2.5% FX markup again. Note: this is duplicated in the main catalog
+      above (scotia_passport_vi) — kept here under the canonical migration
+      name for slug-lookup compatibility.
+
+  scotia_momentum_visa_infinite:
+    name: "Scotiabank Momentum Visa Infinite"
+    issuer: "Scotiabank"
+    network: "Visa"
+    annual_fee_cad: 120.00
+    currency: "Cashback"
+    earning_rates:
+      groceries_recurring_bills: { multiplier: 4.0, unit: "% cashback" }
+      gas_transit: { multiplier: 2.0, unit: "% cashback" }
+      everything_else: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "10% cashback first 3 months (cap $2K spend) + first-year fee waiver"
+    perks:
+      - "Mobile device insurance"
+      - "Concierge"
+      - "Comprehensive travel insurance"
+    best_for: "Households with predictable grocery + utility spend who want cashback with no category gymnastics"
+    notes: |
+      4% on both groceries AND recurring bills is unusual — most cards make
+      you choose one. Annual $25K cap across those categories combined. The
+      welcome 10% kicker on $2K of spend means $200 cash back in the first 3
+      months, which pays the fee outright. After Year 1, evaluate against
+      BMO CashBack WE if your grocery spend dominates.
+
+  bmo_world_elite_mc:
+    name: "BMO World Elite Mastercard"
+    issuer: "BMO"
+    network: "Mastercard"
+    annual_fee_cad: 150.00
+    currency: "BMO Rewards"
+    earning_rates:
+      travel_dining_entertainment: { multiplier: 3, unit: "BMO pts per $1" }
+      everything_else: { multiplier: 2, unit: "BMO pts per $1" }
+    welcome_bonus_pattern: "Up to 60K BMO Rewards (~$400 travel) + first-year fee waiver"
+    perks:
+      - "4 lounge passes/yr"
+      - "Travel medical insurance"
+    best_for: "BMO clients wanting a balanced travel card without the eclipse VIP fee"
+    notes: |
+      Solid mid-tier travel card. The 2x base earn on everything is uncommon
+      for a $150-fee card. BMO Rewards redeem via BMO Travel at ~0.71 cpp, so
+      treat the math as ~1.4% effective return on non-bonus spend. Outclassed
+      by eclipse Visa Infinite for high spenders but cheaper to hold.
+
+  bmo_ascend_we_mc:
+    name: "BMO Ascend World Elite Mastercard"
+    issuer: "BMO"
+    network: "Mastercard"
+    annual_fee_cad: 150.00
+    currency: "BMO Rewards"
+    earning_rates:
+      travel: { multiplier: 5, unit: "BMO pts per $1" }
+      dining_entertainment_recurring: { multiplier: 3, unit: "BMO pts per $1" }
+      everything_else: { multiplier: 1, unit: "BMO pts per $1" }
+    welcome_bonus_pattern: "Up to 60K BMO Rewards after qualifying spend"
+    perks:
+      - "$50 annual lifestyle credit"
+      - "4 lounge passes/yr"
+    best_for: "Travel-heavy BMO clients who want 5x on travel without going premium"
+    notes: |
+      Replaces the older BMO World Elite for new applicants. The 5x on travel
+      is the headline; everything else is middle-of-the-road. Combine with a
+      grocery-strong card (Cobalt, Scotia Gold) since the everyday 1x is weak.
+      $50 lifestyle credit + a single lounge visit covers most of the fee.
+
+  cibc_costco_mc:
+    name: "CIBC Costco Mastercard"
+    issuer: "CIBC"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      restaurants_gas: { multiplier: 3.0, unit: "% cashback" }
+      groceries_costco_excluded: { multiplier: 2.0, unit: "% cashback" }
+      costco_purchases: { multiplier: 1.0, unit: "% cashback" }
+      everything_else: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "None — relationship card"
+    perks:
+      - "No annual fee"
+      - "Only credit card accepted at Costco gas pumps in Canada"
+    best_for: "Costco shoppers who buy fuel there + want a no-fee secondary"
+    notes: |
+      The exclusivity-at-Costco-gas angle is the only reason this card exists
+      in most wallets. The 3% restaurant / 2% non-Costco grocery is fine but
+      not standout. Cashback is paid once a year in January as a Costco gift
+      card — unusual structure, easy to forget.
+
+  td_first_class_travel_vi_canonical:
+    name: "TD First Class Travel Visa Infinite"
+    issuer: "TD"
+    network: "Visa"
+    annual_fee_cad: 139.00
+    currency: "TD Rewards"
+    earning_rates:
+      grocery_dining_transit: { multiplier: 6, unit: "TD pts per $1" }
+      recurring_streaming: { multiplier: 4, unit: "TD pts per $1" }
+      everything_else: { multiplier: 2, unit: "TD pts per $1" }
+      expedia_for_td: { multiplier: 8, unit: "TD pts per $1" }
+    welcome_bonus_pattern: "Up to 135K TD Rewards (~$675 travel) + first-year fee waiver"
+    perks:
+      - "$100 annual travel credit"
+      - "4 lounge passes/yr"
+      - "Travel medical insurance"
+    best_for: "Non-Aeroplan travelers wanting Expedia-for-TD redemption flexibility"
+    notes: |
+      Duplicate of the earlier td_first_class_travel_vi entry but kept under
+      the canonical migration slug so slug lookups don't miss. Redeem via
+      Expedia for TD at ~1 cpp on hotels; avoid gift cards (0.4 cpp).
+
+  amex_simplycash_preferred:
+    name: "Amex SimplyCash Preferred"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 119.88
+    currency: "Cashback"
+    earning_rates:
+      everything: { multiplier: 2.0, unit: "% cashback" }
+      gas_groceries_dining: { multiplier: 4.0, unit: "% cashback" }
+    welcome_bonus_pattern: "10% cashback first 4 months (cap ~$2K spend)"
+    perks:
+      - "Travel insurance suite"
+      - "Mobile device insurance"
+    best_for: "Households wanting reliable flat cashback without juggling categories"
+    notes: |
+      2% on everything is the simplest "set-and-forget" return in Canada
+      among premium cashback cards. The 4% on gas/groceries/dining adds a
+      meaningful kicker for normal household spend. Welcome offer often
+      returns $200+ in the first 4 months. Compare against Cobalt for users
+      who'd rather hold points than cash — Cobalt wins at 2¢ CPP but loses
+      at 1 cpp.
+
+  amex_gold_rewards_canonical:
+    name: "Amex Gold Rewards Card"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 250.00
+    currency: "Amex Membership Rewards (MR)"
+    earning_rates:
+      food_and_dining: { multiplier: 5, unit: "MR pts per $1" }
+      groceries: { multiplier: 5, unit: "MR pts per $1" }
+      travel: { multiplier: 3, unit: "MR pts per $1" }
+      everything_else: { multiplier: 1, unit: "MR pts per $1" }
+    welcome_bonus_pattern: "Up to 75K MR after qualifying spend"
+    perks:
+      - "$100 annual travel credit"
+      - "$120 Instacart credit"
+      - "$50 Nexus rebate"
+      - "4 lounge passes/yr"
+    best_for: "Cobalt graduates who want similar earn + travel perks"
+    notes: |
+      Effectively Cobalt + travel perks. The travel credit and Instacart credit
+      net the fee down to ~$30 if you actually use them. 5x grocery/dining
+      matches Cobalt. MR transfers identical (1:1 Aeroplan/Avios/Flying Blue).
+      Worth holding alongside Cobalt only if you'd actually use the lounge
+      passes + Instacart credit; otherwise it's redundant earn.
+
+  amex_business_gold_rewards:
+    name: "Amex Business Gold Rewards"
+    issuer: "American Express"
+    network: "Amex"
+    annual_fee_cad: 250.00
+    currency: "Amex Membership Rewards (MR)"
+    earning_rates:
+      eligible_business_categories: { multiplier: 5, unit: "MR pts per $1", note: "Choose 2 from: advertising, gas, restaurants, travel, electronics, hotels, transit" }
+      everything_else: { multiplier: 1, unit: "MR pts per $1" }
+    welcome_bonus_pattern: "Up to 75K MR after qualifying spend"
+    perks:
+      - "Quarterly category picks"
+      - "Purchase protection + extended warranty"
+    best_for: "Small business owners with concentrated category spend (ads, fuel, etc.)"
+    notes: |
+      The choose-your-own 5x category model is rare and powerful for businesses
+      with predictable spend buckets. Pick advertising + travel and you'll see
+      effective returns north of 7% (at 1.5 cpp MR transfers). Pair with the
+      personal Cobalt for household coverage. Business MR pools with personal
+      MR if both cards are owned by the same Amex profile.
+
+  wealthsimple_cash_mc:
+    name: "Wealthsimple Cash Mastercard"
+    issuer: "Wealthsimple"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      everything: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "Periodic referral / spend boost campaigns"
+    perks:
+      - "No annual fee"
+      - "No foreign exchange fee"
+      - "ATM withdrawals supported"
+    best_for: "Wealthsimple Cash users wanting a no-FX no-fee MC for travel"
+    notes: |
+      Prepaid-style Mastercard tied to your Wealthsimple Cash balance. 1% on
+      everything plus no FX fee is rare for a no-fee product. Won't replace a
+      true earning card domestically but unbeatable for international
+      day-to-day spending — convert CAD to the destination currency at spot
+      via the Wealthsimple app and swipe at 1% back.
+
+  brim_world_elite_mc:
+    name: "Brim World Elite Mastercard"
+    issuer: "Brim Financial"
+    network: "Mastercard"
+    annual_fee_cad: 199.00
+    annual_fee_note: "Fee waived if $30K+ annual spend"
+    currency: "Brim Rewards"
+    earning_rates:
+      everything: { multiplier: 2, unit: "Brim pts per $1" }
+      partner_merchants: { multiplier: 4, unit: "Brim pts per $1" }
+    welcome_bonus_pattern: "Up to 40K Brim pts after qualifying spend"
+    perks:
+      - "No foreign exchange fee"
+      - "10 lounge passes/yr"
+      - "Comprehensive travel insurance"
+      - "Cellphone insurance"
+    best_for: "High spenders who want fee-waiver via spend + no-FX-fee Mastercard"
+    notes: |
+      Niche but interesting: at $30K spend the fee is waived AND there's no FX
+      fee. Combined with 2x flat earn and 10 lounge passes, the value
+      proposition becomes hard to beat for anyone who clears the spend bar
+      naturally. Brim's instalment plans + recurring-bill matching are
+      genuinely useful tooling. Caveat: program is young (post-2020) and
+      brand recognition is low.
+
+  home_trust_preferred_visa:
+    name: "Home Trust Preferred Visa"
+    issuer: "Home Trust"
+    network: "Visa"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      everything: { multiplier: 1.0, unit: "% cashback" }
+    welcome_bonus_pattern: "None"
+    perks:
+      - "No annual fee"
+      - "No foreign exchange fee"
+      - "Roadside assistance bundle add-on"
+    best_for: "No-fee Visa for international purchases — beats most banks at FX"
+    notes: |
+      One of the only no-fee Visa cards in Canada with zero FX markup. 1%
+      cashback on top makes international spend effectively cost the same as
+      domestic. Approval rules favor good-credit applicants and the limit
+      often starts low. Hold this in a Visa-network slot when traveling
+      somewhere Amex isn't accepted (most of Europe outside major chains).
+
+  pc_financial_we_mc_canonical:
+    name: "PC Financial World Elite Mastercard"
+    issuer: "PC Financial"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "PC Optimum"
+    earning_rates:
+      shoppers_drug_mart: { multiplier: 45, unit: "PC Optimum pts per $1" }
+      loblaws_banner_stores: { multiplier: 30, unit: "PC Optimum pts per $1" }
+      everything_else: { multiplier: 10, unit: "PC Optimum pts per $1" }
+    welcome_bonus_pattern: "Variable, often 50K PC Optimum on activation + spend"
+    perks:
+      - "No annual fee"
+      - "PC Insiders 'PC Pass' periodically waives delivery fees"
+    best_for: "Loblaws-family households (Shoppers, No Frills, Real Canadian Superstore)"
+    notes: |
+      Duplicate of pc_financial_we_mc above; kept under canonical name for
+      slug parity. The 45x at Shoppers becomes effectively 30%+ back when
+      stacked with 20x personalized offers — easily the highest-effective-
+      return card in Canada for a specific store.
+
+  koho_premium_prepaid:
+    name: "KOHO Premium Prepaid Mastercard"
+    issuer: "KOHO"
+    network: "Mastercard"
+    annual_fee_cad: 84.00
+    annual_fee_note: "$9/mo or annual prepay; lower 'Essential' tier exists at $4/mo"
+    currency: "Cashback"
+    earning_rates:
+      everything: { multiplier: 1.0, unit: "% cashback" }
+      groceries_transit_eating_out: { multiplier: 2.0, unit: "% cashback" }
+    welcome_bonus_pattern: "Periodic spend bonus campaigns"
+    perks:
+      - "No foreign exchange fee"
+      - "Round-up savings feature"
+      - "Free e-Transfers"
+      - "Earn interest on balance"
+    best_for: "Users wanting cashback + no FX + budgeting tools in one prepaid card"
+    notes: |
+      Prepaid, so credit history doesn't matter for approval. The Premium tier
+      adds the no-FX-fee perk that's the real reason to upgrade from
+      Essential. 2x on groceries / transit / eating out is competitive with
+      no-fee credit cards. Strong fit for users rebuilding credit or who
+      prefer a strict-budget prepaid model.
+
+  pc_financial_we_mc_dup:
+    name: "PC Money Account (PC Financial Mastercard)"
+    issuer: "PC Financial"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "PC Optimum"
+    earning_rates:
+      shoppers_drug_mart: { multiplier: 45, unit: "PC Optimum pts per $1" }
+      loblaws_banner_stores: { multiplier: 30, unit: "PC Optimum pts per $1" }
+      everything_else: { multiplier: 10, unit: "PC Optimum pts per $1" }
+    welcome_bonus_pattern: "Activation bonus tied to PC Money signup"
+    perks:
+      - "No annual fee"
+    best_for: "PC Money customers wanting the integrated debit + PC Optimum earn"
+    notes: |
+      Same earning structure as the credit card variant but issued as a debit
+      card tied to a PC Money chequing account. Useful for users who want PC
+      Optimum acceleration without taking out new credit. Caveat: debit, so no
+      purchase protection or extended warranty.
+
+  tangerine_money_back_we_mc:
+    name: "Tangerine Money-Back World Mastercard"
+    issuer: "Tangerine"
+    network: "Mastercard"
+    annual_fee_cad: 0.00
+    currency: "Cashback"
+    earning_rates:
+      selected_categories_1_and_2: { multiplier: 2.0, unit: "% cashback" }
+      selected_category_3: { multiplier: 2.0, unit: "% cashback", note: "Requires Tangerine savings account" }
+      everything_else: { multiplier: 0.5, unit: "% cashback" }
+    welcome_bonus_pattern: "Targeted boost categories rotate periodically"
+    perks:
+      - "No annual fee"
+      - "Categories changeable anytime"
+      - "Dragon Pass lounge enrollment"
+    best_for: "Users wanting flexible 2% cashback on 3 chosen categories at zero fee"
+    notes: |
+      Duplicate of tangerine_world_mc above; kept under the canonical migration
+      slug. The killer feature is that the 3 categories are switchable, so you
+      can chase your actual top spending categories. Dragon Pass lounge enrol
+      is unusual for a no-fee card and adds real ~$50 value if used once a
+      year.
+
+# ── BOOKING WALKTHROUGHS ─────────────────────────────────────────────────
+# Step-by-step booking guides for the highest-CPP redemption sweet spots
+# Canadians can hit from YYZ / YVR / YUL. The AI surfaces these verbatim
+# when users ask "how do I book X" — prevents hallucinated booking flows.
+
+walkthroughs:
+  - id: aeroplan-ana-business-yyz-hnd
+    title: "Booking ANA business class YYZ→HND with Aeroplan"
+    steps:
+      - "Confirm you have 75K Aeroplan in account (or 75K Amex MR ready to transfer 1:1, instant)"
+      - "Search aircanada.com → Aeroplan flight rewards → enter YYZ-HND, 9-11 months out"
+      - "Toggle 'Show all carriers'; look for ANA NH002 or NH001 in J cabin"
+      - "Taxes: ~$220 CAD outbound. Pay with travel-credit card for trip protection."
+      - "If no ANA space: try EVA BR012 (similar TPAC J cost), or split via NRT on UA"
+
+  - id: aeroplan-lufthansa-business-yyz-fra
+    title: "Booking Lufthansa business class YYZ→FRA with Aeroplan"
+    steps:
+      - "Confirm 75K Aeroplan in account (post-June 2026 chart; previously 60K-70K)"
+      - "Search aircanada.com → Aeroplan rewards → YYZ-FRA, cabin business, ~330 days out"
+      - "Lufthansa releases long-haul J only ~15 days before departure for non-status; status holders see space earlier"
+      - "Taxes: ~$165 CAD outbound from Canada (much higher returning from Germany due to fees)"
+      - "Better alternative if no LH space: Swiss LX87 via ZRH or Brussels SN552 via BRU — same cost"
+
+  - id: aeroplan-swiss-business-yul-zrh
+    title: "Booking Swiss business class YUL→ZRH with Aeroplan"
+    steps:
+      - "75K Aeroplan required (long-haul Atlantic J)"
+      - "Open aircanada.com → Aeroplan flight rewards → YUL-ZRH, business class"
+      - "Look for LX87 (overnight to Zurich); Swiss is generous with J space 330+ days out"
+      - "Taxes: ~$135 CAD outbound from Montreal"
+      - "Pro move: add a Europe stopover for 5K extra pts — open jaw via VIE or AMS"
+
+  - id: avios-aa-shorthaul-yyz-jfk
+    title: "Booking AA short-haul YYZ→JFK with British Airways Avios"
+    steps:
+      - "9,000 Avios + ~$15 USD taxes (vs ~$200 cash) — best CPP redemption from Canada"
+      - "ba.com → Manage > Avios → Spend Avios → Book flights → search YYZ-JFK"
+      - "Filter to American Airlines metal in 'Show partner airlines'"
+      - "AA releases saver-level space 11 months out; refresh daily for premium dates"
+      - "Transfer Amex MR or RBC Avion at 1:1 to BA Executive Club if balance short — completes in 24-36h"
+
+  - id: hyatt-cash-points-park-hyatt-tokyo
+    title: "Booking Park Hyatt Tokyo with World of Hyatt cash + points"
+    steps:
+      - "Cash+Points rate: 12,500 Hyatt pts + ~$300 USD/nt (vs ~$900 cash)"
+      - "hyatt.com → Search Park Hyatt Tokyo → toggle 'Use points' → select Cash + Points option"
+      - "Confirm rate before redeeming — Hyatt offers both points-only (40K) and cash+points; cash+points often better value at top properties"
+      - "Transfer in via Chase Sapphire UR (US only) or Amex Bonvoy → Hyatt at terrible 2.5:1 (avoid)"
+      - "Canadian path: buy Hyatt points during their 30% bonus sales (~1.7¢/pt cost), still 3¢+ CPP at Park Hyatt"
+
+  - id: flying-blue-promo-yyz-cdg
+    title: "Catching a Flying Blue Promo Award YYZ→CDG"
+    steps:
+      - "Subscribe to flyingblue.com Promo Awards email (first Tuesday of each month)"
+      - "Look for transatlantic discounts: typically 25-50% off normal 70K J / 35K Y rates"
+      - "If a YYZ→CDG promo hits at ~40K J, transfer Amex MR → Flying Blue 1:1 (instant)"
+      - "Book within the promo window (usually 7-30 days); promo applies to travel within ~3 months"
+      - "Taxes from Canada are reasonable (~$170 CAD outbound); avoid CDG returns due to high French fees"
+
+  - id: alaska-jal-business-yvr-hnd
+    title: "Booking Japan Airlines business YVR→HND via Alaska Mileage Plan"
+    steps:
+      - "Note: Alaska MP transfer partners in Canada are limited — Marriott Bonvoy 3:1 with 5K bonus per 60K"
+      - "JAL J on Alaska award chart: 60K MP miles + ~$30 taxes (extraordinary value)"
+      - "alaskaair.com → Use miles → search YVR-HND → filter partner airlines, find JAL JL19/JL21"
+      - "JAL releases J space at 360 days out; 1 day before departure also sees release"
+      - "If MP balance short: Marriott 240K Bonvoy → 100K Alaska (with 60K bonus from 3 transfers of 60K)"
+
+  - id: avianca-lifemiles-united-business-yyz-bog
+    title: "Booking United business YYZ→BOG via Avianca LifeMiles"
+    steps:
+      - "63K LifeMiles + ~$70 USD taxes for Star Alliance J YYZ-BOG (vs Aeroplan's 75K+ post-June 2026)"
+      - "LifeMiles regularly runs 30-50% buy-points sales — cost basis ~1.3¢/mile"
+      - "lifemiles.com → Redeem → enter route → choose United metal in J cabin"
+      - "Pay attention: LifeMiles search is fragmented — search each leg separately if multi-segment"
+      - "Avoid YYZ-BOG with one stop via PTY (Copa) — taxes triple. Direct UA metal is the play."
+
+  - id: aeroplan-singapore-suites-yyz-sin
+    title: "Booking Singapore Airlines Suites YYZ→SIN with Aeroplan"
+    steps:
+      - "90K Aeroplan + ~$280 CAD for First/Suites class via SIN partner award"
+      - "Singapore Suites SQ22 (EWR-SIN, world's longest flight) bookable via Aeroplan as Star Alliance partner"
+      - "From YYZ: positioning to EWR on Star Alliance economy adds ~7.5K Aeroplan"
+      - "Singapore releases Suites space 355 days out; refresh hourly day-of for premium routes"
+      - "Pro tip: Singapore is NOTORIOUSLY tight with Suites partner space — flexibility on dates is mandatory"
+
+  - id: aeroplan-stopover-yyz-asia
+    title: "Aeroplan stopover trick: YYZ → Europe → Asia for one award"
+    steps:
+      - "Long-haul round-trip + 1 stopover = 5,000 extra Aeroplan pts only"
+      - "Example: YYZ-FRA-NRT-FRA-YYZ with 5-day stopover in Frankfurt — single Pacific J award + 5K"
+      - "Aeroplan multi-city tool: aircanada.com → flight rewards → Multi-city"
+      - "Stopover must be >24h on the outbound or return leg; not allowed on one-way awards"
+      - "Pairs well with Mini-Round-the-World: 2 stopovers + 1 open jaw on long-haul RT"
+
+# ── END OF KNOWLEDGE BASE ───────────────────────────────────────────────────
 
 recommended_combos:
 
@@ -529,12 +1314,14 @@ transfer_strategies:
 
   air_miles_strategy:
     source: "Air Miles"
+    unified_since: "2026-01-25"
+    note: "Cash and Dream Miles merged 1:1 into single Miles balance Jan 25 2026. Transfer Miles feature retired."
     best_redemption:
-      method: "Dream Miles for flights"
-      reason: "Always better value than Cash Miles"
-    avoid:
-      method: "Cash Miles for in-store redemptions"
-      reason: "Lower value per mile compared to Dream Miles flight bookings"
+      method: "Domestic flight redemptions"
+      reason: "12–15¢ per Mile — highest variable value"
+    fallback_redemption:
+      method: "In-store cash redemption (95 Miles = $10)"
+      reason: "Fixed-value ~10.5¢ per Mile, accepted at Shell, Metro, Rexall, etc."
 
 # ── KEY REDEMPTION TIPS ───────────────────────────────────────────────────
 
@@ -591,9 +1378,12 @@ redemption_tips:
 
   air_miles:
     do:
-      - "Dream Miles for flights — always better than Cash Miles"
+      - "Single unified Miles currency since Jan 25 2026 — no more Cash/Dream split"
+      - "Domestic flight redemptions yield 12–15¢ per Mile (highest variable value)"
+      - "Use in-store at Shell, Metro, Rexall, etc. for fixed ~10.5¢ per Mile (95 Miles = $10)"
     do_not:
-      - "Avoid Cash Miles unless you have no travel plans"
+      - "Do not assume Cash vs Dream split still exists — that distinction was retired Jan 2026"
+      - "Avoid low-value merchandise redemptions in the Air Miles shop"
 
   general:
     do:

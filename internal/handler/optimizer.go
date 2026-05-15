@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/model"
 	"maplerewards/internal/service"
 )
@@ -17,11 +18,16 @@ type Optimizer interface {
 }
 
 type OptimizerHandler struct {
-	svc Optimizer
+	svc           Optimizer
+	sessionLookup mw.SessionOwnerLookup // may be nil in tests; required in prod
 }
 
-func NewOptimizerHandler(svc Optimizer) *OptimizerHandler {
-	return &OptimizerHandler{svc: svc}
+// NewOptimizerHandler requires a session-owner lookup so the IDOR check
+// can't be silently bypassed by a future caller. Tests that don't post a
+// session_id pass nil explicitly — the helper short-circuits when the lookup
+// is nil, but the choice is now visible at the construction site.
+func NewOptimizerHandler(svc Optimizer, sessionLookup mw.SessionOwnerLookup) *OptimizerHandler {
+	return &OptimizerHandler{svc: svc, sessionLookup: sessionLookup}
 }
 
 func (h *OptimizerHandler) GetBestCard(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +40,14 @@ func (h *OptimizerHandler) GetBestCard(w http.ResponseWriter, r *http.Request) {
 	// Validation
 	if req.SessionID == "" || !isValidSessionID(req.SessionID) {
 		jsonError(w, "valid session_id is required (32 hex chars)", http.StatusBadRequest)
+		return
+	}
+
+	// Body-sessionID IDOR fix: ensure the caller actually owns this wallet
+	// before running the optimizer (which would otherwise read another
+	// user's wallet balances). Anonymous wallets remain accessible to
+	// anyone holding the 128-bit sessionID.
+	if !requireBodySessionOwner(w, r, h.sessionLookup, req.SessionID) {
 		return
 	}
 	if !isValidSpendAmount(req.SpendAmount) {

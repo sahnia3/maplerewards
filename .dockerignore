@@ -1,0 +1,32 @@
+.git
+.gitignore
+.github
+.env
+.env.local
+.env.example
+*.md
+!README.md
+
+# Frontend — Next.js is deployed separately (Vercel), not in the Go image
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# Local artifacts
+bin/
+*.log
+*.test
+*.out
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Planning / generated artifacts not needed at runtime
+.planning/
+known-issues/
+docs/
+design/
+browser-extension/
+scripts/

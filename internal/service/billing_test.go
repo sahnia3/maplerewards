@@ -15,14 +15,16 @@ type mockBillingRepo struct {
 	users           map[string]*model.User // keyed by user ID
 	customerToUser  map[string]string      // stripe customer ID → user ID
 	proStatus       map[string]bool        // user ID → is_pro
+	processedEvents map[string]bool        // stripe event ID → processed flag
 	failSetPro      bool
 }
 
 func newMockBillingRepo() *mockBillingRepo {
 	return &mockBillingRepo{
-		users:          map[string]*model.User{},
-		customerToUser: map[string]string{},
-		proStatus:      map[string]bool{},
+		users:           map[string]*model.User{},
+		customerToUser:  map[string]string{},
+		proStatus:       map[string]bool{},
+		processedEvents: map[string]bool{},
 	}
 }
 
@@ -53,6 +55,18 @@ func (m *mockBillingRepo) SetUserPro(ctx context.Context, userID string, isPro b
 	}
 	m.proStatus[userID] = isPro
 	return nil
+}
+
+func (m *mockBillingRepo) RecordStripeEvent(ctx context.Context, eventID, eventType string) (bool, error) {
+	if m.processedEvents[eventID] {
+		return false, nil
+	}
+	m.processedEvents[eventID] = true
+	return true, nil
+}
+
+func (m *mockBillingRepo) IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error) {
+	return m.processedEvents[eventID], nil
 }
 
 func newBillingSvc(repo *mockBillingRepo) *BillingService {

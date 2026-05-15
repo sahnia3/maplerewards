@@ -19,7 +19,7 @@ func NewBuyPointsHandler(svc *service.BuyPointsService) *BuyPointsHandler {
 func (h *BuyPointsHandler) ListPromos(w http.ResponseWriter, r *http.Request) {
 	out, err := h.svc.ListPromos(r.Context())
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "buy_points.list", err, "could not load buy-points promos", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)
@@ -33,7 +33,7 @@ func (h *BuyPointsHandler) Evaluate(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.svc.Evaluate(r.Context(), req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "buy_points.evaluate", err, "could not evaluate buy-points promo", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)

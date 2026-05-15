@@ -28,7 +28,7 @@ func (h *RecommendHandler) Recommend(w http.ResponseWriter, r *http.Request) {
 
 	scores, err := h.svc.Recommend(r.Context(), req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonInternalError(w, "recommend", err)
 		return
 	}
 

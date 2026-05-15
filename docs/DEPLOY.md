@@ -33,6 +33,11 @@ Optional but expected for full feature surface:
 - `APIFY_TOKEN` — live award scraping
 - `SEATSAERO_API_KEY` — award availability backup
 - `TAVILY_API_KEY` — web search context for AI
+- `ADMIN_EMAILS` — comma-separated list of admin email addresses. Required for
+  the `/api/v1/admin/*` endpoints (valuation push + quota dashboard). Empty
+  disables admin routes entirely.
+- `KB_DIR` — absolute path to the knowledge YAML directory. Defaults to
+  `./internal/knowledge`. Override when the binary runs outside the repo root.
 
 ## 3. First-deploy checklist
 
@@ -42,10 +47,15 @@ Optional but expected for full feature surface:
    ```bash
    make migrate-up
    ```
-   All 20 migrations should apply cleanly. Verify with:
+   All migrations should apply cleanly. Current head is 34 (verify the latest
+   number in `migrations/`). Confirm with:
    ```bash
    psql "$DATABASE_URL" -c "select max(version) from schema_migrations"
    ```
+   Heads to know:
+   - `000032` adds `email_verifications` table.
+   - `000033` adds `point_valuation_history` for CPP refresh pipeline.
+   - `000034` adds `chat_conversations` + `chat_messages` for AI history.
 4. **Boot the API.** It will:
    - Fail-fast if `APP_ENV=production` and `JWT_SECRET` is empty/dev.
    - Bind to `:$PORT` (default 8080).
@@ -73,7 +83,13 @@ A 503 from `/ready` keeps the container in service but pulled out of the LB pool
 
 - Always commit a matched `_up.sql` and `_down.sql` pair.
 - Never edit a migration that has already shipped — write a new one.
-- Migrations 1–19 ship the original product. Migration 20 adds optimizer-hot-path indexes. New migrations should be `000021_*` and onward.
+- Migration history at a glance:
+  - 1–19: original product (schema, seeds, auth, Stripe customer, expanded cards).
+  - 20: optimizer-hot-path indexes.
+  - 21–32: Stripe events, soft-delete users, welcome-offer expiry, award-watch alerts, merchant acceptance, issuer page diff, loyalty accounts, card offers, Aeroplan 2026 SQC, email verifications.
+  - 33: point_valuation_history (anchors CPP freshness; `cmd/refresh-valuations` writes here).
+  - 34: chat_conversations + chat_messages (server-side AI chat history).
+  - New migrations should be `000035_*` and onward.
 - Run with `make migrate-up` (forward) or `make migrate-down` (single rollback). Do not run `migrate-down` against production unless you understand which row-level data the down-migration will drop.
 
 ## 6. Rollback

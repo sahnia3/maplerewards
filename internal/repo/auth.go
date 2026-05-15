@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +24,7 @@ func (r *AuthRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
 		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
-		FROM users WHERE email = $1
+		FROM users WHERE email = $1 AND deleted_at IS NULL
 	`, email).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
 		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
@@ -42,7 +43,7 @@ func (r *AuthRepo) GetUserByGoogleID(ctx context.Context, googleID string) (*mod
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
 		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
-		FROM users WHERE google_id = $1
+		FROM users WHERE google_id = $1 AND deleted_at IS NULL
 	`, googleID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
 		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
@@ -61,7 +62,7 @@ func (r *AuthRepo) GetUserByID(ctx context.Context, id string) (*model.User, err
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
 		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
-		FROM users WHERE id = $1
+		FROM users WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
 		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
@@ -128,6 +129,22 @@ func (r *AuthRepo) UpdateProfile(ctx context.Context, userID, displayName string
 		return nil, fmt.Errorf("update profile: %w", err)
 	}
 	return &u, nil
+}
+
+// UpdatePasswordHash rewrites the user's bcrypt hash. Caller is responsible
+// for verifying the current password and revoking refresh tokens.
+func (r *AuthRepo) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE users SET password_hash = $2, updated_at = NOW()
+		WHERE id = $1
+	`, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
 }
 
 // MergeAnonymousUser transfers all data from an anonymous session to an authenticated user.
@@ -262,7 +279,7 @@ func (r *AuthRepo) GetUserByStripeCustomerID(ctx context.Context, customerID str
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
 		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
-		FROM users WHERE stripe_customer_id = $1
+		FROM users WHERE stripe_customer_id = $1 AND deleted_at IS NULL
 	`, customerID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
 		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
@@ -287,7 +304,45 @@ func (r *AuthRepo) SetStripeCustomerID(ctx context.Context, userID, customerID s
 	return nil
 }
 
-// DeleteUser permanently removes a user and all associated data (cascading).
+// RecordStripeEvent persists a Stripe webhook event ID for idempotency.
+// Returns true if this is the first time we've seen this event ID,
+// false if it was already processed (duplicate webhook delivery from
+// Stripe's retry logic). Must only be called AFTER the event has been
+// successfully processed — otherwise a transient failure would prevent
+// Stripe's retry from re-attempting the work.
+func (r *AuthRepo) RecordStripeEvent(ctx context.Context, eventID, eventType string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO stripe_events (event_id, event_type)
+		VALUES ($1, $2)
+		ON CONFLICT (event_id) DO NOTHING
+	`, eventID, eventType)
+	if err != nil {
+		return false, fmt.Errorf("record stripe event: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// IsStripeEventProcessed reports whether the given Stripe event ID has
+// already been successfully processed. Read-only lookup used at the top
+// of the webhook handler to short-circuit duplicates without re-running
+// the event handler.
+func (r *AuthRepo) IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM stripe_events WHERE event_id = $1)
+	`, eventID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check stripe event: %w", err)
+	}
+	return exists, nil
+}
+
+// DeleteUser soft-deletes a user account: marks deleted_at, scrambles the
+// email so the address can be re-registered, revokes refresh tokens, and
+// writes an audit-log entry. PIPEDA requires we honour deletion requests
+// while a recovery window plus deletion log lets us answer compliance
+// inquiries without losing operational data immediately. A separate cron
+// job is responsible for hard-deleting rows older than the 30-day window.
 func (r *AuthRepo) DeleteUser(ctx context.Context, userID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -295,17 +350,161 @@ func (r *AuthRepo) DeleteUser(ctx context.Context, userID string) error {
 	}
 	defer tx.Rollback(ctx)
 
-	// Delete in dependency order
-	_, _ = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE user_id = $1`, userID)
-	_, _ = tx.Exec(ctx, `DELETE FROM spend_entries WHERE user_id = $1`, userID)
-	_, _ = tx.Exec(ctx, `DELETE FROM user_monthly_spend WHERE user_id = $1`, userID)
-	_, _ = tx.Exec(ctx, `DELETE FROM user_card_bonuses WHERE user_id = $1`, userID)
-	_, _ = tx.Exec(ctx, `DELETE FROM user_cards WHERE user_id = $1`, userID)
+	// Read the email before scrambling so we can record it in the audit log.
+	var emailAtDelete *string
+	if err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, userID).Scan(&emailAtDelete); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("user %s not found", userID)
+		}
+		return fmt.Errorf("read user email: %w", err)
+	}
 
-	_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
-	if err != nil {
-		return fmt.Errorf("delete user: %w", err)
+	// Revoke refresh tokens immediately (no benefit to keeping them).
+	if _, err := tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("revoke refresh tokens: %w", err)
+	}
+
+	// Soft-delete: mark deleted_at, scramble the email so the address frees
+	// up for re-registration, null out display_name + password_hash so the
+	// soft-deleted record can't be used for login. Wallet/spend/credit data
+	// stays linked for the recovery window.
+	if _, err := tx.Exec(ctx, `
+		UPDATE users
+		SET deleted_at    = NOW(),
+		    email         = 'deleted+' || id::text || '@maplerewards.archive',
+		    password_hash = NULL,
+		    google_id     = NULL,
+		    display_name  = 'Deleted user',
+		    updated_at    = NOW()
+		WHERE id = $1
+	`, userID); err != nil {
+		return fmt.Errorf("soft delete user: %w", err)
+	}
+
+	// Audit log row — `user_id` is not FK so the log survives hard-delete.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO user_deletions_log (user_id, email_at_delete, requested_by)
+		VALUES ($1, $2, 'user')
+	`, userID, emailAtDelete); err != nil {
+		return fmt.Errorf("write deletion audit log: %w", err)
 	}
 
 	return tx.Commit(ctx)
+}
+
+// ── Issuer-digest recipient enumeration ─────────────────────────────────────
+// The worker walks this list weekly to dispatch the per-user issuer-change
+// digest. Selecting on the partial index keeps the query cheap even as the
+// user table grows — most rows are non-Pro and indexed out.
+
+// IssuerDigestRecipient is one row of (userID, email, lastSentAt). LastSentAt
+// is nil for first-time recipients.
+type IssuerDigestRecipient struct {
+	UserID     string
+	Email      string
+	LastSentAt *time.Time
+}
+
+// ListProDigestRecipientsDueBefore returns Pro users whose last issuer-digest
+// is either never sent (null) or sent before `cutoff`. Soft-deleted users
+// and Pro users with scrambled emails (post-delete) are excluded.
+//
+// Caller picks the cutoff (typically NOW() - 6 days for a weekly cadence with
+// a 24h safety margin so a slightly-early sweep doesn't miss anyone).
+func (r *AuthRepo) ListProDigestRecipientsDueBefore(ctx context.Context, cutoff time.Time, limit int) ([]IssuerDigestRecipient, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, email, last_issuer_digest_at
+		FROM users
+		WHERE is_pro = true
+		  AND deleted_at IS NULL
+		  AND (last_issuer_digest_at IS NULL OR last_issuer_digest_at < $1)
+		ORDER BY last_issuer_digest_at NULLS FIRST
+		LIMIT $2
+	`, cutoff, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pro digest recipients: %w", err)
+	}
+	defer rows.Close()
+	var out []IssuerDigestRecipient
+	for rows.Next() {
+		var rec IssuerDigestRecipient
+		if err := rows.Scan(&rec.UserID, &rec.Email, &rec.LastSentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// MarkIssuerDigestSent stamps the per-user last-sent timestamp so the next
+// sweep skips this user until the cadence window opens again.
+func (r *AuthRepo) MarkIssuerDigestSent(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET last_issuer_digest_at = NOW()
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("mark issuer digest sent: %w", err)
+	}
+	return nil
+}
+
+// MissedRewardsDigestRecipient extends the issuer-digest recipient shape with
+// session_id, which the MissedRewardsService needs to look up wallet/spend
+// scoped to the same logical user. SessionID is non-nullable on users so it's
+// always set.
+type MissedRewardsDigestRecipient struct {
+	UserID     string
+	SessionID  string
+	Email      string
+	LastSentAt *time.Time
+}
+
+// ListProMissedRewardsRecipientsDueBefore returns Pro users whose last missed-
+// rewards-digest is null or sent before `cutoff`. Tracked independently of
+// the issuer digest so the two emails don't suppress each other on weeks
+// where only one has content.
+func (r *AuthRepo) ListProMissedRewardsRecipientsDueBefore(ctx context.Context, cutoff time.Time, limit int) ([]MissedRewardsDigestRecipient, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, session_id, email, last_missed_rewards_digest_at
+		FROM users
+		WHERE is_pro = true
+		  AND deleted_at IS NULL
+		  AND email IS NOT NULL
+		  AND (last_missed_rewards_digest_at IS NULL OR last_missed_rewards_digest_at < $1)
+		ORDER BY last_missed_rewards_digest_at NULLS FIRST
+		LIMIT $2
+	`, cutoff, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pro missed-rewards recipients: %w", err)
+	}
+	defer rows.Close()
+	var out []MissedRewardsDigestRecipient
+	for rows.Next() {
+		var rec MissedRewardsDigestRecipient
+		if err := rows.Scan(&rec.UserID, &rec.SessionID, &rec.Email, &rec.LastSentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// MarkMissedRewardsDigestSent stamps the per-user last-sent timestamp for
+// the missed-rewards digest.
+func (r *AuthRepo) MarkMissedRewardsDigestSent(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET last_missed_rewards_digest_at = NOW()
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("mark missed-rewards digest sent: %w", err)
+	}
+	return nil
 }

@@ -19,19 +19,29 @@ type LoyaltyProgram struct {
 // ── Cards ────────────────────────────────────────────────────────────────────
 
 type Card struct {
-	ID                   string          `json:"id"`
-	Name                 string          `json:"name"`
-	Issuer               string          `json:"issuer"`
-	Network              string          `json:"network"` // visa | mastercard | amex
-	LoyaltyProgramID     string          `json:"loyalty_program_id"`
-	LoyaltyProgram       *LoyaltyProgram `json:"loyalty_program,omitempty"`
-	AnnualFee            float64         `json:"annual_fee"`
-	WelcomeBonusPoints   int             `json:"welcome_bonus_points"`
-	WelcomeBonusMinSpend float64         `json:"welcome_bonus_min_spend"`
-	WelcomeBonusMonths   int             `json:"welcome_bonus_months"`
-	Country              string          `json:"country"` // ISO 3166-1 alpha-2 (CA, US, etc.)
-	IsActive             bool            `json:"is_active"`
-	CreatedAt            time.Time       `json:"created_at"`
+	ID                          string          `json:"id"`
+	Name                        string          `json:"name"`
+	Issuer                      string          `json:"issuer"`
+	Network                     string          `json:"network"` // visa | mastercard | amex
+	LoyaltyProgramID            string          `json:"loyalty_program_id"`
+	LoyaltyProgram              *LoyaltyProgram `json:"loyalty_program,omitempty"`
+	AnnualFee                   float64         `json:"annual_fee"`
+	WelcomeBonusPoints          int             `json:"welcome_bonus_points"`
+	WelcomeBonusMinSpend        float64         `json:"welcome_bonus_min_spend"`
+	WelcomeBonusMonths          int             `json:"welcome_bonus_months"`
+	// WelcomeBonusOfferExpiresAt is the *card's* public-offer end date — when
+	// the issuer's promotional welcome bonus reverts to the standard amount.
+	// Distinct from user_card_bonuses.deadline_at which is the user's spend
+	// deadline after activating their personal bonus.
+	WelcomeBonusOfferExpiresAt *string         `json:"welcome_bonus_offer_expires_at,omitempty"`
+	WelcomeBonusOfferSource    *string         `json:"welcome_bonus_offer_source,omitempty"`
+	// AffiliateURL is the per-card apply-now link. Nullable: only set when we
+	// have a commercial relationship for this card. Surfaced so the frontend
+	// can decide whether to render the Apply CTA.
+	AffiliateURL                *string         `json:"affiliate_url,omitempty"`
+	Country                     string          `json:"country"` // ISO 3166-1 alpha-2 (CA, US, etc.)
+	IsActive                    bool            `json:"is_active"`
+	CreatedAt                   time.Time       `json:"created_at"`
 }
 
 // ── Welcome Bonus Tracking ───────────────────────────────────────────────────
@@ -386,20 +396,33 @@ type AwardSearchRequest struct {
 	FlexDays    int    `json:"flex_days"` // ±days around Date (default 0)
 	Cabin       string `json:"cabin"`     // economy|business|first
 	Passengers  int    `json:"passengers"` // default 1
+	Refresh     bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
 }
 
 // AwardSearchResult is one redemption option from the award search endpoint.
+//
+// TaxesCash is nullable so the UI can distinguish "$0 in taxes" from "we
+// don't know what the taxes are". TaxesIncluded mirrors the same flag on
+// AwardItem — true only when an upstream source actually supplied a number.
+// FetchedAt and SourceLabel let the frontend render a freshness chip and a
+// provenance line ("Seats.aero, 8 min ago") on every card.
 type AwardSearchResult struct {
 	Date            string             `json:"date"`
 	Program         string             `json:"program"`           // issuer slug (e.g. "aeroplan")
 	ProgramName     string             `json:"program_name"`
+	Cabin           string             `json:"cabin"`             // cabin the points/cash baseline is quoted in
 	PointsCost      int                `json:"points_cost"`
-	TaxesCash       float64            `json:"taxes_cash"`
-	CashPriceCAD    float64            `json:"cash_price_cad"`
-	CPP             float64            `json:"cpp"`               // cents per point
+	TaxesCash       *float64           `json:"taxes_cash,omitempty"`
+	TaxesIncluded   bool               `json:"taxes_included"`
+	CashPriceCAD    float64            `json:"cash_price_cad"`     // cash baseline matching `cabin`
+	EconomyCashCAD  float64            `json:"economy_cash_cad,omitempty"` // economy cash for the same route — populated when cabin != "economy"
+	CPP             float64            `json:"cpp"`               // cents per point against CashPriceCAD
+	RealisticCPP    float64            `json:"realistic_cpp,omitempty"` // cents per point against economy cash — the "would I actually pay this?" figure
 	ValueRating     string             `json:"value_rating"`      // "excellent"|"good"|"poor"
 	SeatsAvailable  int                `json:"seats_available"`
 	Source          string             `json:"source"`            // "live" | "estimated"
+	SourceLabel     string             `json:"source_label"`      // "Google Flights" | "Seats.aero" | "Apify" | "estimate"
+	FetchedAt       time.Time          `json:"fetched_at"`
 	BookingURL      string             `json:"booking_url"`
 	PointsAvailable int64              `json:"points_available"`  // from user's wallet
 	CanAfford       bool               `json:"can_afford"`
@@ -473,6 +496,7 @@ type CardContribution struct {
 type MissedRewardEntry struct {
 	SpendEntryID    string  `json:"spend_entry_id"`
 	SpentAt         string  `json:"spent_at"`
+	Description     string  `json:"description,omitempty"` // merchant string from spend_entries.note
 	CategorySlug    string  `json:"category_slug"`
 	CategoryName    string  `json:"category_name"`
 	Amount          float64 `json:"amount"`
@@ -581,19 +605,21 @@ type SQCProjection struct {
 // ── Aeroplan availability watcher ────────────────────────────────────────────
 
 type AwardWatch struct {
-	ID            string  `json:"id,omitempty"`
-	UserID        string  `json:"user_id,omitempty"`
-	Origin        string  `json:"origin"`
-	Destination   string  `json:"destination"`
-	DepartDate    string  `json:"depart_date"`     // YYYY-MM-DD
-	FlexDays      int     `json:"flex_days"`
-	Cabin         string  `json:"cabin"`           // economy|business|first
-	MaxPoints     *int    `json:"max_points,omitempty"`
-	ProgramSlug   string  `json:"program_slug"`    // default 'aeroplan'
-	IsActive      bool    `json:"is_active"`
-	LastCheckedAt *string `json:"last_checked_at,omitempty"`
-	LastMinPoints *int    `json:"last_min_points,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID               string    `json:"id,omitempty"`
+	UserID           string    `json:"user_id,omitempty"`
+	Origin           string    `json:"origin"`
+	Destination      string    `json:"destination"`
+	DepartDate       string    `json:"depart_date"`     // YYYY-MM-DD
+	FlexDays         int       `json:"flex_days"`
+	Cabin            string    `json:"cabin"`           // economy|business|first
+	MaxPoints        *int      `json:"max_points,omitempty"`
+	ProgramSlug      string    `json:"program_slug"`    // default 'aeroplan'
+	IsActive         bool      `json:"is_active"`
+	LastCheckedAt    *string   `json:"last_checked_at,omitempty"`
+	LastMinPoints    *int      `json:"last_min_points,omitempty"`
+	LastAlertAt      *string   `json:"last_alert_at,omitempty"`
+	LastAlertMessage *string   `json:"last_alert_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type CreateAwardWatchRequest struct {
@@ -655,11 +681,107 @@ type DevaluationEvent struct {
 
 // ── Triple-stack calculator ──────────────────────────────────────────────────
 
+// ── Card-linked offer tracker (Amex Offers / RBC Offers / Scene+) ──────────
+
+type CardOffer struct {
+	ID           string   `json:"id,omitempty"`
+	UserID       string   `json:"user_id,omitempty"`
+	CardID       string   `json:"card_id"`
+	CardName     string   `json:"card_name,omitempty"`     // joined for UI
+	Source       string   `json:"source"`                   // amex_offers|rbc_offers|scene_plus|other
+	Merchant     string   `json:"merchant"`
+	Description  *string  `json:"description,omitempty"`
+	EarnAmount   *float64 `json:"earn_amount,omitempty"`
+	MinSpend     *float64 `json:"min_spend,omitempty"`
+	ActivatedAt  *string  `json:"activated_at,omitempty"`   // YYYY-MM-DD
+	ExpiresAt    *string  `json:"expires_at,omitempty"`
+	IsUsed       bool     `json:"is_used"`
+	UsedAt       *string  `json:"used_at,omitempty"`
+	Notes        *string  `json:"notes,omitempty"`
+	// Derived:
+	DaysToExpiry *int     `json:"days_to_expiry,omitempty"`
+}
+
+type CreateCardOfferRequest struct {
+	CardID      string   `json:"card_id"`
+	Source      string   `json:"source"`
+	Merchant    string   `json:"merchant"`
+	Description *string  `json:"description,omitempty"`
+	EarnAmount  *float64 `json:"earn_amount,omitempty"`
+	MinSpend    *float64 `json:"min_spend,omitempty"`
+	ActivatedAt *string  `json:"activated_at,omitempty"`
+	ExpiresAt   *string  `json:"expires_at,omitempty"`
+	Notes       *string  `json:"notes,omitempty"`
+}
+
+// ── Loyalty account aggregation (programs without a co-branded card) ───────
+
+type LoyaltyAccount struct {
+	ID             string  `json:"id,omitempty"`
+	UserID         string  `json:"user_id,omitempty"`
+	ProgramSlug    string  `json:"program_slug"`
+	ProgramName    string  `json:"program_name,omitempty"`     // joined for UI
+	AccountLabel   *string `json:"account_label,omitempty"`
+	Balance        int64   `json:"balance"`
+	ExpiresAt      *string `json:"expires_at,omitempty"`        // YYYY-MM-DD
+	LastActivity   *string `json:"last_activity,omitempty"`     // YYYY-MM-DD
+	Notes          *string `json:"notes,omitempty"`
+	// Derived (set by service):
+	DaysToExpiry   *int    `json:"days_to_expiry,omitempty"`
+	ExpiryRuleNote *string `json:"expiry_rule_note,omitempty"`  // "expires 18 mo after last activity"
+}
+
+type CreateLoyaltyAccountRequest struct {
+	ProgramSlug  string  `json:"program_slug"`
+	AccountLabel *string `json:"account_label,omitempty"`
+	Balance      int64   `json:"balance"`
+	ExpiresAt    *string `json:"expires_at,omitempty"`
+	LastActivity *string `json:"last_activity,omitempty"`
+	Notes        *string `json:"notes,omitempty"`
+}
+
+type UpdateLoyaltyAccountRequest struct {
+	Balance      *int64  `json:"balance,omitempty"`
+	ExpiresAt    *string `json:"expires_at,omitempty"`
+	LastActivity *string `json:"last_activity,omitempty"`
+	Notes        *string `json:"notes,omitempty"`
+}
+
+// ── Issuer page diff-watch (live monitoring of issuer pages for changes) ────
+
+type IssuerPage struct {
+	ID             string  `json:"id"`
+	Label          string  `json:"label"`
+	URL            string  `json:"url"`
+	ProgramSlug    *string `json:"program_slug,omitempty"`
+	CardID         *string `json:"card_id,omitempty"`
+	IsActive       bool    `json:"is_active"`
+	LastCheckedAt  *string `json:"last_checked_at,omitempty"`
+	LastHash       *string `json:"last_hash,omitempty"`
+	CheckFailures  int     `json:"check_failures"`
+}
+
+type IssuerPageChange struct {
+	ID           string   `json:"id"`
+	PageID       string   `json:"page_id"`
+	PageLabel    string   `json:"page_label"`
+	PageURL      string   `json:"page_url"`
+	ProgramSlug  *string  `json:"program_slug,omitempty"`
+	DetectedAt   string   `json:"detected_at"`
+	DiffSummary  string   `json:"diff_summary"`
+	DiffSnippet  string   `json:"diff_snippet"`
+	AIConfidence *float64 `json:"ai_confidence,omitempty"`
+}
+
 type Merchant struct {
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	CategorySlug string `json:"category_slug,omitempty"`
-	PrimaryURL   string `json:"primary_url,omitempty"`
+	Slug              string `json:"slug"`
+	Name              string `json:"name"`
+	CategorySlug      string `json:"category_slug,omitempty"`
+	PrimaryURL        string `json:"primary_url,omitempty"`
+	AcceptsAmex       bool   `json:"accepts_amex"`
+	AcceptsVisa       bool   `json:"accepts_visa"`
+	AcceptsMastercard bool   `json:"accepts_mastercard"`
+	Notes             string `json:"notes,omitempty"`
 }
 
 type PortalRate struct {

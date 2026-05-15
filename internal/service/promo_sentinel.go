@@ -1,0 +1,293 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"maplerewards/internal/repo"
+)
+
+// PromoSentinelService scans curated rewards-news sources for active
+// transfer-bonus promotions (e.g. "Amex MR → Aeroplan 30% off through Apr 30"),
+// extracts structured (from, to, bonus%, expires) tuples via Claude, and
+// upserts them into transfer_bonus_events.
+//
+// The worker calls RunSweep on a 12h cadence. Each sweep:
+//   1. Queries Tavily for the canonical promo-hunting query
+//   2. Pipes the top N article summaries through Claude with strict JSON output
+//   3. Upserts each extracted promo
+//   4. Returns counts for telemetry
+//
+// All steps are best-effort: missing API keys turn the sweep into a no-op
+// so dev environments don't break.
+type PromoSentinelService struct {
+	tavily    *TavilyService
+	repo      *repo.TransferBonusRepo
+	apiKey    string // Anthropic API key
+	model     string
+	httpClient *http.Client
+}
+
+func NewPromoSentinelService(tavily *TavilyService, bonusRepo *repo.TransferBonusRepo, anthropicAPIKey string) *PromoSentinelService {
+	model := os.Getenv("ANTHROPIC_MODEL")
+	if model == "" {
+		model = "claude-sonnet-4-6"
+	}
+	return &PromoSentinelService{
+		tavily:    tavily,
+		repo:      bonusRepo,
+		apiKey:    anthropicAPIKey,
+		model:     model,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
+	}
+}
+
+// PromoSweepResult is the telemetry payload returned from RunSweep so the
+// worker can log how the detector is performing without re-reading the DB.
+type PromoSweepResult struct {
+	ArticlesScanned int
+	PromosExtracted int
+	PromosUpserted  int
+	PromosSkipped   int
+}
+
+// canonicalPromoQuery is the single Tavily query the worker fires. Curated
+// for high-precision results; widening it bleeds out into points-collector
+// general news which Claude struggles to filter from.
+const canonicalPromoQuery = `Canadian credit card loyalty points transfer bonus active promotion 2026 ` +
+	`("Amex MR" OR "Aeroplan" OR "Avios" OR "Flying Blue" OR "Marriott Bonvoy" OR "RBC Avion") ` +
+	`(30% OR 25% OR 20% OR 40% OR "bonus")`
+
+// RunSweep executes one full detection cycle. Best-effort throughout: a
+// failure in any single article doesn't poison the rest.
+func (s *PromoSentinelService) RunSweep(ctx context.Context, log *slog.Logger) PromoSweepResult {
+	if s.tavily == nil || !s.tavily.IsAvailable() || s.apiKey == "" {
+		log.Info("promo sentinel: skipping (TAVILY_API_KEY or ANTHROPIC_API_KEY not set)")
+		return PromoSweepResult{}
+	}
+
+	// Tavily.Search internally restricts to the rewards-blog whitelist, so
+	// we don't need to pass domains explicitly here.
+	articles, err := s.tavily.Search(ctx, canonicalPromoQuery)
+	if err != nil {
+		log.Warn("promo sentinel: tavily failed", "err", err)
+		return PromoSweepResult{}
+	}
+
+	res := PromoSweepResult{ArticlesScanned: len(articles)}
+	for _, article := range articles {
+		promos, err := s.extractPromos(ctx, article.Title, article.URL, article.Content)
+		if err != nil {
+			log.Warn("promo sentinel: extract failed", "url", article.URL, "err", err)
+			continue
+		}
+		for _, p := range promos {
+			if !validatePromo(p) {
+				res.PromosSkipped++
+				continue
+			}
+			res.PromosExtracted++
+			ev := repo.TransferBonusEvent{
+				FromProgram:  canonicalProgramSlug(p.FromProgram),
+				ToProgram:    canonicalProgramSlug(p.ToProgram),
+				BonusPercent: p.BonusPercent,
+				SourceURL:    article.URL,
+				SourceTitle:  article.Title,
+				Summary:      p.Summary,
+				AIConfidence: floatPtrIfSet(p.Confidence),
+				ExpiresAt:    parsePromoDate(p.ExpiresAt),
+				StartsAt:     parsePromoDate(p.StartsAt),
+			}
+			if err := s.repo.Upsert(ctx, ev); err != nil {
+				log.Warn("promo sentinel: upsert failed", "err", err)
+				res.PromosSkipped++
+				continue
+			}
+			res.PromosUpserted++
+		}
+	}
+	log.Info("promo sentinel: sweep complete",
+		"scanned", res.ArticlesScanned,
+		"extracted", res.PromosExtracted,
+		"upserted", res.PromosUpserted,
+		"skipped", res.PromosSkipped,
+	)
+	return res
+}
+
+// extractedPromo is the JSON contract Claude returns. Field names match the
+// extraction prompt below — change them in lockstep.
+type extractedPromo struct {
+	FromProgram  string  `json:"from_program"`
+	ToProgram    string  `json:"to_program"`
+	BonusPercent float64 `json:"bonus_percent"`
+	StartsAt     string  `json:"starts_at,omitempty"`     // YYYY-MM-DD; "" = unknown
+	ExpiresAt    string  `json:"expires_at,omitempty"`    // YYYY-MM-DD; "" = ongoing
+	Summary      string  `json:"summary"`
+	Confidence   float64 `json:"confidence"`              // 0-1
+}
+
+func (s *PromoSentinelService) extractPromos(ctx context.Context, title, url, content string) ([]extractedPromo, error) {
+	// Cap content — Anthropic doesn't need the full article and tokens add up
+	// across a multi-article sweep. 4K chars ≈ 1K tokens which is plenty for
+	// most rewards-blog promo posts.
+	if len(content) > 4000 {
+		content = content[:4000]
+	}
+
+	prompt := fmt.Sprintf(`You are extracting transfer-bonus promotions from Canadian credit-card-rewards articles.
+
+Source title: %s
+Source URL: %s
+Article excerpt:
+---
+%s
+---
+
+Extract every CURRENTLY ACTIVE transfer-bonus promotion mentioned. Output STRICT JSON:
+{"promos": [
+  {"from_program": "amex-mr-ca", "to_program": "aeroplan", "bonus_percent": 30,
+   "starts_at": "2026-04-01", "expires_at": "2026-04-30",
+   "summary": "Amex MR Canada → Aeroplan 30%% bonus through April 30 2026",
+   "confidence": 0.95}
+]}
+
+Rules:
+- ONLY include promotions that are still active. Exclude expired ones.
+- Use canonical Canadian program slugs: aeroplan, amex-mr-ca, ba-avios, flying-blue,
+  marriott-bonvoy, world-of-hyatt, rbc-avion, cibc-aventura, td-rewards, bmo-rewards,
+  scene-plus, air-miles, westjet-rewards.
+- If the article only mentions historical/past promos, return {"promos": []}.
+- If date is missing, leave the field as "".
+- Bonus percent is a number (30 not "30%%").
+- Output ONLY the JSON. No prose.
+`, title, url, content)
+
+	body := map[string]any{
+		"model":      s.model,
+		"max_tokens": 800,
+		"messages": []map[string]any{
+			{"role": "user", "content": prompt},
+		},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", s.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		return nil, fmt.Errorf("anthropic %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var parsed struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	var text string
+	for _, b := range parsed.Content {
+		if b.Type == "text" {
+			text = b.Text
+			break
+		}
+	}
+	if text == "" {
+		return nil, nil
+	}
+
+	return parseExtractedPromos(text)
+}
+
+// parseExtractedPromos is the JSON-extraction shim that handles Claude
+// sometimes wrapping JSON in prose or markdown fences. Exported for tests.
+func parseExtractedPromos(raw string) ([]extractedPromo, error) {
+	raw = strings.TrimSpace(raw)
+	// Strip markdown code fences if present.
+	if strings.HasPrefix(raw, "```") {
+		if i := strings.Index(raw, "\n"); i >= 0 {
+			raw = raw[i+1:]
+		}
+		if i := strings.LastIndex(raw, "```"); i >= 0 {
+			raw = raw[:i]
+		}
+	}
+	// Find the first { and last } to skip any trailing prose.
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("no JSON object found in response")
+	}
+	raw = raw[start : end+1]
+
+	var wrapper struct {
+		Promos []extractedPromo `json:"promos"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapper); err != nil {
+		return nil, fmt.Errorf("unmarshal promos: %w", err)
+	}
+	return wrapper.Promos, nil
+}
+
+// validatePromo enforces the minimum-quality bar for a row we'd persist.
+// Defends against the LLM hallucinating a 5%-bonus or returning incomplete
+// data — better to drop the row than mislead a Pro user.
+func validatePromo(p extractedPromo) bool {
+	if p.FromProgram == "" || p.ToProgram == "" {
+		return false
+	}
+	if p.BonusPercent < 10 || p.BonusPercent > 200 {
+		return false
+	}
+	if p.Confidence > 0 && p.Confidence < 0.5 {
+		return false
+	}
+	if p.FromProgram == p.ToProgram {
+		return false
+	}
+	return true
+}
+
+func parsePromoDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+func floatPtrIfSet(v float64) *float64 {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}

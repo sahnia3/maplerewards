@@ -15,7 +15,13 @@ type FlightResult struct {
 }
 
 // AwardItem represents one normalized award flight result.
-// Produced by SeatsAeroService.SearchAwards().
+// Produced by SeatsAeroService.SearchAwards() and ApifyAwardService.
+//
+// TaxesCash is a pointer so the difference between "we know it's $0" (rare —
+// some Avios short-hauls) and "we don't know" (Seats.aero never returns
+// taxes) is explicit. TaxesIncluded flips to true only when an upstream
+// source actually returned a number; otherwise the UI should show "+ taxes"
+// instead of pretending the redemption is fee-free.
 type AwardItem struct {
 	Date           string         `json:"date"`
 	Issuer         string         `json:"issuer"`          // e.g. "aeroplan"
@@ -23,7 +29,8 @@ type AwardItem struct {
 	Destination    string         `json:"destination"`
 	Cabin          string         `json:"cabin"`
 	MileageCost    int            `json:"mileageCost"`
-	TaxesCash      float64        `json:"taxesCash"`       // in dollars
+	TaxesCash      *float64       `json:"taxesCash,omitempty"`   // CAD; nil when unknown
+	TaxesIncluded  bool           `json:"taxesIncluded"`         // true only if an upstream source supplied taxes
 	SeatsAvailable int            `json:"seatsAvailable"`
 	Segments       []AwardSegment `json:"segments"`
 }

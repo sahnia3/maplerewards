@@ -252,6 +252,11 @@ func (s *SeatsAeroService) convertAvailability(avail seatsAeroAvailability, cabi
 		}
 	}
 
+	// Seats.aero does not return taxes — leaving TaxesCash nil and
+	// TaxesIncluded=false makes the missing data explicit instead of lying
+	// to the UI that this redemption is fee-free. award_search will merge
+	// an Apify-supplied tax value on top when both sources land the same
+	// (issuer|date) pair.
 	return &AwardItem{
 		Date:           avail.Date,
 		Issuer:         avail.Source,
@@ -259,7 +264,8 @@ func (s *SeatsAeroService) convertAvailability(avail seatsAeroAvailability, cabi
 		Destination:    avail.Route.DestinationAirport,
 		Cabin:          cabin,
 		MileageCost:    mileageCost,
-		TaxesCash:      0, // Seats.aero does not return taxes
+		TaxesCash:      nil,
+		TaxesIncluded:  false,
 		SeatsAvailable: remainingSeats,
 		Segments:       segments,
 	}

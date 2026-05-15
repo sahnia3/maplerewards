@@ -320,7 +320,21 @@ func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) 
 }
 
 // convertResults transforms Apify results into our standard AwardItem format.
-func (s *ApifyAwardService) convertResults(results []apifyAwardResult, targetCabin string) []AwardItem {
+// Wrapped in panic recovery because Apify schema drift has bitten twice already
+// (string→number on totalDuration and segments[].duration). A third drift on a
+// field we DO consume would otherwise crash the whole API process.
+func (s *ApifyAwardService) convertResults(results []apifyAwardResult, targetCabin string) (out []AwardItem) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("[apify-awards] convertResults panic — likely schema drift",
+				"panic", rec,
+				"target_cabin", targetCabin,
+				"raw_count", len(results),
+			)
+			out = nil
+		}
+	}()
+
 	var items []AwardItem
 
 	for _, r := range results {
@@ -379,6 +393,10 @@ func (s *ApifyAwardService) convertResults(results []apifyAwardResult, targetCab
 			}
 		}
 
+		// Apify reports taxes in cents — already converted above. Keep a
+		// pointer so downstream merge logic can detect "we have a number"
+		// vs. "Seats.aero left this nil".
+		taxesPtr := taxes
 		items = append(items, AwardItem{
 			Date:           r.Date,
 			Issuer:         r.Issuer,
@@ -386,7 +404,8 @@ func (s *ApifyAwardService) convertResults(results []apifyAwardResult, targetCab
 			Destination:    r.Destination,
 			Cabin:          targetCabin,
 			MileageCost:    mileage,
-			TaxesCash:      taxes,
+			TaxesCash:      &taxesPtr,
+			TaxesIncluded:  true,
 			SeatsAvailable: seats,
 			Segments:       segments,
 		})
