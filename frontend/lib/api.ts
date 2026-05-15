@@ -19,14 +19,78 @@ import type {
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 
 // ── Auth token accessor ──────────────────────────────────────────────────────
-// This is set by the AuthProvider so API calls automatically include the JWT.
+// AuthProvider wires both: a getter for the current access token, and an
+// async refresh handler that renews the access token using the refresh
+// token in localStorage. The refresh handler is called transparently when
+// any request returns 401 — the frontend never sees the expiry round-trip.
 let _getAccessToken: (() => string | null) | null = null;
+let _refreshAccessToken: (() => Promise<string | null>) | null = null;
 
 export function setAuthTokenAccessor(fn: () => string | null) {
   _getAccessToken = fn;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export function setAuthRefreshHandler(fn: () => Promise<string | null>) {
+  _refreshAccessToken = fn;
+}
+
+// Single-flight refresh: if multiple requests get 401 at the same time,
+// they all wait on the same /auth/refresh call instead of stampeding it.
+let inFlightRefresh: Promise<string | null> | null = null;
+async function refreshOnce(): Promise<string | null> {
+  if (!_refreshAccessToken) return null;
+  if (inFlightRefresh) return inFlightRefresh;
+  inFlightRefresh = _refreshAccessToken().finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
+}
+
+// CSRF token plumbing — double-submit cookie pattern. The backend sets
+// `mr_csrf` (non-httpOnly) on any GET; we read it via document.cookie and
+// echo it back in `X-CSRF-Token` on state-changing requests. The pair must
+// match for the server to allow auth/billing mutations.
+const CSRF_COOKIE = "mr_csrf";
+const CSRF_HEADER = "X-CSRF-Token";
+const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function readCookie(name: string): string {
+  if (typeof document === "undefined") return "";
+  for (const part of document.cookie.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === name) return rest.join("=");
+  }
+  return "";
+}
+
+let _csrfSeedInflight: Promise<void> | null = null;
+async function ensureCSRFCookie(): Promise<void> {
+  if (typeof document === "undefined") return;
+  if (readCookie(CSRF_COOKIE)) return;
+  if (_csrfSeedInflight) return _csrfSeedInflight;
+  _csrfSeedInflight = (async () => {
+    try {
+      // GET /csrf — backend sets the cookie as a side effect; body is just
+      // a courtesy. We rely on the cookie write, not the response payload.
+      await fetch(`${BASE_URL}/csrf`, { method: "GET", credentials: "include" });
+    } finally {
+      _csrfSeedInflight = null;
+    }
+  })();
+  return _csrfSeedInflight;
+}
+
+// Exported for auth-context and other call sites that bypass `request()`
+// but still need to talk to CSRF-protected endpoints (raw fetch, no Auth
+// header yet, etc.). Seeds the cookie if missing, then returns the token.
+export async function getCSRFToken(): Promise<string> {
+  await ensureCSRFCookie();
+  return readCookie(CSRF_COOKIE);
+}
+
+export { CSRF_HEADER };
+
+async function request<T>(path: string, init?: RequestInit, retryOn401 = true): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string>),
@@ -38,10 +102,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  // Attach CSRF header for any state-changing method. Cheap on routes that
+  // don't enforce CSRF; required on auth/billing.
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (STATE_CHANGING.has(method)) {
+    await ensureCSRFCookie();
+    const csrf = readCookie(CSRF_COOKIE);
+    if (csrf) headers[CSRF_HEADER] = csrf;
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers,
+    credentials: init?.credentials ?? "include",
   });
+
+  // Transparent refresh on 401 — try once, then replay the original request.
+  // Endpoints that don't need auth still return 401 here when they're behind
+  // RequireSessionOwner / RequirePro, so the same handling applies.
+  if (res.status === 401 && retryOn401 && _refreshAccessToken) {
+    const newToken = await refreshOnce();
+    if (newToken) {
+      return request<T>(path, init, false);
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "Unknown error");
     throw new Error(text || `HTTP ${res.status}`);
@@ -398,10 +483,13 @@ export interface AwardSearchRequest {
   session_id: string;
   origin: string;
   destination: string;
-  date: string;           // YYYY-MM-DD
+  date?: string;          // YYYY-MM-DD (legacy single-date field, optional)
+  outbound_date?: string; // YYYY-MM-DD (preferred for round-trip)
+  return_date?: string;   // YYYY-MM-DD (optional, round-trip)
   flex_days?: number;     // ±days around date (default 0)
   cabin: "economy" | "business" | "first";
   passengers?: number;    // default 1
+  refresh?: boolean;      // when true, backend bypasses Redis cache (45-min TTL) and forces a fresh upstream pull
 }
 
 export interface AwardSegmentInfo {
@@ -414,22 +502,46 @@ export interface AwardSegmentInfo {
   aircraft: string;
 }
 
+/* Award search result. Mirrors the backend pricing-trust layer in
+ * internal/service/award_search.go. The trust fields are:
+ *   - source: "live" = priced from a live award scrape, "estimated" = zone
+ *     fallback, "live_search" = scraped from a public web source.
+ *   - source_label: human-readable origin ("Google Flights", "Apify", ...).
+ *   - fetched_at: RFC3339 timestamp of when the data was pulled.
+ *   - taxes_cash: nullable cash add-on. nil means we didn't find a number.
+ *   - taxes_included: whether taxes_cash is part of the displayed cash price.
+ * Frontend MUST NOT silently render "$0 taxes" — if nil/false, say so. */
 export interface AwardSearchResult {
   date: string;
   program: string;           // issuer slug (e.g. "aeroplan")
   program_name: string;
+  cabin?: string;            // cabin the points price was quoted in (matches the search)
   points_cost: number;
-  taxes_cash: number;
-  cash_price_cad: number;
-  cpp: number;               // cents per point
+  taxes_cash: number | null;
+  taxes_included: boolean;
+  cash_price_cad: number;             // cash baseline matching `cabin`
+  economy_cash_cad?: number;          // economy cash for the same route — populated when cabin != "economy"
+  cpp: number;                        // cents per point against cash_price_cad
+  realistic_cpp?: number;             // cents per point against economy_cash_cad — the "would I actually pay this?" figure
   value_rating: "excellent" | "good" | "poor";
   seats_available: number;
-  source: "live" | "estimated";
+  source: "live" | "estimated" | "live_search";
+  source_label?: string;     // "Google Flights" | "Apify" | "Seats.aero" | "estimate"
+  fetched_at?: string;       // RFC3339
   booking_url: string;
   points_available: number;
   can_afford: boolean;
   card_breakdowns: CardContribution[];
   segments: AwardSegmentInfo[];
+  best_transfer_partner?: string; // program slug for "Boost via" CTA
+  // Optional round-trip companion legs. Backend may attach when return_date
+  // was supplied. If absent, render single-leg layout (graceful fallback).
+  return_leg?: {
+    points_cost: number;
+    cash_price_cad: number;
+    cpp: number;
+    segments: AwardSegmentInfo[];
+  };
 }
 
 export async function searchAwards(req: AwardSearchRequest): Promise<AwardSearchResult[]> {
@@ -579,6 +691,118 @@ export async function listTangerineCategories(): Promise<TangerineCategory[]> {
   return request<TangerineCategory[]>("/tangerine-categories");
 }
 
+// ── Issuer page diff-watch (live monitoring of issuer pages) ────────────────
+
+import type { IssuerPageChange } from "./types";
+
+export async function listIssuerChanges(limit = 30): Promise<IssuerPageChange[]> {
+  return request<IssuerPageChange[]>(`/issuer-changes?limit=${limit}`);
+}
+
+// ── CSV bank-statement import ───────────────────────────────────────────────
+
+export interface ParsedTxnSample {
+  date: string;
+  description: string;
+  /** Spend amount in CAD (always positive). */
+  amount: number;
+  /** Auto-derived category slug (groceries | dining | gas_transit | ...) */
+  category: string;
+  /** Source-currency amount when the row was foreign-currency (e.g. 890 INR). */
+  original_amount?: number;
+  /** ISO-4217 code; empty/omitted when the source was already CAD. */
+  original_currency?: string;
+}
+
+export interface CSVPreviewResponse {
+  detected_columns: Record<string, number>;
+  total_rows: number;
+  parsed_rows: number;
+  samples: ParsedTxnSample[];
+  warnings: string[];
+}
+
+export async function previewCSVImport(sessionId: string, csv: string): Promise<CSVPreviewResponse> {
+  return request<CSVPreviewResponse>(`/wallet/${sessionId}/spend/import/preview`, {
+    method: "POST",
+    body: JSON.stringify({ csv }),
+  });
+}
+
+export async function commitCSVImport(
+  sessionId: string,
+  csv: string,
+  cardId: string,
+): Promise<{ created: number; error?: string }> {
+  return request(`/wallet/${sessionId}/spend/import/commit`, {
+    method: "POST",
+    body: JSON.stringify({ csv, card_id: cardId }),
+  });
+}
+
+// ── Card-linked offer tracker ───────────────────────────────────────────────
+
+import type { CardOffer, CreateCardOfferRequest } from "./types";
+
+export async function listCardOffers(sessionId: string, activeOnly = true): Promise<CardOffer[]> {
+  const qs = activeOnly ? "?active=1" : "";
+  return request<CardOffer[]>(`/wallet/${sessionId}/offers${qs}`);
+}
+
+export async function createCardOffer(sessionId: string, body: CreateCardOfferRequest): Promise<CardOffer> {
+  return request<CardOffer>(`/wallet/${sessionId}/offers`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function markCardOfferUsed(sessionId: string, offerId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/offers/${offerId}/used`, { method: "POST" });
+}
+
+export async function deleteCardOffer(sessionId: string, offerId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/offers/${offerId}`, { method: "DELETE" });
+}
+
+// ── Loyalty-account aggregation ─────────────────────────────────────────────
+
+import type {
+  LoyaltyAccount,
+  CreateLoyaltyAccountRequest,
+  UpdateLoyaltyAccountRequest,
+} from "./types";
+
+export async function listLoyaltyAccounts(sessionId: string): Promise<LoyaltyAccount[]> {
+  return request<LoyaltyAccount[]>(`/wallet/${sessionId}/loyalty-accounts`);
+}
+
+export async function createLoyaltyAccount(
+  sessionId: string,
+  body: CreateLoyaltyAccountRequest,
+): Promise<LoyaltyAccount> {
+  return request<LoyaltyAccount>(`/wallet/${sessionId}/loyalty-accounts`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateLoyaltyAccount(
+  sessionId: string,
+  accountId: string,
+  body: UpdateLoyaltyAccountRequest,
+): Promise<LoyaltyAccount> {
+  return request<LoyaltyAccount>(`/wallet/${sessionId}/loyalty-accounts/${accountId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteLoyaltyAccount(sessionId: string, accountId: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/loyalty-accounts/${accountId}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Billing (Stripe) ─────────────────────────────────────────────────────────
 
 export interface CheckoutSessionResponse {
@@ -587,7 +811,7 @@ export interface CheckoutSessionResponse {
 }
 
 export async function createCheckoutSession(
-  interval: "monthly" | "annual"
+  interval: "monthly" | "annual" | "lifetime"
 ): Promise<CheckoutSessionResponse> {
   return request<CheckoutSessionResponse>("/billing/checkout", {
     method: "POST",
@@ -599,5 +823,58 @@ export async function createCheckoutSession(
 
 export async function deleteAccount(): Promise<void> {
   return request<void>("/auth/me", { method: "DELETE" });
+}
+
+// ── Password change ────────────────────────────────────────────────────────
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  return request<void>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+// ── Feed (live RSS aggregation) ──────────────────────────────────────────
+
+export type FeedCategory = "all" | "devaluation" | "bonus" | "offer" | "guide" | "news";
+
+export interface FeedArticle {
+  id: string;
+  title: string;
+  url: string;
+  excerpt: string;
+  source: string;
+  category: Exclude<FeedCategory, "all">;
+  image_url: string;
+  published_at: string;
+}
+
+export async function listFeedArticles(category: FeedCategory = "all"): Promise<FeedArticle[]> {
+  const qs = category && category !== "all" ? `?category=${encodeURIComponent(category)}` : "";
+  return request<FeedArticle[]>(`/feed/articles${qs}`);
+}
+
+// ── Spend CSV export ───────────────────────────────────────────────────────
+//
+// Returns a Blob the caller can hand to a download anchor. Uses raw fetch
+// because `request()` JSON-decodes — we want the raw CSV bytes.
+
+export async function exportSpendCSV(sessionId: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  // Re-use the same auth + CSRF plumbing as request() for parity. CSRF
+  // isn't strictly required on this GET, but the cookie/header pair is
+  // cheap to include and protects us if we ever lock it down later.
+  const token = _getAccessToken?.();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BASE_URL}/wallet/${sessionId}/spend/export`, {
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.blob();
 }
 

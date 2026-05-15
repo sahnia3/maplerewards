@@ -1,39 +1,76 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import ReactMarkdown from "react-markdown";
-import { ARTICLES, articleCover, articleCoverFallback } from "@/lib/articles";
-import type { Article } from "@/lib/articles";
+import { useCallback, useEffect, useState } from "react";
+import { ExternalLink, AlertTriangle, RefreshCw } from "lucide-react";
+import { listFeedArticles, type FeedArticle, type FeedCategory } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
-import { LeafDivider } from "@/components/editorial/leaf-divider";
 
-const CATEGORIES = [
-  { slug: "all",   label: "All" },
-  { slug: "guide", label: "Guides" },
-  { slug: "card",  label: "Cards" },
-  { slug: "tip",   label: "Tips" },
-  { slug: "news",  label: "News" },
-] as const;
+/* Live feed — replaces the prior hardcoded ARTICLES list with a real
+ * RSS aggregator backed by GET /api/v1/feed/articles. Every article links
+ * externally to the source. No in-app reader.
+ *
+ * Image strategy: if the feed item carries an image, use it; otherwise
+ * fall back to a category-themed gradient placeholder. Cheap, brand-on,
+ * never blocks rendering. */
 
-type CatSlug = (typeof CATEGORIES)[number]["slug"];
+const CATEGORIES: { slug: FeedCategory; label: string }[] = [
+  { slug: "all",         label: "All" },
+  { slug: "devaluation", label: "Devaluations" },
+  { slug: "bonus",       label: "Bonuses" },
+  { slug: "offer",       label: "Offers" },
+  { slug: "guide",       label: "Guides" },
+  { slug: "news",        label: "News" },
+];
+
+/* Category gradient stops, used when an article has no image. Each
+ * leans on the brand palette but distinguishes one bucket from another
+ * so a list of placeholders doesn't read as "broken". */
+const CATEGORY_GRADIENT: Record<FeedArticle["category"], string> = {
+  devaluation: "linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 60%, #2A0E12 100%)",
+  bonus:       "linear-gradient(135deg, var(--gold) 0%, #8B5A1E 70%, #3A2A0E 100%)",
+  offer:       "linear-gradient(135deg, var(--info) 0%, #0E3F3D 70%, #0A1A1A 100%)",
+  guide:       "linear-gradient(135deg, var(--primary-2) 0%, var(--primary) 70%, #06120F 100%)",
+  news:        "linear-gradient(135deg, var(--ink-3) 0%, var(--ink-2) 60%, var(--ink) 100%)",
+};
+
+const CATEGORY_LABEL: Record<FeedArticle["category"], string> = {
+  devaluation: "Devaluation",
+  bonus:       "Welcome bonus",
+  offer:       "Offer",
+  guide:       "Guide",
+  news:        "News",
+};
 
 export default function FeedPage() {
-  const [filter, setFilter] = useState<CatSlug>("all");
-  const [open, setOpen] = useState<Article | null>(null);
+  const [articles, setArticles] = useState<FeedArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FeedCategory>("all");
 
-  const filtered = filter === "all" ? ARTICLES : ARTICLES.filter((a) => a.category === filter);
-  const lead = filtered[0];
-  const rest = filtered.slice(1);
+  const load = useCallback(async (cat: FeedCategory) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await listFeedArticles(cat);
+      setArticles(res ?? []);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not load articles";
+      setError(msg);
+      setArticles([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  if (open) {
-    return <ArticleView article={open} onClose={() => setOpen(null)} />;
-  }
+  useEffect(() => { load(filter); }, [filter, load]);
+
+  const lead = articles[0];
+  const rest = articles.slice(1);
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
-        {/* Editorial banner — aerial Canadian boreal at golden hour */}
+        {/* Editorial banner */}
         <figure
           style={{
             position: "relative",
@@ -49,14 +86,8 @@ export default function FeedPage() {
             alt=""
             aria-hidden
             loading="eager"
-            style={{
-              display: "block",
-              width: "100%",
-              aspectRatio: "21 / 9",
-              objectFit: "cover",
-            }}
+            style={{ display: "block", width: "100%", aspectRatio: "21 / 9", objectFit: "cover" }}
           />
-          {/* Bottom ink gradient + caption */}
           <div
             style={{
               position: "absolute",
@@ -71,44 +102,24 @@ export default function FeedPage() {
               color: "var(--cream, #FBF7EE)",
             }}
           >
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                opacity: 0.9,
-              }}
-            >
-              Dispatch · From the canopy
+            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", opacity: 0.9 }}>
+              Dispatch · Live feed
             </span>
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                opacity: 0.65,
-              }}
-            >
-              Vol. 1 · {new Date().getFullYear()}
+            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", opacity: 0.65 }}>
+              {articles.length > 0 ? `${articles.length} articles · refreshed hourly` : "Loading"}
             </span>
           </div>
         </figure>
 
         <PageMasthead
           eyebrow="Feed"
-          eyebrowEnd={`${ARTICLES.length} essays · CAD`}
-          title={
-            <>
-              The <span style={{ fontStyle: "italic" }}>maple</span> dispatch.
-            </>
-          }
-          lede="Long-form essays, sweet-spot guides, and quarterly devaluation watches — written for Canadian rewards power-users."
+          eyebrowEnd="Real time"
+          title={<>The <span style={{ fontStyle: "italic" }}>maple</span> dispatch.</>}
+          lede="Live RSS from Prince of Travel, Milesopedia, Doctor of Credit, The Points Guy, One Mile at a Time, View From The Wing, and three card-focused subreddits. Devaluations, bonuses, offers — refreshed every two hours."
         />
 
-        {/* Filter pills */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 32 }}>
+        {/* Filter pills + refresh */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 32 }}>
           {CATEGORIES.map((c) => {
             const active = filter === c.slug;
             return (
@@ -128,8 +139,6 @@ export default function FeedPage() {
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                   cursor: "pointer",
-                  /* Active pill carries the signature glow so the current
-                   * filter reads as a deliberate brand moment. */
                   boxShadow: active ? "var(--shadow-accent-glow)" : "none",
                   transition:
                     "background 220ms cubic-bezier(0.16, 1, 0.3, 1), color 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1)",
@@ -139,314 +148,366 @@ export default function FeedPage() {
               </button>
             );
           })}
-        </div>
-
-        {/* Lead article — full-width hero photo + masthead text */}
-        {lead && (
-          <article
-            onClick={() => setOpen(lead)}
-            className="feed-lead"
+          <button
+            type="button"
+            onClick={() => load(filter)}
+            disabled={loading}
+            className="mono"
+            title="Refresh"
+            aria-label="Refresh feed"
             style={{
-              borderTop: "1px solid var(--ink)",
-              borderBottom: "1px solid var(--rule)",
-              paddingBottom: 36,
-              marginBottom: 18,
-              cursor: "pointer",
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid var(--rule-strong)",
+              background: "transparent",
+              color: "var(--ink-3)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.10em",
+              textTransform: "uppercase",
+              cursor: loading ? "default" : "pointer",
+              opacity: loading ? 0.5 : 1,
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={articleCover(lead)}
-              alt={lead.title}
-              loading="eager"
-              onError={(e) => {
-                const t = e.currentTarget;
-                if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(lead.slug); }
-              }}
-              className="feed-lead-img"
-              style={{
-                display: "block",
-                width: "100%",
-                aspectRatio: "16 / 9",
-                objectFit: "cover",
-                marginTop: 22,
-                borderRadius: 14,
-                boxShadow: "var(--shadow-1)",
-                transition:
-                  "box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-            />
-            <div style={{ paddingTop: 24 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-                <span className="eyebrow" style={{ color: "var(--accent)" }}>{lead.category}</span>
-                <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
-                <span className="eyebrow">
-                  {new Date(lead.date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
-                </span>
-                <span className="eyebrow">·</span>
-                <span className="eyebrow">{lead.readTime}m read</span>
-              </div>
-              <h2
-                className="display"
-                style={{
-                  fontSize: "clamp(32px, 4vw, 52px)",
-                  margin: 0,
-                  lineHeight: 0.96,
-                  letterSpacing: "-0.015em",
-                  maxWidth: 920,
-                }}
-              >
-                {lead.title}
-              </h2>
-              <p
-                className="serif"
-                style={{
-                  marginTop: 14,
-                  fontSize: 18,
-                  fontStyle: "italic",
-                  color: "var(--ink-2)",
-                  lineHeight: 1.45,
-                  maxWidth: 720,
-                }}
-              >
-                {lead.excerpt}
-              </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18 }}>
-                {lead.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="mono"
-                    style={{
-                      fontSize: 10,
-                      color: "var(--ink-3)",
-                      letterSpacing: "0.10em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    #{t}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </article>
-        )}
-
-        {/* Article ledger — thumbnail + category + title/excerpt + date + read time */}
-        <div style={{ borderTop: "1px solid var(--rule)" }}>
-          {rest.map((a, i) => (
-            <article
-              key={a.slug}
-              onClick={() => setOpen(a)}
-              className="feed-row"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "92px 70px 1fr 100px 80px",
-                alignItems: "center",
-                gap: 18,
-                padding: "16px 4px",
-                borderTop: i > 0 ? "1px solid var(--rule)" : "none",
-                cursor: "pointer",
-                transition: "background 160ms",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              <div
-                style={{
-                  width: 92,
-                  height: 64,
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  border: "1px solid var(--rule)",
-                  background: "var(--card-fill)",
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={articleCover(a)}
-                  alt={a.title}
-                  loading="lazy"
-                  onError={(e) => {
-                    const t = e.currentTarget;
-                    if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(a.slug); }
-                  }}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              </div>
-              <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
-                {a.category}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <h3
-                  className="display"
-                  style={{
-                    fontSize: 20,
-                    margin: 0,
-                    lineHeight: 1.15,
-                    letterSpacing: "-0.005em",
-                    color: "var(--ink)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {a.title}
-                </h3>
-                <p
-                  className="serif"
-                  style={{
-                    marginTop: 3,
-                    fontSize: 13,
-                    fontStyle: "italic",
-                    color: "var(--ink-3)",
-                    lineHeight: 1.4,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {a.excerpt}
-                </p>
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
-                {new Date(a.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "right", letterSpacing: "0.04em" }}>
-                {a.readTime} min →
-              </div>
-            </article>
-          ))}
+            <RefreshCw size={12} strokeWidth={2} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
         </div>
+
+        {/* States */}
+        {loading && articles.length === 0 ? (
+          <LoadingState />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => load(filter)} />
+        ) : articles.length === 0 ? (
+          <EmptyState filter={filter} />
+        ) : (
+          <>
+            {lead && <LeadArticle a={lead} />}
+            <div style={{ borderTop: "1px solid var(--rule)" }}>
+              {rest.map((a, i) => (
+                <RowArticle key={a.id} a={a} isFirst={i === 0} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-/* ── Article reading view ─────────────────────────────────────────────── */
-function ArticleView({ article, onClose }: { article: Article; onClose: () => void }) {
+/* ── Lead (largest item) ───────────────────────────────────────────────── */
+
+function LeadArticle({ a }: { a: FeedArticle }) {
   return (
-    <div className="reveal" style={{ paddingTop: 0 }}>
-      <div style={{ maxWidth: 740, margin: "0 auto", padding: "24px clamp(20px, 3vw, 40px) 80px" }}>
-        <button
-          onClick={onClose}
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="feed-lead"
+      style={{
+        display: "block",
+        borderTop: "1px solid var(--ink)",
+        borderBottom: "1px solid var(--rule)",
+        paddingBottom: 36,
+        marginBottom: 18,
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      <ArticleImage a={a} aspect="16 / 9" eager />
+      <div style={{ paddingTop: 24 }}>
+        <ArticleEyebrow a={a} />
+        <h2
+          className="display"
+          style={{
+            fontSize: "clamp(32px, 4vw, 52px)",
+            margin: 0,
+            lineHeight: 0.96,
+            letterSpacing: "-0.015em",
+            maxWidth: 920,
+            color: "var(--ink)",
+          }}
+        >
+          {a.title}
+        </h2>
+        {a.excerpt && (
+          <p
+            className="serif"
+            style={{
+              marginTop: 14,
+              fontSize: 18,
+              fontStyle: "italic",
+              color: "var(--ink-2)",
+              lineHeight: 1.45,
+              maxWidth: 720,
+            }}
+          >
+            {a.excerpt}
+          </p>
+        )}
+        <div
           className="mono"
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            marginBottom: 24,
-            fontSize: 11,
-            color: "var(--ink-3)",
+            marginTop: 18,
+            fontSize: 10,
             letterSpacing: "0.10em",
             textTransform: "uppercase",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
+            color: "var(--accent)",
           }}
         >
-          ← Back to dispatch
-        </button>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-          <span className="eyebrow" style={{ color: "var(--accent)" }}>{article.category}</span>
-          <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
-          <span className="eyebrow">
-            {new Date(article.date).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" })}
-          </span>
-          <span className="eyebrow">·</span>
-          <span className="eyebrow">{article.readTime} min read</span>
+          Read on {a.source} <ExternalLink size={11} strokeWidth={2} />
         </div>
+      </div>
+    </a>
+  );
+}
 
-        {/* Cover photo — sits between the kicker line and the title */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={articleCover(article)}
-          alt={article.title}
-          loading="eager"
-          onError={(e) => {
-            const t = e.currentTarget;
-            if (!t.dataset.fallback) { t.dataset.fallback = "1"; t.src = articleCoverFallback(article.slug); }
-          }}
-          style={{
-            display: "block",
-            width: "100%",
-            aspectRatio: "16 / 9",
-            objectFit: "cover",
-            borderRadius: 14,
-            margin: "20px 0 24px",
-            boxShadow: "var(--shadow-1)",
-          }}
-        />
+/* ── Ledger row ────────────────────────────────────────────────────────── */
 
-        <h1
+function RowArticle({ a, isFirst }: { a: FeedArticle; isFirst: boolean }) {
+  return (
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="feed-row"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "92px 80px 1fr 100px 70px",
+        alignItems: "center",
+        gap: 18,
+        padding: "16px 4px",
+        borderTop: isFirst ? "none" : "1px solid var(--rule)",
+        cursor: "pointer",
+        textDecoration: "none",
+        color: "inherit",
+        transition: "background 160ms",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <ArticleImage a={a} aspect="92 / 64" small />
+      <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+        {CATEGORY_LABEL[a.category]}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <h3
           className="display"
-          style={{ fontSize: "clamp(36px, 4.5vw, 52px)", margin: 0, lineHeight: 1, letterSpacing: "-0.015em" }}
-        >
-          {article.title}
-        </h1>
-
-        <p
-          className="serif"
           style={{
-            marginTop: 18,
-            fontSize: 19,
-            fontStyle: "italic",
-            color: "var(--ink-2)",
-            lineHeight: 1.4,
-            paddingBottom: 24,
-            borderBottom: "1px solid var(--rule)",
+            fontSize: 20,
+            margin: 0,
+            lineHeight: 1.15,
+            letterSpacing: "-0.005em",
+            color: "var(--ink)",
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
           }}
         >
-          {article.excerpt}
-        </p>
-
-        <div className="serif article-body" style={{ fontSize: 17, color: "var(--ink-2)", lineHeight: 1.7, marginTop: 28 }}>
-          <ReactMarkdown>{article.body}</ReactMarkdown>
-        </div>
-
-        <LeafDivider />
-
-        {article.relatedCards && article.relatedCards.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <span className="eyebrow">Related cards</span>
-            <ul style={{ marginTop: 12, padding: 0, listStyle: "none", display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {article.relatedCards.map((c) => (
-                <li key={c}>
-                  <Link
-                    href="/cards"
-                    className="mono"
-                    style={{
-                      display: "inline-block",
-                      padding: "8px 14px",
-                      border: "1px solid var(--rule)",
-                      borderRadius: 999,
-                      fontSize: 11,
-                      color: "var(--ink-2)",
-                      letterSpacing: "0.04em",
-                      textDecoration: "none",
-                    }}
-                  >
-                    {c}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {a.title}
+        </h3>
+        {a.excerpt && (
+          <p
+            className="serif"
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontStyle: "italic",
+              color: "var(--ink-3)",
+              lineHeight: 1.4,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 1,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {a.excerpt}
+          </p>
         )}
       </div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+        {a.source}
+      </div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "right", letterSpacing: "0.04em" }}>
+        {relativeTime(a.published_at)}
+      </div>
+    </a>
+  );
+}
 
-      <style jsx global>{`
-        .article-body h2 { font-family: var(--font-display); font-size: 30px; margin: 38px 0 14px; letter-spacing: -0.01em; color: var(--ink); }
-        .article-body h3 { font-family: var(--font-display); font-size: 22px; margin: 28px 0 10px; color: var(--ink); }
-        .article-body p { margin: 0 0 16px; }
-        .article-body ul, .article-body ol { padding-left: 20px; margin: 0 0 16px; }
-        .article-body li { margin: 4px 0; }
-        .article-body strong { color: var(--ink); font-weight: 500; }
-        .article-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-        .article-body code { font-family: var(--font-mono); font-size: 14px; background: var(--card-fill); padding: 2px 6px; border-radius: 4px; }
-        .article-body blockquote { border-left: 2px solid var(--accent); padding-left: 18px; margin: 22px 0; color: var(--ink-2); font-style: italic; }
-      `}</style>
+/* ── Shared: image (real or category-themed gradient placeholder) ────── */
+
+function ArticleImage({
+  a,
+  aspect,
+  small = false,
+  eager = false,
+}: {
+  a: FeedArticle;
+  aspect: string;
+  small?: boolean;
+  eager?: boolean;
+}) {
+  if (a.image_url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={a.image_url}
+        alt={a.title}
+        loading={eager ? "eager" : "lazy"}
+        referrerPolicy="no-referrer"
+        onError={(e) => {
+          // If the cross-origin image fails (hotlink protection / cors),
+          // hide it — the parent shows the gradient placeholder via its
+          // own fallback styling below.
+          const t = e.currentTarget;
+          t.style.display = "none";
+          const parent = t.parentElement;
+          if (parent) parent.style.background = CATEGORY_GRADIENT[a.category];
+        }}
+        style={{
+          display: "block",
+          width: small ? 92 : "100%",
+          height: small ? 64 : "auto",
+          aspectRatio: aspect,
+          objectFit: "cover",
+          borderRadius: small ? 8 : 14,
+          marginTop: small ? 0 : 22,
+          boxShadow: small ? "none" : "var(--shadow-1)",
+          border: small ? "1px solid var(--rule)" : "none",
+        }}
+      />
+    );
+  }
+  /* No image — gradient placeholder with the category color. */
+  return (
+    <div
+      aria-hidden
+      style={{
+        width: small ? 92 : "100%",
+        height: small ? 64 : "auto",
+        aspectRatio: aspect,
+        background: CATEGORY_GRADIENT[a.category],
+        borderRadius: small ? 8 : 14,
+        marginTop: small ? 0 : 22,
+        boxShadow: small ? "none" : "var(--shadow-1)",
+        border: small ? "1px solid var(--rule)" : "none",
+      }}
+    />
+  );
+}
+
+function ArticleEyebrow({ a }: { a: FeedArticle }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+      <span className="eyebrow" style={{ color: "var(--accent)" }}>{CATEGORY_LABEL[a.category]}</span>
+      <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
+      <span className="eyebrow">{a.source}</span>
+      <span className="eyebrow">·</span>
+      <span className="eyebrow">{relativeTime(a.published_at)}</span>
     </div>
   );
+}
+
+/* ── States ────────────────────────────────────────────────────────────── */
+
+function LoadingState() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="shimmer" style={{ width: "100%", aspectRatio: "16/9", borderRadius: 14, maxHeight: 320 }} />
+      <div className="shimmer" style={{ height: 24, width: "70%", borderRadius: 4 }} />
+      <div className="shimmer" style={{ height: 16, width: "55%", borderRadius: 4 }} />
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        background: "var(--card-fill)",
+        border: "1px solid var(--accent)",
+        borderRadius: 14,
+        padding: "44px 28px",
+        textAlign: "center",
+        boxShadow: "var(--shadow-1)",
+      }}
+    >
+      <div
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 999,
+          margin: "0 auto 18px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--accent-wash)",
+          border: "1px solid var(--accent-soft)",
+          color: "var(--accent)",
+        }}
+      >
+        <AlertTriangle size={22} strokeWidth={1.5} />
+      </div>
+      <h2 className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+        Could not load the feed
+      </h2>
+      <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.55 }}>
+        {message}
+      </p>
+      <button
+        onClick={onRetry}
+        className="btn btn-primary"
+        style={{ marginTop: 20, fontSize: 12, height: 38 }}
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ filter }: { filter: FeedCategory }) {
+  return (
+    <div
+      style={{
+        background: "var(--card-fill)",
+        border: "1px solid var(--rule)",
+        borderRadius: 14,
+        padding: "44px 28px",
+        textAlign: "center",
+        boxShadow: "var(--shadow-1)",
+      }}
+    >
+      <p className="serif" style={{ fontSize: 16, fontStyle: "italic", color: "var(--ink-2)" }}>
+        No articles in the <span style={{ color: "var(--ink)", fontStyle: "normal" }}>{filter}</span> bucket right now. Check back in a couple of hours — the feed refreshes every two.
+      </p>
+    </div>
+  );
+}
+
+/* ── Utilities ─────────────────────────────────────────────────────────── */
+
+function relativeTime(iso: string): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const now = Date.now();
+  const diff = Math.max(0, now - t);
+  const min = Math.floor(diff / 60_000);
+  const hr  = Math.floor(diff / 3_600_000);
+  const day = Math.floor(diff / 86_400_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  if (hr < 24)  return `${hr}h ago`;
+  if (day < 7)  return `${day}d ago`;
+  return new Date(t).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
 }
