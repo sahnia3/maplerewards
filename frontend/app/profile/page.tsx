@@ -64,9 +64,22 @@ export default function ProfilePage() {
       const { url } = await createPortalSession();
       window.location.href = url;
     } catch (err) {
-      setPortalError(
-        err instanceof Error ? err.message : "Could not open the billing portal"
-      );
+      let msg = err instanceof Error ? err.message : "Could not open the billing portal";
+      // The API client throws the raw JSON body — unwrap it so the user sees
+      // a sentence, not {"code":...}. NO_BILLING_ACCOUNT gets a plain-English
+      // explanation (it means Pro was granted without a Stripe subscription).
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.code === "NO_BILLING_ACCOUNT") {
+          msg =
+            "No Stripe subscription is linked to this account, so there's nothing to manage here yet. If you subscribed, complete checkout again so billing links up.";
+        } else if (parsed?.message) {
+          msg = parsed.message;
+        }
+      } catch {
+        /* message wasn't JSON — leave as-is */
+      }
+      setPortalError(msg);
       setPortalLoading(false);
     }
   }

@@ -146,6 +146,16 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 		form.Set("subscription_data[trial_period_days]", "3")
 	}
 
+	// One-time (Lifetime) payments do NOT create a Stripe Customer by
+	// default — Stripe only auto-creates one for subscriptions. Without a
+	// Customer the Billing Portal has nothing to attach to, so a Lifetime
+	// buyer could never open it to see receipts or update their card. Force
+	// creation here (only valid for payment/setup mode — Stripe rejects it
+	// for subscription mode, which already makes a Customer anyway).
+	if mode == "payment" {
+		form.Set("customer_creation", "always")
+	}
+
 	if user.StripeCustomerID != nil && *user.StripeCustomerID != "" {
 		form.Set("customer", *user.StripeCustomerID)
 	} else {

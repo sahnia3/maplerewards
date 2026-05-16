@@ -21,7 +21,7 @@ const TIER_BADGE: Record<
     icon: "crown",
   },
   pro_plus: {
-    label: "PRO PLUS",
+    label: "PLUS",
     bg: "linear-gradient(135deg,#FFD700,#FFA500)",
     fg: "#000",
     icon: "crown",
@@ -112,7 +112,7 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
                   if (!b) return null;
                   return (
                     <span
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase whitespace-nowrap shrink-0"
                       style={{ background: b.bg, color: b.fg, border: b.border }}
                     >
                       {b.icon === "gem" ? <Gem size={8} /> : <Crown size={8} />} {b.label}
