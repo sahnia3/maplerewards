@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import {
@@ -42,8 +43,7 @@ import { MapleWordmark } from "@/components/brand/maple-mark";
  * noisy at small sizes — this is the user's selected design verbatim. */
 function MapleLeaf({ size = 30 }: { size?: number }) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       src="/brand/maple-leaf-origami.png"
       width={size}
       height={size}

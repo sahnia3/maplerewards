@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { ExternalLink, AlertTriangle, RefreshCw } from "lucide-react";
 import { listFeedArticles, type FeedArticle, type FeedCategory } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
@@ -80,14 +81,17 @@ export default function FeedPage() {
             border: "1px solid var(--rule)",
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/hero-aerial-canada.png"
-            alt=""
-            aria-hidden
-            loading="eager"
-            style={{ display: "block", width: "100%", aspectRatio: "21 / 9", objectFit: "cover" }}
-          />
+          <div style={{ position: "relative", width: "100%", aspectRatio: "21 / 9" }}>
+            <Image
+              src="/brand/hero-aerial-canada.png"
+              alt=""
+              aria-hidden
+              fill
+              priority
+              sizes="100vw"
+              style={{ objectFit: "cover", display: "block" }}
+            />
+          </div>
           <div
             style={{
               position: "absolute",
