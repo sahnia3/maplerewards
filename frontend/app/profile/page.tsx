@@ -8,15 +8,17 @@ import {
   LogOut,
   Trash2,
   AlertTriangle,
+  CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { createPortalSession } from "@/lib/api";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isPro, isAuthenticated, isLoading, logout, updateProfile } = useAuth();
+  const { user, isPro, plan, isAuthenticated, isLoading, logout, updateProfile } = useAuth();
   const { wallet, totalPoints } = useWallet();
 
   const [displayName, setDisplayName] = useState(user?.display_name || "");
@@ -24,6 +26,8 @@ export default function ProfilePage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -53,6 +57,20 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleManageBilling() {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const { url } = await createPortalSession();
+      window.location.href = url;
+    } catch (err) {
+      setPortalError(
+        err instanceof Error ? err.message : "Could not open the billing portal"
+      );
+      setPortalLoading(false);
+    }
+  }
+
   async function handleDeleteAccount() {
     if (deleteConfirm !== "DELETE") return;
     try {
@@ -68,6 +86,16 @@ export default function ProfilePage() {
   const memberSince = user.created_at
     ? new Date(user.created_at).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
     : "—";
+  const planText =
+    plan === "lifetime"
+      ? "Lifetime"
+      : plan === "pro_plus"
+      ? "Pro Plus"
+      : plan === "pro"
+      ? "Pro"
+      : isPro
+      ? "Pro"
+      : "Free";
 
   /* ── editorial primitives ─────────────────────────────────────────── */
   const fieldStyle: React.CSSProperties = {
@@ -164,7 +192,7 @@ export default function ProfilePage() {
                   textTransform: "uppercase",
                 }}
               >
-                ★ Pro
+                ★ {planText}
               </span>
             )}
           </div>
@@ -205,7 +233,7 @@ export default function ProfilePage() {
               ["Email", user.email || "—"],
               ["Auth provider", (user.auth_provider || "email").toString()],
               ["Member since", memberSince],
-              ["Plan", isPro ? "Pro" : "Free"],
+              ["Plan", planText],
               ["Cards in wallet", String(wallet.length)],
               ["Total points", totalPoints.toLocaleString()],
             ].map(([k, v]) => (
@@ -227,6 +255,70 @@ export default function ProfilePage() {
             ))}
           </div>
         </section>
+
+        {/* Billing — manage/cancel for paid members. Stripe Customer Portal.
+            This is the "cancel anytime" surface and the safety valve for
+            the 3-day auto-converting trial. */}
+        {isPro && (
+          <section
+            style={{
+              border: "1px solid var(--rule)",
+              borderRadius: 14,
+              background: "var(--card-fill-strong)",
+              padding: "22px 24px",
+              marginBottom: 26,
+            }}
+          >
+            <span className="eyebrow" style={{ color: "var(--accent)" }}>
+              Billing
+            </span>
+            <h3 className="display" style={{ fontSize: 24, margin: "8px 0 4px", fontStyle: "italic" }}>
+              {planText === "Lifetime" ? "Lifetime access." : "Manage your plan."}
+            </h3>
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, margin: "0 0 16px", lineHeight: 1.45 }}>
+              {planText === "Lifetime"
+                ? "A one-time purchase — there's nothing to cancel. Open the portal to update your card or download invoices."
+                : "Cancel or change your plan, update your card, and view invoices. Cancelling keeps Pro active until the end of the period you've already paid for."}
+            </p>
+            {portalError && (
+              <p
+                className="mono"
+                style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.06em", marginBottom: 12 }}
+              >
+                {portalError}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleManageBilling}
+              disabled={portalLoading}
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "12px 22px",
+                borderRadius: 8,
+                background: "var(--accent)",
+                color: "#fff",
+                border: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: portalLoading ? "not-allowed" : "pointer",
+                opacity: portalLoading ? 0.6 : 1,
+              }}
+            >
+              {portalLoading ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <CreditCard size={13} />
+              )}
+              {portalLoading ? "Opening…" : "Manage billing"}
+            </button>
+          </section>
+        )}
 
         {/* Plan — only shown when Free */}
         {!isPro && (
