@@ -88,18 +88,15 @@ func (s *OptimizerService) GetBestCard(
 	}
 
 	// ── 2.5 Network-routing rules (merchant constraints) ─────────────────
-	// Canada-specific: Costco Canada accepts Mastercard only (since 2014).
-	// Filter out non-MC cards when merchant=costco_ca; if no MC cards remain,
-	// surface a clear error instead of silently zero-result-ing.
-	if req.Merchant == "costco_ca" {
-		filtered := userCards[:0]
-		for _, uc := range userCards {
-			if uc.Card != nil && uc.Card.Network == "mastercard" {
-				filtered = append(filtered, uc)
-			}
-		}
-		if len(filtered) == 0 {
-			return nil, fmt.Errorf("no Mastercard in wallet — Costco Canada accepts only Mastercard. Add a Mastercard or pay another way.")
+	// Canada-specific network blackouts: Costco in-warehouse = Mastercard
+	// only; the Loblaws empire (No Frills, Superstore, Shoppers, T&T…) does
+	// not take Amex. Rules live in merchant_routing.go. An empty wallet after
+	// filtering surfaces a clear, store-specific error rather than a silent
+	// zero-result — see filterByMerchantAcceptance.
+	if req.Merchant != "" {
+		filtered, _, ferr := filterByMerchantAcceptance(userCards, req.Merchant)
+		if ferr != nil {
+			return nil, ferr
 		}
 		userCards = filtered
 	}

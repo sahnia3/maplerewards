@@ -72,7 +72,7 @@ export function OptimizerForm() {
   const [categorySlug, setCategorySlug] = useState("");
   const [amount, setAmount] = useState<string>("");
   const [segment, setSegment] = useState<"base" | "business">("base");
-  const [merchant, setMerchant] = useState<"" | "costco_ca">("");
+  const [merchant, setMerchant] = useState<"" | "costco_ca" | "costco_ca_online" | "loblaws">("");
   const [results, setResults] = useState<CardRecommendation[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,29 +345,32 @@ export function OptimizerForm() {
             </div>
           </div>
 
-          {/* Merchant constraint */}
+          {/* Merchant network constraint */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="eyebrow">Merchant:</span>
-            <button
-              type="button"
-              onClick={() => setMerchant(merchant === "costco_ca" ? "" : "costco_ca")}
+            <select
+              value={merchant}
+              onChange={(e) => setMerchant(e.target.value as typeof merchant)}
               className="mono"
-              title="Costco Canada accepts Mastercard only — restricts ranking to MC cards in your wallet"
+              title="Some Canadian merchants only accept certain card networks — picking one filters the ranking to cards that actually work there."
               style={{
                 padding: "5px 11px",
                 fontSize: 11,
-                letterSpacing: "0.06em",
+                letterSpacing: "0.04em",
                 textTransform: "uppercase",
                 fontWeight: 600,
-                background: merchant === "costco_ca" ? "var(--accent)" : "transparent",
-                color: merchant === "costco_ca" ? "#fff" : "var(--ink-3)",
-                border: `1px solid ${merchant === "costco_ca" ? "var(--accent)" : "var(--rule)"}`,
+                background: merchant ? "var(--accent)" : "transparent",
+                color: merchant ? "#fff" : "var(--ink-3)",
+                border: `1px solid ${merchant ? "var(--accent)" : "var(--rule)"}`,
                 borderRadius: 8,
                 cursor: "pointer",
               }}
             >
-              {merchant === "costco_ca" ? "✓ Costco · MC" : "Costco"}
-            </button>
+              <option value="">Any merchant</option>
+              <option value="costco_ca">Costco (in-warehouse) · MC only</option>
+              <option value="costco_ca_online">Costco.ca · Visa/MC</option>
+              <option value="loblaws">Loblaws empire · no Amex</option>
+            </select>
             <span
               className="serif"
               style={{
@@ -375,9 +378,13 @@ export function OptimizerForm() {
                 fontStyle: "italic",
                 color: "var(--ink-3)",
                 lineHeight: 1.3,
+                maxWidth: 320,
               }}
             >
-              Costco CA accepts Mastercard only — toggle to filter your wallet down to MC cards.
+              {merchant === "costco_ca" && "Costco Canada in-warehouse takes Mastercard only — ranking is filtered to your MC cards."}
+              {merchant === "costco_ca_online" && "Costco.ca online takes Visa + Mastercard (no Amex)."}
+              {merchant === "loblaws" && "Loblaws / No Frills / Superstore / Shoppers / T&T don't accept Amex — Visa/MC only."}
+              {!merchant && "Pick a merchant to respect its card-network blackout (Costco = MC-only, Loblaws = no Amex)."}
             </span>
           </div>
         </div>
