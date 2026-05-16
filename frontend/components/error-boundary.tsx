@@ -72,8 +72,8 @@ export class ErrorBoundary extends Component<Props, State> {
           <p className="serif" style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.5, marginBottom: 18, fontStyle: "italic" }}>
             The error has been reported automatically. Reloading usually fixes
             transient hiccups; if this keeps happening, email{" "}
-            <a href="mailto:hello@maplerewards.ca" style={{ color: "var(--accent)" }}>
-              hello@maplerewards.ca
+            <a href="mailto:hello@maplerewards.app" style={{ color: "var(--accent)" }}>
+              hello@maplerewards.app
             </a>
             .
           </p>

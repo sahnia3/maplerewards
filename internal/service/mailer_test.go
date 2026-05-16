@@ -26,7 +26,7 @@ func TestResendMailer_SendBuildsCorrectRequest(t *testing.T) {
 
 	m := &ResendMailer{
 		apiKey:   "test-key",
-		from:     "Maple Rewards <hello@maplerewards.ca>",
+		from:     "Maple Rewards <hello@maplerewards.app>",
 		client:   srv.Client(),
 		endpoint: srv.URL,
 	}
@@ -48,7 +48,7 @@ func TestResendMailer_SendBuildsCorrectRequest(t *testing.T) {
 	if capturedCT != "application/json" {
 		t.Errorf("Content-Type: got %q, want application/json", capturedCT)
 	}
-	if capturedBody["from"] != "Maple Rewards <hello@maplerewards.ca>" {
+	if capturedBody["from"] != "Maple Rewards <hello@maplerewards.app>" {
 		t.Errorf("from: got %v", capturedBody["from"])
 	}
 	if capturedBody["subject"] != "Verify your account" {

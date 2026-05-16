@@ -7,7 +7,7 @@ import { BASE_URL } from "@/lib/api";
  * /embed/cpp/[program] — iframe-friendly CPP badge.
  *
  * Designed to be dropped onto any rewards-blog or community site:
- *   <iframe src="https://maplerewards.ca/embed/cpp/aeroplan"
+ *   <iframe src="https://maplerewards.app/embed/cpp/aeroplan"
  *           width="220" height="92" style="border:0" loading="lazy"></iframe>
  *
  * AppShell skips chrome for /embed/* paths, so the entire viewport is the
@@ -58,7 +58,7 @@ export default function CPPBadge({
 
   return (
     <a
-      href="https://maplerewards.ca"
+      href="https://maplerewards.app"
       target="_blank"
       rel="noopener noreferrer"
       style={{

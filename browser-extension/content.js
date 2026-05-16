@@ -122,7 +122,7 @@ function renderSignInNudge(merchant) {
     <div class="mr-card mr-card--muted">
       <div class="mr-eyebrow">MapleRewards · ${escapeHtml(merchant.name)}</div>
       <div class="mr-title">Sign in to see best card</div>
-      <div class="mr-sub">Open the extension popup or visit <a href="https://maplerewards.ca/login" target="_blank" rel="noopener">maplerewards.ca/login</a></div>
+      <div class="mr-sub">Open the extension popup or visit <a href="https://maplerewards.app/login" target="_blank" rel="noopener">maplerewards.app/login</a></div>
       <button class="mr-dismiss" aria-label="Dismiss">×</button>
     </div>
   `;

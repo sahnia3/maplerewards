@@ -42,7 +42,7 @@ local API, but the cookie-bridge to the web app is intentionally manual.
 
 ## Roadmap (post-MVP)
 
-1. **Cookie bridge** — when the user is signed in to maplerewards.ca, write
+1. **Cookie bridge** — when the user is signed in to maplerewards.app, write
    `mr_session_id` into the extension's storage automatically via a one-
    time `window.postMessage`. Right now this is manual.
 2. **Best-card-on-checkout overlay** — anchor the recommendation tile next
@@ -64,7 +64,7 @@ The extension requests:
   for the matches listed in manifest.json's `content_scripts`).
 - `tabs` — currently unused; reserved for a future "open dashboard in new
   tab" command.
-- `host_permissions` — `localhost:8080`, `maplerewards.ca` (the API and the
+- `host_permissions` — `localhost:8080`, `maplerewards.app` (the API and the
   web app). Required so `fetch` from the service worker can include
   cookies.
 

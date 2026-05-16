@@ -147,7 +147,7 @@ func missedDigestHTML(report *model.MissedRewardsReport, leakage float64) string
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">` + rows.String() + `</table>
         </td></tr>
         <tr><td style="padding-top:24px;">
-          <a href="https://maplerewards.ca/pro-tools" style="display:inline-block;padding:10px 18px;background:#A51F2D;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Open the full report</a>
+          <a href="https://maplerewards.app/pro-tools" style="display:inline-block;padding:10px 18px;background:#A51F2D;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Open the full report</a>
         </td></tr>
         <tr><td style="padding-top:32px;font-size:11px;color:#5A5347;line-height:1.5;">
           Pro subscribers only. Computed against your current wallet snapshot — historical card composition isn't tracked, so the numbers assume you held today's cards at swipe time. Empty weeks aren't sent.
@@ -179,7 +179,7 @@ func missedDigestText(report *model.MissedRewardsReport, leakage float64) string
 			actual, optimal, e.Gap,
 		)
 	}
-	b.WriteString("\nOpen the full report: https://maplerewards.ca/pro-tools\n")
+	b.WriteString("\nOpen the full report: https://maplerewards.app/pro-tools\n")
 	b.WriteString("Empty weeks aren't sent. You're receiving this as a Maple Pro subscriber.\n")
 	return b.String()
 }

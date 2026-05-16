@@ -39,12 +39,12 @@ type MailMessage struct {
 //   - otherwise         → LogMailer (dev stub, prints to stdout)
 //
 // MAIL_FROM overrides the "From" header; defaults to the canonical
-// hello@maplerewards.ca sender.
+// hello@maplerewards.app sender.
 func NewMailerFromEnv() Mailer {
 	if key := os.Getenv("RESEND_API_KEY"); key != "" {
 		from := os.Getenv("MAIL_FROM")
 		if from == "" {
-			from = "Maple Rewards <hello@maplerewards.ca>"
+			from = "Maple Rewards <hello@maplerewards.app>"
 		}
 		return &ResendMailer{
 			apiKey:   key,

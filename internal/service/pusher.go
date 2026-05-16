@@ -36,14 +36,14 @@ type PushPayload struct {
 func NewPusherFromEnv() Pusher {
 	pub := os.Getenv("VAPID_PUBLIC_KEY")
 	priv := os.Getenv("VAPID_PRIVATE_KEY")
-	subject := os.Getenv("VAPID_SUBJECT") // mailto:hello@maplerewards.ca
+	subject := os.Getenv("VAPID_SUBJECT") // mailto:hello@maplerewards.app
 
 	if pub == "" || priv == "" {
 		return &LogPusher{}
 	}
 	if subject == "" {
 		// Spec requires a "mailto:" or "https://" subject. Use a safe default.
-		subject = "mailto:hello@maplerewards.ca"
+		subject = "mailto:hello@maplerewards.app"
 	}
 	return &WebPushSender{
 		vapidPublic:  pub,

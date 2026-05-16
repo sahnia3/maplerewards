@@ -24,7 +24,7 @@ export default function EmbedsGalleryPage() {
   const [copied, setCopied] = useState(false);
 
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://maplerewards.ca";
+    typeof window !== "undefined" ? window.location.origin : "https://maplerewards.app";
   const embedUrl = `${origin}/embed/cpp/${picked}`;
   const iframeSnippet = `<iframe src="${embedUrl}" width="220" height="92" style="border:0;border-radius:8px" loading="lazy"></iframe>`;
 

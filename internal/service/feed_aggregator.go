@@ -342,7 +342,7 @@ func (s *FeedAggregatorService) fetchSource(ctx context.Context, src feedSource)
 		return nil, err
 	}
 	// Reddit blocks the Go default UA. Set a polite browser-y UA.
-	req.Header.Set("User-Agent", "MapleRewards/1.0 (+https://maplerewards.ca)")
+	req.Header.Set("User-Agent", "MapleRewards/1.0 (+https://maplerewards.app)")
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml")
 
 	resp, err := s.client.Do(req)

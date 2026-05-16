@@ -309,7 +309,7 @@ If any of those needs more help (e.g. you want me to walk through deploying to F
 >
 > So I built one. It's free, no signup required, server-rendered HTML so you can share the link straight to your group chat:
 >
-> **maplerewards.ca/tools/aeroplan-june-1**
+> **maplerewards.app/tools/aeroplan-june-1**
 >
 > The interesting numbers (one-way business, current chart vs post-June-1):
 >

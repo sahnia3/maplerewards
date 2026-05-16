@@ -42,7 +42,7 @@ export default function TermsPage() {
         <Section title="4. The Pro subscription">
           <p><strong>Trial:</strong> Pro starts with a 7-day free trial. You will not be charged until the trial ends. You can cancel anytime during the trial — we will not charge you.</p>
           <p><strong>Billing:</strong> After the trial, the price you selected (monthly, annual, or lifetime) is charged to the card on file via Stripe. Renewal is automatic for monthly and annual plans. You can change plans, pause, or cancel from <Link href="/settings" style={linkStyle}>account settings</Link>.</p>
-          <p><strong>Refunds:</strong> Annual and monthly subscriptions are refundable on a pro-rated basis within 30 days of charge if you have not used a Pro-only feature more than three times in the period. Email <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a> with your account email. The lifetime tier is non-refundable after 30 days from purchase.</p>
+          <p><strong>Refunds:</strong> Annual and monthly subscriptions are refundable on a pro-rated basis within 30 days of charge if you have not used a Pro-only feature more than three times in the period. Email <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a> with your account email. The lifetime tier is non-refundable after 30 days from purchase.</p>
           <p><strong>Price changes:</strong> We may change Pro pricing in the future. Existing subscribers keep their grandfathered rate for at least 12 months from any change.</p>
         </Section>
 
@@ -91,7 +91,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="13. Contact">
-          <p>Questions, complaints, or refund requests: <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a>. We respond within 5 business days.</p>
+          <p>Questions, complaints, or refund requests: <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a>. We respond within 5 business days.</p>
         </Section>
 
         <LeafDivider />

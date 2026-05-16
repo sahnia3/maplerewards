@@ -7,8 +7,8 @@
   "permissions": ["storage", "activeTab", "tabs", "cookies"],
   "host_permissions": [
     "http://localhost:8080/*",
-    "https://maplerewards.ca/*",
-    "https://*.maplerewards.ca/*"
+    "https://maplerewards.app/*",
+    "https://*.maplerewards.app/*"
   ],
   "action": {
     "default_title": "MapleRewards",

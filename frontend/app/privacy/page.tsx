@@ -30,7 +30,7 @@ export default function PrivacyPage() {
         <LeafDivider />
 
         <Section title="1. Who we are">
-          <p>Maple Rewards is operated by a sole proprietorship based in Ontario, Canada. The data controller for the purposes of PIPEDA and GDPR is the founder, reachable at <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a>.</p>
+          <p>Maple Rewards is operated by a sole proprietorship based in Ontario, Canada. The data controller for the purposes of PIPEDA and GDPR is the founder, reachable at <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a>.</p>
         </Section>
 
         <Section title="2. What we collect">
@@ -89,7 +89,7 @@ export default function PrivacyPage() {
             <li><strong>Right to deletion</strong> — "Delete my account" in settings. We mark your account deleted immediately; the rows are hard-deleted from our database after a 30-day grace period (long enough to undo accidental deletion, short enough to be defensible).</li>
             <li><strong>Right to portability</strong> — the export above is plain JSON. You can take it anywhere.</li>
             <li><strong>Right to withdraw consent</strong> — opt out of the weekly missed-rewards email from any digest footer, or revoke entirely by deleting your account.</li>
-            <li><strong>Right to object / restrict processing</strong> — email us at <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a> and we will respond within 30 days.</li>
+            <li><strong>Right to object / restrict processing</strong> — email us at <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a> and we will respond within 30 days.</li>
           </ul>
         </Section>
 
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="8. Children">
-          <p>Maple Rewards is not directed at users under 18. If you are a parent and believe your child has signed up, email us at <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a> and we will delete the account.</p>
+          <p>Maple Rewards is not directed at users under 18. If you are a parent and believe your child has signed up, email us at <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a> and we will delete the account.</p>
         </Section>
 
         <Section title="9. Where we store data">
@@ -116,7 +116,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="12. Complaints">
-          <p>If you believe we have mishandled your data, please contact us first at <a href="mailto:hello@maplerewards.ca" style={linkStyle}>hello@maplerewards.ca</a>. You also have the right to lodge a complaint with the <a href="https://www.priv.gc.ca/" target="_blank" rel="noopener noreferrer" style={linkStyle}>Office of the Privacy Commissioner of Canada</a> or, for EU residents, your local supervisory authority.</p>
+          <p>If you believe we have mishandled your data, please contact us first at <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a>. You also have the right to lodge a complaint with the <a href="https://www.priv.gc.ca/" target="_blank" rel="noopener noreferrer" style={linkStyle}>Office of the Privacy Commissioner of Canada</a> or, for EU residents, your local supervisory authority.</p>
         </Section>
 
         <LeafDivider />

@@ -90,7 +90,7 @@ func sendAwardAlertEmail(
 func awardWatchDeepLink(w model.AwardWatch) string {
 	base := strings.TrimRight(os.Getenv("FRONTEND_URL"), "/")
 	if base == "" {
-		base = "https://maplerewards.ca"
+		base = "https://maplerewards.app"
 	}
 	q := url.Values{}
 	q.Set("watch", w.ID)

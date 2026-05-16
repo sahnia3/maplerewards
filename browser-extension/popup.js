@@ -18,7 +18,7 @@ const $openSettings = document.getElementById("open-settings");
   // backend's anonymous wallet endpoint as a fallback if no JWT is present.
   const sid = await getSessionID();
   if (!sid) {
-    renderEmpty("Sign in to maplerewards.ca to see your wallet here.");
+    renderEmpty("Sign in to maplerewards.app to see your wallet here.");
     return;
   }
 
@@ -32,7 +32,7 @@ const $openSettings = document.getElementById("open-settings");
       try {
         const cards = JSON.parse(resp.body);
         if (!Array.isArray(cards) || cards.length === 0) {
-          renderEmpty("Wallet is empty. Add cards on maplerewards.ca/cards.");
+          renderEmpty("Wallet is empty. Add cards on maplerewards.app/cards.");
           return;
         }
         renderCards(cards);
@@ -45,13 +45,13 @@ const $openSettings = document.getElementById("open-settings");
 
 async function getSessionID() {
   // Cookie-bridge path: read the session cookie directly from the
-  // maplerewards.ca domain. Requires `cookies` permission + a host_permissions
+  // maplerewards.app domain. Requires `cookies` permission + a host_permissions
   // entry in manifest.json. Falls back to the legacy chrome.storage bridge
   // for users who installed the extension before the cookie permission
   // was granted (those still need to use the manual paste flow once).
   const COOKIE_HOSTS = [
-    "https://maplerewards.ca",
-    "https://www.maplerewards.ca",
+    "https://maplerewards.app",
+    "https://www.maplerewards.app",
     "http://localhost:3000",
   ];
   for (const url of COOKIE_HOSTS) {
