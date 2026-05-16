@@ -1286,9 +1286,11 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 
 	// Convert prior history into block messages. History is plain text only —
 	// previous tool turns are NOT replayed (they were stored as the synthesized
-	// final assistant message).
-	msgs := make([]claudeBlockMessage, 0, len(req.History)+8)
-	for _, h := range req.History {
+	// final assistant message). Cap BEFORE building the payload so a giant
+	// client-supplied history can't drain the Anthropic budget in one request.
+	cappedHistory := capHistoryForLLM(req.History)
+	msgs := make([]claudeBlockMessage, 0, len(cappedHistory)+8)
+	for _, h := range cappedHistory {
 		role := h.Role
 		if role != "user" && role != "assistant" {
 			continue

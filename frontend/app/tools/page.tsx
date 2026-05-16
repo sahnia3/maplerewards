@@ -89,7 +89,7 @@ export default function ToolsIndexPage() {
             href="/cards"
             eyebrow="Catalog"
             title="Every Canadian card"
-            body="All 102 cards we model — filter by issuer, network, fee tier. Pair this with the head-to-head picker on the same page to dig into specifics."
+            body="All 104 cards we model — filter by issuer, network, fee tier. Pair this with the head-to-head picker on the same page to dig into specifics."
             cta="Browse the catalog →"
           />
         </div>

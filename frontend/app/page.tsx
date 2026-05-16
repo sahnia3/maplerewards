@@ -196,9 +196,9 @@ export default function HomePage() {
                 borderBottom: "1px solid var(--rule)",
               }}
             >
-              <Stat label="Cards modelled" value="102" />
-              <Stat label="Loyalty programs" value="19" />
-              <Stat label="Transfer partners" value="40+" />
+              <Stat label="Cards modelled" value="104" />
+              <Stat label="Loyalty programs" value="28" />
+              <Stat label="Transfer routes" value="20+" />
             </div>
           </div>
 
@@ -230,7 +230,7 @@ export default function HomePage() {
             <Pillar
               n="01"
               title="Add your cards."
-              body="Tell us which Canadian cards you carry. We know the earn rates, category caps, welcome bonuses, and credits for 92 of them."
+              body="Tell us which Canadian cards you carry. We know the earn rates, category caps, welcome bonuses, and credits for 104 of them."
             />
             <Pillar
               n="02"

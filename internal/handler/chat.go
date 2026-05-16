@@ -126,9 +126,19 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Per-request hard ceiling — independent of remaining daily budget. Even
+	// a user with full budget can't fire one pathologically expensive
+	// request. Estimate input from the message + history payload size.
+	if estIn := estimateRequestInputTokens(req.ChatRequest); service.RequestTooLarge(estIn) {
+		jsonErrorCode(w, "REQUEST_TOO_LARGE",
+			"That request is too large to process. Shorten the message or start a new conversation.",
+			http.StatusRequestEntityTooLarge)
+		return
+	}
+
 	// Daily Claude token budget — separate from monthly message cap. Protects
 	// against runaway-loop abuse that would burn the Anthropic monthly budget
-	// even within the free-tier message count. Pro users have 10× headroom.
+	// even within the free-tier message count. Pro users have more headroom.
 	if h.budget != nil {
 		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, isPro)
 		if err != nil {
@@ -277,6 +287,14 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 				http.StatusForbidden)
 			return
 		}
+	}
+
+	// Per-request hard ceiling, mirrors the non-streaming handler.
+	if estIn := estimateRequestInputTokens(req.ChatRequest); service.RequestTooLarge(estIn) {
+		jsonErrorCode(w, "REQUEST_TOO_LARGE",
+			"That request is too large to process. Shorten the message or start a new conversation.",
+			http.StatusRequestEntityTooLarge)
+		return
 	}
 
 	// Daily token budget gate, mirrors the non-streaming Chat handler.
@@ -521,6 +539,22 @@ var _ = model.ChatMessage{Role: "user", Content: "ping"}
 func estimateTokensUsed(userMessage, assistantReply string) int {
 	in, out := estimateTokenSplit(userMessage, assistantReply)
 	return in + out
+}
+
+// estimateRequestInputTokens estimates the INPUT tokens a request will cost
+// before the Claude call: system-prompt overhead + the new message + the
+// full client-supplied history. Used for the per-request hard ceiling so a
+// client that pads history can't slip a giant payload through under the
+// daily budget. Conservative (over-estimates) — under-counting is the
+// dangerous direction for a cost guard.
+func estimateRequestInputTokens(req service.ChatRequest) int {
+	const baseSystemOverhead = 3000
+	const charsPerToken = 3.5
+	chars := len(req.Message)
+	for _, h := range req.History {
+		chars += len(h.Content)
+	}
+	return baseSystemOverhead + int(float64(chars)/charsPerToken)
 }
 
 // estimateTokenSplit returns the (input, output) estimate separately so the

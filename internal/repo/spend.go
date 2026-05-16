@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -177,7 +178,10 @@ func (r *SpendRepo) GetSpendStats(ctx context.Context, userID string) (*model.Sp
 		return nil, err
 	}
 	if stats.TotalSpend > 0 {
-		stats.AvgReturn = (stats.TotalValue / stats.TotalSpend) * 100
+		// Round the derived ratio to 2dp so the API doesn't emit
+		// 3.33333333%. SUM() over NUMERIC is exact upstream; only the
+		// division needs taming.
+		stats.AvgReturn = math.Round((stats.TotalValue/stats.TotalSpend)*100*100) / 100
 	}
 
 	// By category

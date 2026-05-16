@@ -14,7 +14,7 @@
 
 Canada's $820B+ credit card market has zero native rewards optimization tools. Every existing platform is US-focused, leaving Canadian cardholders guessing which card to pull out at checkout. MapleRewards fixes that.
 
-`104 cards` | `27 loyalty programs` | `80+ API endpoints` | `43 migrations` | Production-ready
+`104 cards` | `28 loyalty programs` | `80+ API endpoints` | `44 migrations` | Production-ready
 
 </div>
 

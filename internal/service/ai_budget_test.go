@@ -22,6 +22,29 @@ func TestAIBudget_LimitForTier(t *testing.T) {
 	}
 }
 
+// The tier ladder must be strictly increasing Free < Pro < Pro Plus, and
+// limitFor(bool) must agree with the explicit tier function.
+func TestAIBudget_TierLadder(t *testing.T) {
+	if !(limitForTier(TierFree) < limitForTier(TierPro) && limitForTier(TierPro) < limitForTier(TierProPlus)) {
+		t.Fatalf("tier ladder not strictly increasing: free=%d pro=%d proplus=%d",
+			limitForTier(TierFree), limitForTier(TierPro), limitForTier(TierProPlus))
+	}
+	if limitFor(false) != limitForTier(TierFree) || limitFor(true) != limitForTier(TierPro) {
+		t.Fatal("limitFor(bool) shim must agree with limitForTier")
+	}
+}
+
+// The per-request ceiling must reject oversized requests regardless of
+// daily budget — this is the "one request can't drain the quota" guard.
+func TestAIBudget_RequestTooLarge(t *testing.T) {
+	if RequestTooLarge(MaxTokensPerRequest - 1) {
+		t.Fatal("a request just under the ceiling must be allowed")
+	}
+	if !RequestTooLarge(MaxTokensPerRequest + 1) {
+		t.Fatal("a request over the ceiling must be rejected")
+	}
+}
+
 // Anonymous users must collapse into one shared bucket so abuse can't be
 // bypassed by simply not signing in.
 func TestAIBudget_AnonymousCoalesces(t *testing.T) {

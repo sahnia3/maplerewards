@@ -149,6 +149,12 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 		}
 	}
 
+	// Round the derived dollar value to whole cents BEFORE persisting. Every
+	// stored row is then exactly representable, so any later SUM (in SQL or
+	// Go) stays clean — kills the "thousands of $0.10s sum to $X.0000001"
+	// drift at its source rather than papering over it at display time.
+	dollarValue = roundMoney(dollarValue)
+
 	entry := model.SpendEntry{
 		UserID:       user.ID,
 		CardID:       req.CardID,

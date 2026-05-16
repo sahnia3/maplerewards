@@ -198,8 +198,9 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 	walletPrograms := s.collectWalletPrograms(ctx, req.SessionID)
 	systemPrompt := s.buildSystemPrompt(walletContext, categoryContext, catalogContext, researchContext, walletPrograms)
 
-	// Build message history for the API call
-	messages := s.buildMessages(req.History, req.Message)
+	// Build message history for the API call. Cap BEFORE the call — this is
+	// the cost-control boundary; the post-call trim only bounds storage.
+	messages := s.buildMessages(capHistoryForLLM(req.History), req.Message)
 
 	// Call Claude API
 	reply, err := s.callClaude(ctx, systemPrompt, messages)
@@ -1004,6 +1005,34 @@ func buildTargetedTravelQuery(req *model.AwardSearchRequest) string {
 	// Build specific query that targets pricing data, not blog posts
 	return fmt.Sprintf("%s to %s%s one way flight price CAD %s award availability points redemption",
 		req.Origin, req.Destination, cabinLabel, dateContext)
+}
+
+// maxLLMHistoryMessages bounds how much prior conversation we replay to the
+// model. 12 = 6 user/assistant turns — ample context, but a hard ceiling so
+// a client that submits a 500-message history can't run our Anthropic bill
+// to zero in one request. Must be applied BEFORE the API call (the post-call
+// 20-msg trim only bounds what we store, not what we send/pay for).
+const maxLLMHistoryMessages = 12
+
+// maxLLMMessageChars clamps any single replayed message. A user can paste a
+// novel; we don't pay to re-send it every turn. ~8000 chars ≈ 2k tokens.
+const maxLLMMessageChars = 8000
+
+// capHistoryForLLM returns at most the last maxLLMHistoryMessages messages,
+// each truncated to maxLLMMessageChars. Pure function — callers apply it to
+// req.History before constructing the API payload.
+func capHistoryForLLM(history []model.ChatMessage) []model.ChatMessage {
+	if len(history) > maxLLMHistoryMessages {
+		history = history[len(history)-maxLLMHistoryMessages:]
+	}
+	out := make([]model.ChatMessage, len(history))
+	for i, h := range history {
+		if len(h.Content) > maxLLMMessageChars {
+			h.Content = h.Content[:maxLLMMessageChars] + "…[truncated]"
+		}
+		out[i] = h
+	}
+	return out
 }
 
 func (s *AIService) buildMessages(history []model.ChatMessage, newMessage string) []claudeMessage {
