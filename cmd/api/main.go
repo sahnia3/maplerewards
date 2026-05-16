@@ -485,6 +485,7 @@ func main() {
 			r.Post("/auth/change-password", authH.ChangePassword)
 			r.Post("/auth/verify-email/send", emailVerifyH.SendVerification)
 			r.Post("/billing/checkout", billingH.CreateCheckout)
+			r.Post("/billing/portal", billingH.CreatePortal)
 
 			// PIPEDA + GDPR Art. 15 right-of-access — full JSON dump of all
 			// data we hold about this user. Behind JWT only (not CSRF) so it

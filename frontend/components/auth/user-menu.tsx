@@ -3,15 +3,44 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, User, Crown, ChevronUp } from "lucide-react";
+import { LogOut, User, Crown, Gem, ChevronUp } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+
+// Per-tier badge. Three visibly distinct treatments so Pro / Pro Plus /
+// Lifetime read at a glance instead of one generic gold "PRO" pill.
+// Palette tracks the app: brand teal, gold, and the editorial maple/crimson
+// for the standout Lifetime tier.
+const TIER_BADGE: Record<
+  string,
+  { label: string; bg: string; fg: string; border?: string; icon: "crown" | "gem" }
+> = {
+  pro: {
+    label: "PRO",
+    bg: "linear-gradient(135deg,#2DD4BF,#0D9488)",
+    fg: "#fff",
+    icon: "crown",
+  },
+  pro_plus: {
+    label: "PRO PLUS",
+    bg: "linear-gradient(135deg,#FFD700,#FFA500)",
+    fg: "#000",
+    icon: "crown",
+  },
+  lifetime: {
+    label: "LIFETIME",
+    bg: "linear-gradient(135deg,#7A1F2B,#C0394B)",
+    fg: "#FFE9C7",
+    border: "1px solid rgba(255,215,0,0.55)",
+    icon: "gem",
+  },
+};
 
 interface UserMenuProps {
   collapsed?: boolean;
 }
 
 export function UserMenu({ collapsed = false }: UserMenuProps) {
-  const { user, isPro, logout } = useAuth();
+  const { user, isPro, plan, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -76,17 +105,20 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
                 >
                   {user.display_name || user.email || "User"}
                 </span>
-                {isPro && (
-                  <span
-                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                    style={{
-                      background: "linear-gradient(135deg, #FFD700, #FFA500)",
-                      color: "#000",
-                    }}
-                  >
-                    <Crown size={8} /> PRO
-                  </span>
-                )}
+                {(() => {
+                  // Fall back to the PRO badge if the token still carries
+                  // is_pro but no plan yet (pre-/auth/me-refresh window).
+                  const b = TIER_BADGE[plan] ?? (isPro ? TIER_BADGE.pro : null);
+                  if (!b) return null;
+                  return (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                      style={{ background: b.bg, color: b.fg, border: b.border }}
+                    >
+                      {b.icon === "gem" ? <Gem size={8} /> : <Crown size={8} />} {b.label}
+                    </span>
+                  );
+                })()}
               </div>
               <span
                 className="text-[11px] truncate block"

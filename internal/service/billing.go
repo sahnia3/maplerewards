@@ -20,6 +20,9 @@ type BillingRepository interface {
 	GetUserByStripeCustomerID(ctx context.Context, customerID string) (*model.User, error)
 	SetStripeCustomerID(ctx context.Context, userID, customerID string) error
 	SetUserPro(ctx context.Context, userID string, isPro bool) error
+	// SetUserPlan persists the purchased tier (free|pro|pro_plus|lifetime)
+	// and keeps is_pro in sync atomically (any paid plan ⇒ is_pro=true).
+	SetUserPlan(ctx context.Context, userID, plan string) error
 	// RecordStripeEvent returns true if the event ID is new, false if it has
 	// already been processed (duplicate delivery from Stripe retry).
 	// Called AFTER successful processing to mark the event done.
@@ -44,8 +47,9 @@ type BillingService struct {
 	pricePro       string // new Pro $39.99/yr
 	priceProPlus   string // new Pro Plus $69.99/yr
 	priceLifetime  string // $199 one-time
-	successURL     string
-	cancelURL      string
+	successURL      string
+	cancelURL       string
+	portalReturnURL string
 }
 
 // NewBillingService creates a new billing service.
@@ -63,8 +67,9 @@ func NewBillingService(repo BillingRepository) *BillingService {
 		pricePro:      os.Getenv("STRIPE_PRICE_ID_PRO_ANNUAL"),
 		priceProPlus:  os.Getenv("STRIPE_PRICE_ID_PROPLUS_ANNUAL"),
 		priceLifetime: os.Getenv("STRIPE_PRICE_ID_LIFETIME"),
-		successURL:    frontendURL + "/pricing?success=true",
-		cancelURL:     frontendURL + "/pricing?canceled=true",
+		successURL:      frontendURL + "/pricing?success=true",
+		cancelURL:       frontendURL + "/pricing?canceled=true",
+		portalReturnURL: frontendURL + "/settings",
 	}
 }
 
@@ -85,19 +90,25 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 	// Determine price ID + checkout mode (subscription vs one-time payment).
 	priceID := s.pricePro
 	mode := "subscription"
+	plan := "pro"
 	switch interval {
 	case "pro_annual":
 		priceID = s.pricePro
+		plan = "pro"
 	case "proplus_annual":
 		priceID = s.priceProPlus
+		plan = "pro_plus"
 	case "lifetime":
 		priceID = s.priceLifetime
 		mode = "payment"
+		plan = "lifetime"
 	// ── legacy intervals (backward compat) ──
 	case "monthly", "month":
 		priceID = s.priceMonthly
+		plan = "pro"
 	case "annual", "year":
 		priceID = s.priceAnnual
+		plan = "pro"
 	}
 	if priceID == "" {
 		return nil, fmt.Errorf("stripe price ID not configured for interval: %s", interval)
@@ -122,6 +133,18 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 	form.Set("line_items[0][price]", priceID)
 	form.Set("line_items[0][quantity]", "1")
 	form.Set("client_reference_id", userID)
+	// Persist the purchased tier through the webhook. Stripe echoes session
+	// metadata back on checkout.session.completed, so handleCheckoutCompleted
+	// records the exact plan instead of a generic is_pro boolean.
+	form.Set("metadata[plan]", plan)
+
+	// 3-day free trial on recurring tiers only. A one-time Lifetime payment
+	// (mode=payment) has no subscription to trial. Stripe still collects a
+	// card up front and auto-charges on day 3 unless cancelled — the pricing
+	// copy and the customer portal (cancel path) are aligned with that.
+	if mode == "subscription" {
+		form.Set("subscription_data[trial_period_days]", "3")
+	}
 
 	if user.StripeCustomerID != nil && *user.StripeCustomerID != "" {
 		form.Set("customer", *user.StripeCustomerID)
@@ -175,6 +198,70 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 	}, nil
 }
 
+// CreatePortalSession creates a Stripe Billing Customer Portal session. The
+// returned URL is a Stripe-hosted page where the user can cancel or change
+// their subscription, update the card on file, and see invoices — this is
+// what makes the "cancel anytime in account settings" promise real, and is
+// the safety valve for the 3-day auto-converting trial.
+//
+// Requires a Stripe customer ID (set at first checkout). Lifetime buyers
+// have a customer ID but no subscription, so the portal correctly shows
+// only billing history with nothing to cancel.
+func (s *BillingService) CreatePortalSession(ctx context.Context, userID string) (*model.CheckoutSession, error) {
+	if s.stripeKey == "" {
+		return nil, fmt.Errorf("stripe not configured")
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if user.StripeCustomerID == nil || *user.StripeCustomerID == "" {
+		return nil, fmt.Errorf("no billing account")
+	}
+
+	form := url.Values{}
+	form.Set("customer", *user.StripeCustomerID)
+	form.Set("return_url", s.portalReturnURL)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.stripe.com/v1/billing_portal/sessions", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.stripeKey)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("stripe request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Error("stripe portal: response body read failed",
+			"status", resp.StatusCode, "err", readErr)
+		return nil, fmt.Errorf("stripe response body read: %w", readErr)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("stripe portal error", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("stripe API error: %s", resp.Status)
+	}
+
+	var session struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &session); err != nil {
+		return nil, fmt.Errorf("parse stripe response: %w", err)
+	}
+
+	return &model.CheckoutSession{URL: session.URL}, nil
+}
+
 // HandleWebhookEvent processes a Stripe webhook event.
 // Returns nil if the event was handled (or ignored), error on failure.
 func (s *BillingService) HandleWebhookEvent(ctx context.Context, eventType string, eventData json.RawMessage) error {
@@ -197,6 +284,9 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		ClientReferenceID string `json:"client_reference_id"`
 		Customer          string `json:"customer"`
 		Subscription      string `json:"subscription"`
+		Metadata          struct {
+			Plan string `json:"plan"`
+		} `json:"metadata"`
 	}
 	if err := json.Unmarshal(data, &session); err != nil {
 		return fmt.Errorf("parse checkout session: %w", err)
@@ -215,12 +305,19 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		}
 	}
 
-	// Activate Pro
-	if err := s.repo.SetUserPro(ctx, userID, true); err != nil {
-		return fmt.Errorf("activate pro for user %s: %w", userID, err)
+	// Record the purchased tier. metadata.plan is set at checkout creation;
+	// fall back to "pro" if absent (legacy in-flight links / safety) since a
+	// completed checkout always means a paid user. SetUserPlan keeps is_pro
+	// in sync, so this also grants access.
+	plan := session.Metadata.Plan
+	if plan == "" {
+		plan = "pro"
+	}
+	if err := s.repo.SetUserPlan(ctx, userID, plan); err != nil {
+		return fmt.Errorf("activate plan %q for user %s: %w", plan, userID, err)
 	}
 
-	slog.Info("user upgraded to pro", "user_id", userID, "customer", session.Customer)
+	slog.Info("user upgraded", "user_id", userID, "plan", plan, "customer", session.Customer)
 	return nil
 }
 
@@ -269,11 +366,14 @@ func (s *BillingService) handleSubscriptionDeleted(ctx context.Context, data jso
 		return nil
 	}
 
-	if err := s.repo.SetUserPro(ctx, user.ID, false); err != nil {
-		return fmt.Errorf("deactivate pro: %w", err)
+	// Full cancellation reverts to free (SetUserPlan also clears is_pro).
+	// Lifetime buyers have no subscription, so this event never fires for
+	// them — their 'lifetime' plan is permanent, as intended.
+	if err := s.repo.SetUserPlan(ctx, user.ID, "free"); err != nil {
+		return fmt.Errorf("revert plan to free: %w", err)
 	}
 
-	slog.Info("subscription canceled, pro deactivated", "user_id", user.ID)
+	slog.Info("subscription canceled, reverted to free", "user_id", user.ID)
 	return nil
 }
 

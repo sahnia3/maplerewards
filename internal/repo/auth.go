@@ -61,11 +61,11 @@ func (r *AuthRepo) GetUserByID(ctx context.Context, id string) (*model.User, err
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
-		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		       is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 		FROM users WHERE id = $1 AND deleted_at IS NULL
 	`, id).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -270,6 +270,21 @@ func (r *AuthRepo) SetUserPro(ctx context.Context, userID string, isPro bool) er
 	`, isPro, userID)
 	if err != nil {
 		return fmt.Errorf("set user pro: %w", err)
+	}
+	return nil
+}
+
+// SetUserPlan persists the purchased tier (free|pro|pro_plus|lifetime) and
+// keeps the is_pro access flag in sync in one atomic write: any paid plan
+// grants Pro access, 'free' revokes it. This is the single source of truth
+// for the relationship — callers never set is_pro and plan separately.
+func (r *AuthRepo) SetUserPlan(ctx context.Context, userID, plan string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET plan = $1, is_pro = ($1 <> 'free'), updated_at = NOW()
+		WHERE id = $2
+	`, plan, userID)
+	if err != nil {
+		return fmt.Errorf("set user plan: %w", err)
 	}
 	return nil
 }

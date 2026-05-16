@@ -97,6 +97,7 @@ type User struct {
 	GoogleID         *string   `json:"google_id,omitempty"`
 	DisplayName      *string   `json:"display_name,omitempty"`
 	IsPro            bool      `json:"is_pro"`
+	Plan             string    `json:"plan"`
 	AuthProvider     string    `json:"auth_provider"`
 	StripeCustomerID *string   `json:"stripe_customer_id,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`

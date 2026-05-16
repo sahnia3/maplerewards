@@ -143,10 +143,10 @@ function PricingContent() {
               textTransform: "uppercase",
             }}
           >
-            7-day trial
+            3-day trial
           </span>
           <span className="serif" style={{ fontSize: 15, color: "var(--ink-2)", lineHeight: 1.4 }}>
-            Try every Pro feature free for 7 days. Cancel anytime from your account settings — no card-on-file surprises.
+            Try every Pro feature free for 3 days. Your card is added at signup and charged when the trial ends — cancel anytime in account settings before then.
           </span>
         </div>
 
@@ -482,7 +482,7 @@ function PricingContent() {
             {[
               {
                 q: "Can I cancel anytime?",
-                a: "Yes. One click in account settings. Pro stays active until the end of your current billing period; we don't pro-rate refunds for partial months.",
+                a: "Yes — account settings → Manage billing opens the Stripe portal where you cancel in one click. Pro stays active until the end of the period you've already paid for; we don't pro-rate refunds for partial months.",
               },
               {
                 q: "Do I need an account for the free tier?",
@@ -498,11 +498,11 @@ function PricingContent() {
               },
               {
                 q: "Is there a free trial?",
-                a: "During the beta, every Pro feature is free. When billing flips on, founding subscribers get a 14-day trial.",
+                a: "Yes — a 3-day free trial on Pro and Pro Plus. Your card is collected at signup and charged when the trial ends unless you cancel first. Lifetime has no trial — it's a one-time purchase.",
               },
               {
-                q: "Can I switch between monthly and annual?",
-                a: "Yes. Pro-rated automatically when you switch up; the change takes effect at the end of your current period when you switch down.",
+                q: "Can I switch between Pro and Pro Plus?",
+                a: "Yes — from Manage billing in account settings. Upgrades are pro-rated immediately; downgrades take effect at the end of your current period.",
               },
             ].map(({ q, a }) => (
               <details

@@ -32,6 +32,7 @@ export interface AuthUser {
   session_id: string;
   display_name?: string;
   is_pro: boolean;
+  plan?: string;
   auth_provider: string;
   created_at: string;
   updated_at: string;
@@ -48,6 +49,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isPro: boolean;
+  plan: string;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string, sessionId?: string) => Promise<void>;
@@ -256,6 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated: !!user,
         isPro: user?.is_pro ?? false,
+        plan: user?.plan ?? "free",
         isLoading,
         login,
         register,

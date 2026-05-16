@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { Sun, Moon, Download, Loader2 } from "lucide-react";
+import { Sun, Moon, Download, Loader2, CreditCard, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { useAuth } from "@/contexts/auth-context";
 import { useSession } from "@/contexts/session-context";
-import { changePassword, exportSpendCSV } from "@/lib/api";
+import { changePassword, exportSpendCSV, createPortalSession } from "@/lib/api";
 
 /* Editorial settings page — only what actually works.
  *
@@ -28,10 +28,23 @@ function saveBool(key: string, value: boolean) {
   if (typeof window !== "undefined") window.localStorage.setItem(key, String(value));
 }
 
+function planLabel(plan: string, isPro: boolean): string {
+  switch (plan) {
+    case "lifetime":
+      return "Lifetime";
+    case "pro_plus":
+      return "Pro Plus";
+    case "pro":
+      return "Pro";
+    default:
+      return isPro ? "Pro" : "Free";
+  }
+}
+
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = (resolvedTheme as "light" | "dark") ?? "light";
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isPro, plan } = useAuth();
   const { sessionId } = useSession();
 
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -44,6 +57,8 @@ export default function SettingsPage() {
   const [pwdMessage, setPwdMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   useEffect(() => {
     setReduceMotion(loadBool("mr.motion.reduce", false));
@@ -91,6 +106,20 @@ export default function SettingsPage() {
       setExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExportLoading(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const { url } = await createPortalSession();
+      window.location.href = url;
+    } catch (err) {
+      setPortalError(
+        err instanceof Error ? err.message : "Could not open the billing portal"
+      );
+      setPortalLoading(false);
     }
   }
 
@@ -202,6 +231,101 @@ export default function SettingsPage() {
                 </button>
               </form>
             )}
+          </Section>
+        )}
+
+        {/* Billing — Stripe Customer Portal. Makes the "cancel anytime"
+            promise real and is the safety valve for the 3-day trial. */}
+        {isAuthenticated && (
+          <Section eyebrow="Billing" title="Manage your plan.">
+            <div style={{ padding: "16px 4px" }}>
+              <p
+                className="serif"
+                style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 14, lineHeight: 1.5 }}
+              >
+                You&apos;re on the{" "}
+                <strong style={{ color: "var(--ink)", fontStyle: "normal" }}>
+                  {planLabel(plan, isPro)}
+                </strong>{" "}
+                plan.
+                {isPro
+                  ? plan === "lifetime"
+                    ? " Lifetime is a one-time purchase — there's nothing to cancel. Open the portal to update your card or download invoices."
+                    : " Cancel or change your plan, update your card, and view invoices in the Stripe portal. Cancelling keeps Pro active until the end of the period you've already paid for."
+                  : " Upgrade to unlock missed-rewards forensics, the Aeroplan SQC projector, and unlimited AI."}
+              </p>
+
+              {portalError && (
+                <div
+                  role="alert"
+                  className="serif"
+                  style={{
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    color: "var(--loss)",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    background: "var(--surface)",
+                    border: "1px solid var(--loss)",
+                    marginBottom: 12,
+                  }}
+                >
+                  {portalError}
+                </div>
+              )}
+
+              {isPro ? (
+                <button
+                  type="button"
+                  onClick={handleManageBilling}
+                  disabled={portalLoading}
+                  className="mono"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 20px",
+                    background: portalLoading ? "var(--rule-strong)" : "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    cursor: portalLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {portalLoading ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <CreditCard size={13} />
+                  )}
+                  {portalLoading ? "Opening…" : "Manage billing"}
+                </button>
+              ) : (
+                <Link
+                  href="/pricing"
+                  className="mono"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 20px",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                  }}
+                >
+                  <ExternalLink size={13} /> See Pro plans
+                </Link>
+              )}
+            </div>
           </Section>
         )}
 

@@ -62,6 +62,35 @@ func (h *BillingHandler) CreateCheckout(w http.ResponseWriter, r *http.Request) 
 	jsonOK(w, session)
 }
 
+// CreatePortal handles POST /billing/portal (requires auth).
+// Returns a Stripe Customer Portal URL where the user can cancel or manage
+// their subscription, update the card, and view invoices.
+func (h *BillingHandler) CreatePortal(w http.ResponseWriter, r *http.Request) {
+	userID := mw.UserIDFromContext(r.Context())
+	if userID == "" {
+		jsonErrorCode(w, "UNAUTHORIZED", "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	session, err := h.svc.CreatePortalSession(r.Context(), userID)
+	if err != nil {
+		slog.Error("portal session creation failed", "err", err, "user_id", userID)
+		switch {
+		case strings.Contains(err.Error(), "stripe not configured"):
+			jsonErrorCode(w, "SERVICE_UNAVAILABLE", "billing is not configured", http.StatusServiceUnavailable)
+		case strings.Contains(err.Error(), "no billing account"):
+			jsonErrorCode(w, "NO_BILLING_ACCOUNT", "no billing account on file — you haven't subscribed yet", http.StatusBadRequest)
+		case strings.Contains(err.Error(), "user not found"):
+			jsonErrorCode(w, "NOT_FOUND", "user not found", http.StatusNotFound)
+		default:
+			jsonError(w, "failed to create portal session", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	jsonOK(w, session)
+}
+
 // Webhook handles POST /billing/webhook (public, no auth).
 // Receives Stripe webhook events and updates user Pro status.
 func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {

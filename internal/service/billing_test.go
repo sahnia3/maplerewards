@@ -15,6 +15,7 @@ type mockBillingRepo struct {
 	users           map[string]*model.User // keyed by user ID
 	customerToUser  map[string]string      // stripe customer ID → user ID
 	proStatus       map[string]bool        // user ID → is_pro
+	planStatus      map[string]string      // user ID → plan tier
 	processedEvents map[string]bool        // stripe event ID → processed flag
 	failSetPro      bool
 }
@@ -24,6 +25,7 @@ func newMockBillingRepo() *mockBillingRepo {
 		users:           map[string]*model.User{},
 		customerToUser:  map[string]string{},
 		proStatus:       map[string]bool{},
+		planStatus:      map[string]string{},
 		processedEvents: map[string]bool{},
 	}
 }
@@ -54,6 +56,15 @@ func (m *mockBillingRepo) SetUserPro(ctx context.Context, userID string, isPro b
 		return errors.New("db error")
 	}
 	m.proStatus[userID] = isPro
+	return nil
+}
+
+func (m *mockBillingRepo) SetUserPlan(ctx context.Context, userID, plan string) error {
+	if m.failSetPro {
+		return errors.New("db error")
+	}
+	m.planStatus[userID] = plan
+	m.proStatus[userID] = plan != "free"
 	return nil
 }
 

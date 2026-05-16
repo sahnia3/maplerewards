@@ -821,6 +821,15 @@ export async function createCheckoutSession(
   });
 }
 
+// Opens the Stripe Customer Portal — cancel/change subscription, update the
+// card, view invoices. Returns a URL to redirect to. Errors with
+// NO_BILLING_ACCOUNT if the user has never subscribed.
+export async function createPortalSession(): Promise<CheckoutSessionResponse> {
+  return request<CheckoutSessionResponse>("/billing/portal", {
+    method: "POST",
+  });
+}
+
 // ── Account Deletion ────────────────────────────────────────────────────────
 
 export async function deleteAccount(): Promise<void> {
