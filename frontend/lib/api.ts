@@ -811,7 +811,9 @@ export interface CheckoutSessionResponse {
 }
 
 export async function createCheckoutSession(
-  interval: "monthly" | "annual" | "lifetime"
+  // New tiers: pro_annual / proplus_annual / lifetime. Legacy monthly/annual
+  // still accepted by the backend for any in-flight links.
+  interval: "pro_annual" | "proplus_annual" | "lifetime" | "monthly" | "annual"
 ): Promise<CheckoutSessionResponse> {
   return request<CheckoutSessionResponse>("/billing/checkout", {
     method: "POST",

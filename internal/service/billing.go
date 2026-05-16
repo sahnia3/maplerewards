@@ -39,9 +39,11 @@ type BillingService struct {
 	repo           BillingRepository
 	stripeKey      string
 	webhookSecret  string
-	priceMonthly   string
-	priceAnnual    string
-	priceLifetime  string
+	priceMonthly   string // legacy $7.99/mo — kept for backward compat
+	priceAnnual    string // legacy $59.99/yr — kept for backward compat
+	pricePro       string // new Pro $39.99/yr
+	priceProPlus   string // new Pro Plus $69.99/yr
+	priceLifetime  string // $199 one-time
 	successURL     string
 	cancelURL      string
 }
@@ -58,6 +60,8 @@ func NewBillingService(repo BillingRepository) *BillingService {
 		webhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		priceMonthly:  os.Getenv("STRIPE_PRICE_ID_MONTHLY"),
 		priceAnnual:   os.Getenv("STRIPE_PRICE_ID_ANNUAL"),
+		pricePro:      os.Getenv("STRIPE_PRICE_ID_PRO_ANNUAL"),
+		priceProPlus:  os.Getenv("STRIPE_PRICE_ID_PROPLUS_ANNUAL"),
 		priceLifetime: os.Getenv("STRIPE_PRICE_ID_LIFETIME"),
 		successURL:    frontendURL + "/pricing?success=true",
 		cancelURL:     frontendURL + "/pricing?canceled=true",
@@ -68,23 +72,32 @@ func NewBillingService(repo BillingRepository) *BillingService {
 // Uses raw HTTP calls to avoid adding the stripe-go SDK dependency.
 //
 // Supported intervals:
-//   - "monthly" / "month"  → recurring subscription
-//   - "annual"  / "year"   → recurring subscription
-//   - "lifetime"           → one-time payment, grants permanent Pro
+//   - "pro_annual"      → Pro $39.99/yr recurring subscription
+//   - "proplus_annual"  → Pro Plus $69.99/yr recurring subscription
+//   - "lifetime"        → $199 one-time payment, grants permanent Pro
+//   - "monthly"/"month", "annual"/"year" → legacy tiers, still honored
+//     so any in-flight checkout links don't break
 func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, interval string) (*model.CheckoutSession, error) {
 	if s.stripeKey == "" {
 		return nil, fmt.Errorf("stripe not configured")
 	}
 
 	// Determine price ID + checkout mode (subscription vs one-time payment).
-	priceID := s.priceMonthly
+	priceID := s.pricePro
 	mode := "subscription"
 	switch interval {
-	case "annual", "year":
-		priceID = s.priceAnnual
+	case "pro_annual":
+		priceID = s.pricePro
+	case "proplus_annual":
+		priceID = s.priceProPlus
 	case "lifetime":
 		priceID = s.priceLifetime
 		mode = "payment"
+	// ── legacy intervals (backward compat) ──
+	case "monthly", "month":
+		priceID = s.priceMonthly
+	case "annual", "year":
+		priceID = s.priceAnnual
 	}
 	if priceID == "" {
 		return nil, fmt.Errorf("stripe price ID not configured for interval: %s", interval)

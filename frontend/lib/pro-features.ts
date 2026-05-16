@@ -52,29 +52,49 @@ export const FREE_LIMITS = {
   maxVisibleTransactions: 10,
 } as const;
 
-// Pricing
+// Pricing — Free / Pro / Pro Plus / Lifetime.
+//
+// Restructured 2026-05: subscription stays (no model switch), but the tiers
+// are now annual-first to match how often the tool is used (a few times a
+// month, not daily — monthly billing churned). Pro Plus adds the
+// power-user/churner depth (live award context, higher AI budget). Lifetime
+// is the founding-member capture tier.
+//
+// `checkoutInterval` is the string passed to POST /billing/checkout — the
+// backend maps it to a Stripe price ID.
 export const PRICING = {
-  monthly: {
-    price: 7.99,
+  free: {
+    price: 0,
     currency: "CAD",
-    interval: "month" as const,
-    label: "$7.99/mo",
+    label: "Free",
+    note: "Optimizer, wallet, 5 AI messages/mo, public tools",
   },
-  annual: {
-    price: 59.99,
+  pro: {
+    price: 39.99,
     currency: "CAD",
     interval: "year" as const,
-    label: "$59.99/yr",
-    savings: "37%",
-    monthlyEquivalent: 5.0,
+    checkoutInterval: "pro_annual" as const,
+    label: "$39.99/yr",
+    monthlyEquivalent: 3.33,
+    note: "Everything in Free + missed-rewards, SQC tracker, alerts, unlimited AI (within fair-use cap)",
+  },
+  proPlus: {
+    price: 69.99,
+    currency: "CAD",
+    interval: "year" as const,
+    checkoutInterval: "proplus_annual" as const,
+    label: "$69.99/yr",
+    monthlyEquivalent: 5.83,
+    note: "Everything in Pro + cross-program award depth, priority data refresh, highest AI budget",
   },
   lifetime: {
-    price: 149,
+    price: 199,
     currency: "CAD",
     interval: "lifetime" as const,
-    label: "$149 once",
-    seats: 1000, // limited offer for first 1,000 founding subscribers
-    note: "Founding member · 1,000 seats only",
+    checkoutInterval: "lifetime" as const,
+    label: "$199 once",
+    seats: 1000, // founding-member cap
+    note: "All Pro Plus features, forever · 1,000 founding seats",
   },
 } as const;
 

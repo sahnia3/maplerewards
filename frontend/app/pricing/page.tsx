@@ -49,22 +49,22 @@ const PRO_TOOL_PITCH: { kicker: string; title: string; lede: string }[] = [
   },
 ];
 
-type IntervalKey = "monthly" | "annual" | "lifetime";
+type IntervalKey = "pro" | "proPlus" | "lifetime";
 
 function PricingContent() {
   const { isPro, isAuthenticated } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [interval, setInterval] = useState<IntervalKey>("annual");
+  const [interval, setInterval] = useState<IntervalKey>("pro");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const plan =
-    interval === "monthly"
-      ? PRICING.monthly
-      : interval === "annual"
-      ? PRICING.annual
+    interval === "pro"
+      ? PRICING.pro
+      : interval === "proPlus"
+      ? PRICING.proPlus
       : PRICING.lifetime;
 
   // Stripe redirect feedback
@@ -85,7 +85,7 @@ function PricingContent() {
     setLoading(true);
     setError(null);
     try {
-      const session = await createCheckoutSession(interval);
+      const session = await createCheckoutSession(plan.checkoutInterval);
       window.location.href = session.url;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -197,11 +197,11 @@ function PricingContent() {
               background: "var(--surface)",
             }}
           >
-            <IntervalButton active={interval === "monthly"} onClick={() => setInterval("monthly")}>
-              Monthly
+            <IntervalButton active={interval === "pro"} onClick={() => setInterval("pro")}>
+              Pro
             </IntervalButton>
-            <IntervalButton active={interval === "annual"} onClick={() => setInterval("annual")}>
-              Annual <span style={{ color: "var(--gain)", marginLeft: 8 }}>save 37%</span>
+            <IntervalButton active={interval === "proPlus"} onClick={() => setInterval("proPlus")}>
+              Pro Plus <span style={{ color: "var(--gain)", marginLeft: 8 }}>most depth</span>
             </IntervalButton>
             <IntervalButton active={interval === "lifetime"} onClick={() => setInterval("lifetime")}>
               Lifetime <span style={{ color: "var(--accent)", marginLeft: 8 }}>founding</span>
@@ -277,19 +277,24 @@ function PricingContent() {
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 6 }}>
               <span className="display" style={{ fontSize: 56, lineHeight: 1, color: "var(--ink)" }}>
-                {interval === "monthly" && `$${PRICING.monthly.price.toFixed(2)}`}
-                {interval === "annual" && `$${PRICING.annual.monthlyEquivalent.toFixed(2)}`}
+                {interval === "pro" && `$${PRICING.pro.monthlyEquivalent.toFixed(2)}`}
+                {interval === "proPlus" && `$${PRICING.proPlus.monthlyEquivalent.toFixed(2)}`}
                 {interval === "lifetime" && `$${PRICING.lifetime.price}`}
               </span>
               <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
-                {interval === "monthly" && "/MO"}
-                {interval === "annual" && "/MO BILLED ANNUALLY"}
+                {interval === "pro" && "/MO BILLED ANNUALLY"}
+                {interval === "proPlus" && "/MO BILLED ANNUALLY"}
                 {interval === "lifetime" && "ONCE"}
               </span>
             </div>
-            {interval === "annual" && (
+            {interval === "pro" && (
               <p className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", marginTop: 6 }}>
-                {`$${PRICING.annual.price} per year · ${PRICING.annual.savings} off monthly`}
+                {`$${PRICING.pro.price} per year · ${PRICING.pro.note}`}
+              </p>
+            )}
+            {interval === "proPlus" && (
+              <p className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.06em", marginTop: 6 }}>
+                {`$${PRICING.proPlus.price} per year · ${PRICING.proPlus.note}`}
               </p>
             )}
             {interval === "lifetime" && (

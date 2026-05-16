@@ -81,7 +81,7 @@ export function ProGate({ feature, children, inline }: ProGateProps) {
         Upgrade to Pro
       </Link>
       <p className="text-[11px] mt-3" style={{ color: "var(--text-tertiary)" }}>
-        From ${PRICING.annual.monthlyEquivalent.toFixed(2)}/mo (billed annually) — cancel anytime
+        From ${PRICING.pro.monthlyEquivalent.toFixed(2)}/mo (billed annually) — cancel anytime
       </p>
     </div>
   );
