@@ -126,7 +126,7 @@ export default function PortfolioPage() {
             eyebrow="Portfolio"
             eyebrowEnd="0 cards · CAD"
             title={<>The <span style={{ color: "var(--accent)" }}>annual</span> ledger.</>}
-            lede="Insurance, lounge access, multipliers, and credits — modeled as expected dollar value, net of fees, against the spend you actually log."
+            lede="Your point balances valued from base redemption up to the best transfer-partner rate — plus modeled card-perk value (insurance, lounge, credits) where we have it."
           />
           <PortfolioEmptyState onStart={() => router.push("/onboarding")} />
         </div>
@@ -186,7 +186,7 @@ export default function PortfolioPage() {
               </span>
             </div>
             <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 8, marginBottom: 0, lineHeight: 1.45 }}>
-              CAD across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""} — modeled on insurance + lounge + multipliers + credits, net of annual fees.
+              CAD across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""} — your point balances at base redemption rising to the best transfer-partner rate.
             </p>
           </div>
 
