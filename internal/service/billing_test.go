@@ -17,6 +17,7 @@ type mockBillingRepo struct {
 	proStatus       map[string]bool        // user ID → is_pro
 	planStatus      map[string]string      // user ID → plan tier
 	processedEvents map[string]bool        // stripe event ID → processed flag
+	unsubscribed    map[string]bool        // user ID → opted out of email
 	failSetPro      bool
 }
 
@@ -27,7 +28,12 @@ func newMockBillingRepo() *mockBillingRepo {
 		proStatus:       map[string]bool{},
 		planStatus:      map[string]string{},
 		processedEvents: map[string]bool{},
+		unsubscribed:    map[string]bool{},
 	}
+}
+
+func (m *mockBillingRepo) IsEmailUnsubscribed(_ context.Context, userID string) (bool, error) {
+	return m.unsubscribed[userID], nil
 }
 
 func (m *mockBillingRepo) GetUserByID(ctx context.Context, id string) (*model.User, error) {

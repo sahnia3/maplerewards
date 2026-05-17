@@ -23,6 +23,9 @@ type BillingRepository interface {
 	// SetUserPlan persists the purchased tier (free|pro|pro_plus|lifetime)
 	// and keeps is_pro in sync atomically (any paid plan ⇒ is_pro=true).
 	SetUserPlan(ctx context.Context, userID, plan string) error
+	// IsEmailUnsubscribed reports whether the user opted out of commercial
+	// email — the win-back send is suppressed when true (CASL).
+	IsEmailUnsubscribed(ctx context.Context, userID string) (bool, error)
 	// RecordStripeEvent returns true if the event ID is new, false if it has
 	// already been processed (duplicate delivery from Stripe retry).
 	// Called AFTER successful processing to mark the event done.
@@ -51,16 +54,19 @@ type BillingService struct {
 	cancelURL       string
 	portalReturnURL string
 	goodbyeURL      string
+	mailer          Mailer
 }
 
-// NewBillingService creates a new billing service.
-func NewBillingService(repo BillingRepository) *BillingService {
+// NewBillingService creates a new billing service. mailer may be nil (no
+// win-back email is sent then); pass NewMailerFromEnv() in production.
+func NewBillingService(repo BillingRepository, mailer Mailer) *BillingService {
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 	return &BillingService{
 		repo:          repo,
+		mailer:        mailer,
 		stripeKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		webhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		priceMonthly:  os.Getenv("STRIPE_PRICE_ID_MONTHLY"),
@@ -394,7 +400,58 @@ func (s *BillingService) handleSubscriptionDeleted(ctx context.Context, data jso
 	}
 
 	slog.Info("subscription canceled, reverted to free", "user_id", user.ID)
+
+	// One — and only one — CASL-compliant win-back email. The webhook's
+	// reserve-then-work idempotency guarantees subscription.deleted is
+	// processed once, so this never double-sends. Best-effort: a mail
+	// failure must not fail the webhook (Stripe would retry the whole
+	// event and we'd re-revert plan needlessly).
+	s.sendWinBackEmail(ctx, user)
 	return nil
+}
+
+// sendWinBackEmail sends a single post-cancellation email if the user has an
+// address and hasn't opted out of commercial email. Every failure is logged
+// and swallowed — this is fire-and-forget courtesy, not a critical path.
+func (s *BillingService) sendWinBackEmail(ctx context.Context, user *model.User) {
+	if s.mailer == nil || user.Email == nil || *user.Email == "" {
+		return
+	}
+	unsub, err := s.repo.IsEmailUnsubscribed(ctx, user.ID)
+	if err != nil {
+		slog.Error("win-back: unsubscribe check failed", "err", err, "user_id", user.ID)
+		return
+	}
+	if unsub {
+		slog.Info("win-back: suppressed (user unsubscribed)", "user_id", user.ID)
+		return
+	}
+
+	unsubURL := UnsubscribeURL(user.ID)
+	html := fmt.Sprintf(`<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+<h1 style="font-size:22px;font-weight:600">Sorry to see you go.</h1>
+<p style="font-size:15px;line-height:1.6">Your MapleRewards Pro subscription is cancelled — you won't be charged again, and your wallet, spend history, and saved trips stay exactly where they are.</p>
+<p style="font-size:15px;line-height:1.6">If a missed-rewards report or an Aeroplan window ever pulls you back, your account is one click from Pro again:</p>
+<p style="margin:24px 0"><a href="%s/pricing" style="background:#7A1F2B;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-size:14px">Reactivate Pro</a></p>
+<p style="font-size:13px;line-height:1.6;color:#666">We'd genuinely value one line on what made you leave — just reply to this email.</p>
+<hr style="border:none;border-top:1px solid #e5e5e5;margin:28px 0">
+<p style="font-size:12px;color:#999;line-height:1.5">You're receiving this once because you just cancelled a paid MapleRewards plan. We won't email you about this again. <a href="%s" style="color:#999">Unsubscribe from all MapleRewards emails</a>.</p>
+</div>`, frontendBase(), unsubURL)
+
+	text := fmt.Sprintf("Sorry to see you go.\n\nYour MapleRewards Pro subscription is cancelled — you won't be charged again, and your data stays put.\n\nReactivate any time: %s/pricing\n\nWe'd value a line on what made you leave — just reply.\n\n—\nYou're receiving this once because you just cancelled. Unsubscribe from all emails: %s\n",
+		frontendBase(), unsubURL)
+
+	if err := s.mailer.Send(ctx, MailMessage{
+		To:      []string{*user.Email},
+		Subject: "Your MapleRewards Pro subscription is cancelled",
+		HTML:    html,
+		Text:    text,
+		Tag:     "win-back",
+	}); err != nil {
+		slog.Error("win-back: send failed", "err", err, "user_id", user.ID)
+		return
+	}
+	slog.Info("win-back email sent", "user_id", user.ID)
 }
 
 // GetWebhookSecret returns the configured webhook secret for signature verification.

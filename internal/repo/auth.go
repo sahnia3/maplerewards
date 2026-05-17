@@ -308,6 +308,34 @@ func (r *AuthRepo) GetUserByStripeCustomerID(ctx context.Context, customerID str
 	return &u, nil
 }
 
+// SetEmailUnsubscribed records a CASL opt-out. Idempotent — only stamps the
+// first time so the audit timestamp reflects the original request.
+func (r *AuthRepo) SetEmailUnsubscribed(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET email_unsubscribed_at = NOW(), updated_at = NOW()
+		WHERE id = $1 AND email_unsubscribed_at IS NULL
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("set email unsubscribed: %w", err)
+	}
+	return nil
+}
+
+// IsEmailUnsubscribed reports whether the user has opted out of commercial
+// email. Defaults to false (subscribed) for unknown users.
+func (r *AuthRepo) IsEmailUnsubscribed(ctx context.Context, userID string) (bool, error) {
+	var ts *time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT email_unsubscribed_at FROM users WHERE id = $1`, userID).Scan(&ts)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check email unsubscribed: %w", err)
+	}
+	return ts != nil, nil
+}
+
 func (r *AuthRepo) SetStripeCustomerID(ctx context.Context, userID, customerID string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE users SET stripe_customer_id = $1, updated_at = NOW()
@@ -448,6 +476,7 @@ func (r *AuthRepo) ListProDigestRecipientsDueBefore(ctx context.Context, cutoff 
 		FROM users
 		WHERE is_pro = true
 		  AND deleted_at IS NULL
+		  AND email_unsubscribed_at IS NULL
 		  AND (last_issuer_digest_at IS NULL OR last_issuer_digest_at < $1)
 		ORDER BY last_issuer_digest_at NULLS FIRST
 		LIMIT $2
@@ -505,6 +534,7 @@ func (r *AuthRepo) ListProMissedRewardsRecipientsDueBefore(ctx context.Context, 
 		WHERE is_pro = true
 		  AND deleted_at IS NULL
 		  AND email IS NOT NULL
+		  AND email_unsubscribed_at IS NULL
 		  AND (last_missed_rewards_digest_at IS NULL OR last_missed_rewards_digest_at < $1)
 		ORDER BY last_missed_rewards_digest_at NULLS FIRST
 		LIMIT $2

@@ -74,7 +74,7 @@ func (s *IssuerDigestService) RunSweep(ctx context.Context, log *slog.Logger, no
 			continue
 		}
 
-		if err := s.sendOne(ctx, rec.Email, changes, since, now); err != nil {
+		if err := s.sendOne(ctx, rec.UserID, rec.Email, changes, since, now); err != nil {
 			log.Warn("digest sweep: send failed", "user_id", rec.UserID, "err", err)
 			failed++
 			continue
@@ -101,10 +101,10 @@ func (s *IssuerDigestService) windowStart(lastSent *time.Time, now time.Time) ti
 	return *lastSent
 }
 
-func (s *IssuerDigestService) sendOne(ctx context.Context, email string, changes []model.IssuerPageChange, since, now time.Time) error {
+func (s *IssuerDigestService) sendOne(ctx context.Context, userID, email string, changes []model.IssuerPageChange, since, now time.Time) error {
 	subject := digestSubject(len(changes))
-	html := digestHTML(changes, since, now)
-	text := digestText(changes, since, now)
+	html := strings.Replace(digestHTML(changes, since, now), "</body>", EmailFooterHTML(userID)+"</body>", 1)
+	text := digestText(changes, since, now) + EmailFooterText(userID)
 	return s.mailer.Send(ctx, MailMessage{
 		To:      []string{email},
 		Subject: subject,

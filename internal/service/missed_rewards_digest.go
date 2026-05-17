@@ -72,7 +72,7 @@ func (s *MissedRewardsDigestService) RunSweep(ctx context.Context, log *slog.Log
 			continue
 		}
 
-		if err := s.sendOne(ctx, rec.Email, report, leakage); err != nil {
+		if err := s.sendOne(ctx, rec.UserID, rec.Email, report, leakage); err != nil {
 			log.Warn("missed-rewards digest: send failed", "user_id", rec.UserID, "err", err)
 			failed++
 			continue
@@ -86,10 +86,10 @@ func (s *MissedRewardsDigestService) RunSweep(ctx context.Context, log *slog.Log
 	return sent, skipped, failed
 }
 
-func (s *MissedRewardsDigestService) sendOne(ctx context.Context, email string, report *model.MissedRewardsReport, leakage float64) error {
+func (s *MissedRewardsDigestService) sendOne(ctx context.Context, userID, email string, report *model.MissedRewardsReport, leakage float64) error {
 	subject := fmt.Sprintf("You left $%.0f on the table last week", leakage)
-	html := missedDigestHTML(report, leakage)
-	text := missedDigestText(report, leakage)
+	html := strings.Replace(missedDigestHTML(report, leakage), "</body>", EmailFooterHTML(userID)+"</body>", 1)
+	text := missedDigestText(report, leakage) + EmailFooterText(userID)
 	return s.mailer.Send(ctx, MailMessage{
 		To:      []string{email},
 		Subject: subject,

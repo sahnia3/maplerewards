@@ -305,8 +305,9 @@ func main() {
 	}
 	pushH := handler.NewPushHandler(pushRepo, pusher)
 
-	billingSvc := service.NewBillingService(authRepo)
+	billingSvc := service.NewBillingService(authRepo, mailer)
 	billingH := handler.NewBillingHandler(billingSvc)
+	emailH := handler.NewEmailHandler(authRepo)
 
 	// ── Router ────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -476,6 +477,10 @@ func main() {
 
 		// Stripe webhook — public, signed by Stripe (verified in handler).
 		r.Post("/billing/webhook", billingH.Webhook)
+
+		// Email unsubscribe — public, HMAC-token-authenticated from the
+		// one-click footer link (no JWT/CSRF by design; CASL low-friction).
+		r.Post("/email/unsubscribe", emailH.Unsubscribe)
 
 		// ── Authenticated user routes (JWT required + CSRF) ─────────────
 		// Account-mutating routes get CSRF on top of JWT so a malicious site
