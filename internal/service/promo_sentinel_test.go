@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 )
 
 func TestParseExtractedPromos(t *testing.T) {
@@ -63,24 +64,59 @@ func TestParseExtractedPromosRejectsGarbage(t *testing.T) {
 }
 
 func TestValidatePromo(t *testing.T) {
+	validExp := time.Now().AddDate(0, 1, 0).Format("2006-01-02")    // ~1mo out, in-window
+	expiredExp := time.Now().AddDate(0, 0, -1).Format("2006-01-02") // yesterday
+	farExp := time.Now().AddDate(2, 0, 0).Format("2006-01-02")      // 2y out, likely mis-parsed year
+
 	cases := []struct {
 		name string
 		p    extractedPromo
 		want bool
 	}{
-		{"valid 30% bonus", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9}, true},
-		{"missing from_program", extractedPromo{ToProgram: "aeroplan", BonusPercent: 30}, false},
-		{"missing to_program", extractedPromo{FromProgram: "amex-mr-ca", BonusPercent: 30}, false},
-		{"5% bonus too small", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 5}, false},
-		{"500% bonus too large", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 500}, false},
-		{"low-confidence rejected", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.3}, false},
-		{"same from and to program", extractedPromo{FromProgram: "aeroplan", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9}, false},
-		{"zero confidence allowed", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0}, true},
+		{"valid 30% bonus", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9, ExpiresAt: validExp}, true},
+		{"missing from_program", extractedPromo{ToProgram: "aeroplan", BonusPercent: 30, ExpiresAt: validExp}, false},
+		{"missing to_program", extractedPromo{FromProgram: "amex-mr-ca", BonusPercent: 30, ExpiresAt: validExp}, false},
+		{"5% bonus too small", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 5, ExpiresAt: validExp}, false},
+		{"500% bonus too large", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 500, ExpiresAt: validExp}, false},
+		{"low-confidence rejected", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.3, ExpiresAt: validExp}, false},
+		{"same from and to program", extractedPromo{FromProgram: "aeroplan", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9, ExpiresAt: validExp}, false},
+		{"zero confidence allowed", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0, ExpiresAt: validExp}, true},
+		{"missing expiry rejected (eternal-ONGOING guard)", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9}, false},
+		{"already-expired rejected", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9, ExpiresAt: expiredExp}, false},
+		{"absurd far-future expiry rejected", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9, ExpiresAt: farExp}, false},
+		{"unparsable expiry rejected", extractedPromo{FromProgram: "amex-mr-ca", ToProgram: "aeroplan", BonusPercent: 30, Confidence: 0.9, ExpiresAt: "ongoing"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := validatePromo(tc.p); got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCredibleSource(t *testing.T) {
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"https://princeoftravel.com/news/amex-mr-aeroplan", true},
+		{"https://www.creditcardgenius.ca/amex-mr-flying-blue", true},
+		{"https://milesopedia.com/rbc-avion-ba-avios", true},
+		{"https://www.threads.com/@petitevagabond/post/abc", false},
+		{"https://threads.net/post/123", false},
+		{"https://www.reddit.com/r/churningcanada/comments/x", false},
+		{"https://x.com/someuser/status/1", false},
+		{"https://m.facebook.com/story", false},
+		{"http://princeoftravel.com/insecure", false}, // not https
+		{"https://medium.com/@blogger/post", false},
+		{"not a url", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.url, func(t *testing.T) {
+			if got := credibleSource(tc.url); got != tc.want {
+				t.Errorf("credibleSource(%q) = %v, want %v", tc.url, got, tc.want)
 			}
 		})
 	}

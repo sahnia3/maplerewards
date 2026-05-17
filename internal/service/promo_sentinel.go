@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -87,6 +88,15 @@ func (s *PromoSentinelService) RunSweep(ctx context.Context, log *slog.Logger) P
 		promos, err := s.extractPromos(ctx, article.Title, article.URL, article.Content)
 		if err != nil {
 			log.Warn("promo sentinel: extract failed", "url", article.URL, "err", err)
+			continue
+		}
+		if !credibleSource(article.URL) {
+			// Tavily's whitelist is supposed to restrict to rewards
+			// journalism, but social/aggregator URLs (threads.com, x.com,
+			// reddit) leak through and a user clicking "SOURCE" lands on
+			// junk — the exact trust break we're fixing. Drop the whole
+			// article's promos rather than persist an uncitable claim.
+			res.PromosSkipped += len(promos)
 			continue
 		}
 		for _, p := range promos {
@@ -270,6 +280,46 @@ func validatePromo(p extractedPromo) bool {
 	}
 	if p.FromProgram == p.ToProgram {
 		return false
+	}
+	// Require a parsable end date. A real transfer bonus is time-bounded;
+	// a NULL/"ongoing" expiry is almost always a mis-extraction and is
+	// exactly what made the feed untrustworthy — such rows render as
+	// "ONGOING" forever (an April promo still showing live in May). If we
+	// can't pin an end date, we don't present it as a confident live promo.
+	exp := parsePromoDate(p.ExpiresAt)
+	if exp == nil {
+		return false
+	}
+	// Reject already-expired and absurdly-far-future (>1y = likely a
+	// hallucinated/mis-parsed year) windows.
+	now := time.Now()
+	if exp.Before(now) || exp.After(now.AddDate(1, 0, 0)) {
+		return false
+	}
+	return true
+}
+
+// credibleSource rejects social/aggregator and non-https URLs. A promo's
+// "SOURCE" link must point at citable rewards journalism or an issuer page,
+// never threads.com / x.com / a reddit thread.
+func credibleSource(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	if strings.HasPrefix(host, "www.") {
+		host = host[4:]
+	}
+	blocked := []string{
+		"threads.com", "threads.net", "x.com", "twitter.com",
+		"facebook.com", "instagram.com", "reddit.com", "tiktok.com",
+		"t.co", "youtube.com", "medium.com",
+	}
+	for _, b := range blocked {
+		if host == b || strings.HasSuffix(host, "."+b) {
+			return false
+		}
 	}
 	return true
 }

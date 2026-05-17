@@ -43,7 +43,7 @@ func (r *TransferBonusRepo) Upsert(ctx context.Context, e TransferBonusEvent) er
 			(from_program, to_program, bonus_percent, starts_at, expires_at,
 			 source_url, source_title, summary, ai_confidence)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		ON CONFLICT (from_program, to_program, expires_at) DO UPDATE
+		ON CONFLICT (from_program, to_program, bonus_percent, expires_at) DO UPDATE
 		SET bonus_percent = EXCLUDED.bonus_percent,
 		    source_url    = EXCLUDED.source_url,
 		    source_title  = EXCLUDED.source_title,
@@ -64,13 +64,22 @@ func (r *TransferBonusRepo) ListActive(ctx context.Context, limit int) ([]Transf
 	if limit <= 0 {
 		limit = 50
 	}
+	// Defense-in-depth on top of hardened ingest + migration 000046:
+	//  - expires_at >= today only (no NULL → no eternal "ONGOING"; no past)
+	//  - DISTINCT ON the natural route+percent, keeping the newest detection,
+	//    so a stray duplicate can never reach the UI
+	// then re-sorted newest-first for display and capped.
 	rows, err := r.db.Query(ctx, `
-		SELECT id, from_program, to_program, bonus_percent, starts_at, expires_at,
-		       source_url, COALESCE(source_title,''), COALESCE(summary,''),
-		       ai_confidence, detected_at
-		FROM transfer_bonus_events
-		WHERE expires_at IS NULL OR expires_at >= CURRENT_DATE
-		ORDER BY detected_at DESC
+		SELECT * FROM (
+			SELECT DISTINCT ON (from_program, to_program, bonus_percent)
+			       id, from_program, to_program, bonus_percent, starts_at, expires_at,
+			       source_url, COALESCE(source_title,'') AS source_title,
+			       COALESCE(summary,'') AS summary, ai_confidence, detected_at
+			FROM transfer_bonus_events
+			WHERE expires_at >= CURRENT_DATE
+			ORDER BY from_program, to_program, bonus_percent, detected_at DESC
+		) d
+		ORDER BY d.detected_at DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -100,7 +109,7 @@ func (r *TransferBonusRepo) ListForFromProgram(ctx context.Context, fromSlug str
 		       ai_confidence, detected_at
 		FROM transfer_bonus_events
 		WHERE from_program = $1
-		  AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
+		  AND expires_at >= CURRENT_DATE
 		ORDER BY detected_at DESC
 	`, fromSlug)
 	if err != nil {
