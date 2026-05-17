@@ -364,10 +364,18 @@ func main() {
 	// Per-user rate limit — applied inside /api/v1 so it sees JWT context.
 	// Tighter than per-IP because each authenticated request often triggers
 	// expensive downstream calls (LLM, Apify, SerpAPI). Pro users get 4×
-	// the budget free users do — tuned to comfortably cover the heaviest
-	// realistic Pro workflow without enabling abuse.
-	freeUserRPM := getEnvInt("FREE_USER_RPM", 60)
-	proUserRPM := getEnvInt("PRO_USER_RPM", 240)
+	// the budget free users do.
+	//
+	// These are anti-hammering limits, NOT the LLM cost ceiling — that is
+	// enforced independently per user/day by the AI token budget
+	// (service/ai_budget.go) plus a per-request token cap. So this limiter
+	// can be generous: the old 60/240 tripped real humans because
+	// data-dense pages fire 6–8 XHRs each and React StrictMode double-
+	// invokes effects in dev, so ordinary browsing blew past 240/min and
+	// surfaced USER_RATE_LIMITED mid-navigation. 150/600 still stops a
+	// runaway script while leaving headroom for a human using the app.
+	freeUserRPM := getEnvInt("FREE_USER_RPM", 150)
+	proUserRPM := getEnvInt("PRO_USER_RPM", 600)
 	userRL := mw.NewUserRateLimiter(freeUserRPM, proUserRPM, time.Minute)
 
 	r.Route("/api/v1", func(r chi.Router) {

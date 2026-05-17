@@ -14,7 +14,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
-import { createPortalSession } from "@/lib/api";
+import { ApiError, createPortalSession } from "@/lib/api";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -64,21 +64,14 @@ export default function ProfilePage() {
       const { url } = await createPortalSession();
       window.location.href = url;
     } catch (err) {
-      let msg = err instanceof Error ? err.message : "Could not open the billing portal";
-      // The API client throws the raw JSON body — unwrap it so the user sees
-      // a sentence, not {"code":...}. NO_BILLING_ACCOUNT gets a plain-English
-      // explanation (it means Pro was granted without a Stripe subscription).
-      try {
-        const parsed = JSON.parse(msg);
-        if (parsed?.code === "NO_BILLING_ACCOUNT") {
-          msg =
-            "No Stripe subscription is linked to this account, so there's nothing to manage here yet. If you subscribed, complete checkout again so billing links up.";
-        } else if (parsed?.message) {
-          msg = parsed.message;
-        }
-      } catch {
-        /* message wasn't JSON — leave as-is */
-      }
+      // request() now throws ApiError with a human .message + machine .code.
+      const code = err instanceof ApiError ? err.code : undefined;
+      const msg =
+        code === "NO_BILLING_ACCOUNT"
+          ? "No Stripe subscription is linked to this account, so there's nothing to manage here yet. If you subscribed, complete checkout again so billing links up."
+          : err instanceof Error
+          ? err.message
+          : "Could not open the billing portal";
       setPortalError(msg);
       setPortalLoading(false);
     }
@@ -269,34 +262,16 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Billing — manage/cancel for paid members. Stripe Customer Portal.
-            This is the "cancel anytime" surface and the safety valve for
-            the 3-day auto-converting trial. */}
+        {/* Billing — single clean button, styled like Sign out. Kept
+            accessible on purpose: Stripe's rules and click-to-cancel law
+            require cancellation to be as easy as signup. */}
         {isPro && (
-          <section
-            style={{
-              border: "1px solid var(--rule)",
-              borderRadius: 14,
-              background: "var(--card-fill-strong)",
-              padding: "22px 24px",
-              marginBottom: 26,
-            }}
-          >
-            <span className="eyebrow" style={{ color: "var(--accent)" }}>
-              Billing
-            </span>
-            <h3 className="display" style={{ fontSize: 24, margin: "8px 0 4px", fontStyle: "italic" }}>
-              {planText === "Lifetime" ? "Lifetime access." : "Manage your plan."}
-            </h3>
-            <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, margin: "0 0 16px", lineHeight: 1.45 }}>
-              {planText === "Lifetime"
-                ? "A one-time purchase — there's nothing to cancel. Open the portal to update your card or download invoices."
-                : "Cancel or change your plan, update your card, and view invoices. Cancelling keeps Pro active until the end of the period you've already paid for."}
-            </p>
+          <section style={{ marginBottom: 18 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Billing</div>
             {portalError && (
               <p
                 className="mono"
-                style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.06em", marginBottom: 12 }}
+                style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.06em", marginBottom: 10, lineHeight: 1.5 }}
               >
                 {portalError}
               </p>
@@ -307,28 +282,34 @@ export default function ProfilePage() {
               disabled={portalLoading}
               className="mono"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "12px 22px",
-                borderRadius: 8,
-                background: "var(--accent)",
-                color: "#fff",
-                border: "none",
+                width: "100%",
+                padding: "14px 18px",
+                borderRadius: 10,
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                color: "var(--ink-2)",
                 fontSize: 12,
                 fontWeight: 600,
                 letterSpacing: "0.10em",
                 textTransform: "uppercase",
                 cursor: portalLoading ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
                 opacity: portalLoading ? 0.6 : 1,
               }}
             >
               {portalLoading ? (
-                <Loader2 size={13} className="animate-spin" />
+                <Loader2 size={14} className="animate-spin" />
               ) : (
-                <CreditCard size={13} />
+                <CreditCard size={14} />
               )}
-              {portalLoading ? "Opening…" : "Manage billing"}
+              {portalLoading
+                ? "Opening…"
+                : planText === "Lifetime"
+                ? "Billing & invoices"
+                : "Manage billing or cancel"}
             </button>
           </section>
         )}

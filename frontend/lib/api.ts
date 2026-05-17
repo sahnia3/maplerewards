@@ -90,6 +90,42 @@ export async function getCSRFToken(): Promise<string> {
 
 export { CSRF_HEADER };
 
+/** An API error with the server's machine code attached (for callers that
+ *  branch on it, e.g. NO_BILLING_ACCOUNT) while .message stays human. */
+export class ApiError extends Error {
+  code?: string;
+  status: number;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Turns a non-OK Response into a friendly ApiError. The backend emits
+ *  {"code","message"} JSON; surfacing the raw body to users (the
+ *  USER_RATE_LIMITED / NO_BILLING_ACCOUNT blobs they saw) is the bug this
+ *  kills class-wide — every caller that shows err.message now gets prose. */
+async function errorFromResponse(res: Response): Promise<ApiError> {
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      const j = JSON.parse(text);
+      const msg = j?.message || j?.error;
+      if (typeof msg === "string" && msg) {
+        return new ApiError(msg, res.status, typeof j?.code === "string" ? j.code : undefined);
+      }
+    } catch {
+      /* not JSON — fall through to raw text only if it's short & not a blob */
+    }
+    if (!text.trimStart().startsWith("{") && text.length < 200) {
+      return new ApiError(text, res.status);
+    }
+  }
+  return new ApiError(`Something went wrong (HTTP ${res.status}). Please try again.`, res.status);
+}
+
 export async function request<T>(path: string, init?: RequestInit, retryOn401 = true): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -128,8 +164,7 @@ export async function request<T>(path: string, init?: RequestInit, retryOn401 = 
   }
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "Unknown error");
-    throw new Error(text || `HTTP ${res.status}`);
+    throw await errorFromResponse(res);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -385,8 +420,7 @@ export async function chatStream(
   }
 
   if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
+    throw await errorFromResponse(res);
   }
 
   const reader = res.body.getReader();
@@ -1046,8 +1080,7 @@ export async function exportSpendCSV(sessionId: string): Promise<Blob> {
     credentials: "include",
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
+    throw await errorFromResponse(res);
   }
   return res.blob();
 }
