@@ -631,23 +631,6 @@ export interface CardValueSummary {
   is_positive: boolean;
 }
 
-// ── India-outbound hotel arbitrage ───────────────────────────────────────────
-
-export interface IndiaArbitrageProperty {
-  program_slug: string;
-  property_name: string;
-  city: string;
-  points_per_night: number;
-  cash_rate_inr?: number;
-  cash_rate_cad: number;
-  value_cad_per_point: number;
-  user_balance: number;
-  nights_affordable: number;
-  total_savings_cad: number;
-  notes?: string;
-  source_url?: string;
-}
-
 // ── Tangerine MCC categories ─────────────────────────────────────────────────
 
 export interface TangerineCategory {

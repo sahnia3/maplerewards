@@ -114,7 +114,6 @@ func main() {
 	devalRepo := repo.NewDevaluationRepo(pool)
 	stackRepo := repo.NewStackRepo(pool)
 	cardValueRepo := repo.NewCardValueRepo(pool)
-	indiaArbRepo := repo.NewIndiaArbRepo(pool)
 	tangerineRepo := repo.NewTangerineRepo(pool)
 	issuerPageRepo := repo.NewIssuerPageRepo(pool)
 	loyaltyAccountRepo := repo.NewLoyaltyAccountRepo(pool)
@@ -179,7 +178,6 @@ func main() {
 	feedSvc := service.NewFeedAggregatorService(redisCache, log)
 	stackSvc := service.NewStackService(walletRepo, stackRepo, optimizerSvc)
 	cardValueSvc := service.NewCardValueService(walletRepo, cardValueRepo)
-	indiaArbSvc := service.NewIndiaArbService(walletRepo, indiaArbRepo)
 	tangerineSvc := service.NewTangerineService(tangerineRepo)
 	loyaltyAccountSvc := service.NewLoyaltyAccountService(walletRepo, loyaltyAccountRepo)
 	csvImportSvc := service.NewCSVImportService(walletSvc)
@@ -276,7 +274,6 @@ func main() {
 	feedH := handler.NewFeedHandler(feedSvc)
 	stackH := handler.NewStackHandler(stackSvc, walletRepo)
 	cardValueH := handler.NewCardValueHandler(cardValueSvc)
-	indiaArbH := handler.NewIndiaArbHandler(indiaArbSvc)
 	tangerineH := handler.NewTangerineHandler(tangerineSvc)
 	issuerChangesH := handler.NewIssuerChangesHandler(issuerPageRepo)
 	loyaltyAccountH := handler.NewLoyaltyAccountHandler(loyaltyAccountSvc)
@@ -600,9 +597,6 @@ func main() {
 
 			// Annual card-value scorecard
 			r.Get("/wallet/{sessionID}/card-value", cardValueH.Summary)
-
-			// India-outbound hotel arbitrage (diaspora wedge)
-			r.Get("/wallet/{sessionID}/india-arbitrage", indiaArbH.List)
 
 			// Loyalty-account aggregation (track programs without a co-branded card)
 			r.Get("/wallet/{sessionID}/loyalty-accounts", loyaltyAccountH.List)

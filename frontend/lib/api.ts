@@ -655,7 +655,6 @@ import type {
   DevaluationEvent,
   Merchant, StackRecommendation,
   CardValueSummary,
-  IndiaArbitrageProperty,
   TangerineCategory,
 } from "./types";
 
@@ -713,11 +712,6 @@ export async function getCardValueSummary(sessionId: string): Promise<CardValueS
   return request<CardValueSummary[]>(`/wallet/${sessionId}/card-value`);
 }
 
-// ── India-outbound hotel arbitrage ───────────────────────────────────────────
-
-export async function getIndiaArbitrage(sessionId: string): Promise<IndiaArbitrageProperty[]> {
-  return request<IndiaArbitrageProperty[]>(`/wallet/${sessionId}/india-arbitrage`);
-}
 
 // ── Tangerine 2% rotating-category resolver ─────────────────────────────────
 

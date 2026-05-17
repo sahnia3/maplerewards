@@ -23,7 +23,6 @@ import { StackTile } from "@/components/pro-tools/StackTile";
 import { BuyPointsTile } from "@/components/pro-tools/BuyPointsTile";
 import { CardOffersTile } from "@/components/pro-tools/CardOffersTile";
 import { DevaluationTile } from "@/components/pro-tools/DevaluationTile";
-import { IndiaArbTile } from "@/components/pro-tools/IndiaArbTile";
 import { PCOptimumModule } from "@/components/pro-tools/PCOptimumModule";
 
 /* Pro Tools — coordination only.
@@ -213,8 +212,6 @@ export default function ProToolsPage() {
         {active === "knowledge" && (
           <>
             <DevaluationTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <IndiaArbTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <PCOptimumModule />
           </>

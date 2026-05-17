@@ -379,7 +379,7 @@ export default function ProfilePage() {
                 Unlock the full toolkit.
               </h3>
               <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, margin: 0, lineHeight: 1.45 }}>
-                Award watcher, devaluation alarms, India arbitrage, unlimited optimizer history.
+                Award watcher, devaluation alarms, missed-rewards forensics, unlimited optimizer history.
               </p>
             </div>
             <Link

@@ -2,6 +2,37 @@
 
 **Date:** 2026-05-18
 **Input:** `docs/LAUNCH-ISSUES.md` (founder QA pass).
+
+## Execution log
+
+- **P0.1–P0.6**: shipped + tested (commits d174ee7 → 2421d37).
+- **P1** (billing finish): shipped + tested (45673e9 save-screen/post-cancel/lifetime; 02a4499 win-back + CASL unsubscribe infra — also closed the discovered digest-opt-out compliance gap).
+- **P2 triage outcome**: the Pro-Tools tiles the founder reported as "don't work"
+  (Welcome-Bonus Mission Control, Credits calendar, SQC, etc.) are **data-driven
+  components with empty states**, not dead buttons — `report.items.length > 0`
+  renders real data; the empty state routes to `/wallet`. The "doesn't work"
+  perception traced upstream to **P0.2** (wallet balances silently not
+  persisting — now fixed) plus empty wallets/spend. Forensics "what changed"
+  is **cron-dependent** (works in prod when `cmd/worker` runs; honest empty
+  state otherwise — an ops/deploy concern, not a code bug). "Track what you
+  clipped" needs proactive expiry alerts = **P4.2** (new feature, not a P2
+  bug). Live-CPP iframe and India arbitrage roll into **P3 cuts**. No
+  fabricated fixes were made for non-broken data-driven components
+  (don't-change-working-code).
+- **P3 cuts**: India arbitrage **fully removed** — backend stack deleted
+  (handler/service/repo), route unmounted in main.go, frontend tile + api
+  fn + type + all pro-tools/profile/tools references gone. Live-CPP iframe
+  **removed** — `/embed/cpp/[program]` and `/tools/embeds` route dirs
+  deleted, tools-page entry + lede corrected. **Applications page KEPT** —
+  per the plan's own rule (cut only if it feeds nothing): `card_applications`
+  feeds the cooldown-notify worker (`cmd/worker/notify.go`) and the DSAR
+  export, so deleting it would break those. Remaining `/tools` entries are
+  functional utilities (compare, points-to-cad, promos, weekly digest,
+  catalog) — retained; the founder's objection there was value-perception,
+  not breakage, and over-deleting working tools isn't warranted.
+  Loblaws/Empire **parked** (revisit later, per plan). Residual: orphaned
+  India DTOs in model/types.go are dead but harmless (Go allows unused
+  exported types) — flagged for the #127 dead-code sweep.
 **Principle:** Data trust before everything. A user who sees the optimizer recommend a capped card, points valued at 120¢, or a wallet that won't save never comes back — that's the launch blocker, not billing polish.
 
 ## Sequencing logic

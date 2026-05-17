@@ -38,7 +38,7 @@ export default function ToolsIndexPage() {
               The <span style={{ fontStyle: "italic" }}>working</span> toolkit.
             </>
           }
-          lede="Public utilities that solve one specific question fast. Use them as-is, or embed them on your own site — they're all free to use."
+          lede="Public utilities that solve one specific question fast — all free to use, no signup required."
         />
 
         <LeafDivider />
@@ -77,13 +77,6 @@ export default function ToolsIndexPage() {
             title="This week in Canadian rewards"
             body="Every devaluation, every bonus, every issuer change — grouped by week so you can scan what mattered. One stable URL per ISO-8601 week."
             cta="Open this week →"
-          />
-          <ToolCard
-            href="/tools/embeds"
-            eyebrow="Embeds"
-            title="Live CPP badge for your blog"
-            body="Drop a tiny iframe onto any site — shows live CPP for any Canadian loyalty program, updates automatically as our pricing engine refreshes."
-            cta="See embed gallery →"
           />
           <ToolCard
             href="/cards"
