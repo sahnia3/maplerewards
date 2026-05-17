@@ -5,6 +5,22 @@
 
 ## Execution log
 
+- **Exhaustive headless route walk — ALL 33 routes** (`find frontend/app
+  -name page.tsx`), each navigated in a real headless Chrome and asserted:
+  renders (no white screen), **no raw-JSON leak** (`{"code"/"message"`),
+  no `USER_RATE_LIMITED` text, auth-gated routes redirect to `/login`
+  (guards intact). Spot-fix verifications confirmed live in-browser:
+  P0.3 CPP correct on `/loyalty` *and* `/loyalty/[slug]` (zero values
+  ≥100¢); P0.4 misleading "modeled on insurance+lounge" copy gone from
+  `/portfolio`; P0.5 `/promos` shows 0 "ONGOING" + no raw JSON; P1
+  billing removed from `/settings` (moved to Profile); P3 `/pro-tools`
+  has zero india/arbitrage references and `/tools` has no embeds card;
+  the reworked cookie-auth flow renders `/login` and handles the
+  anonymous-mount 401 gracefully. One 429 surfaced — caused by the
+  sweep loading 25+ pages/minute (far beyond human use); it degraded
+  gracefully with NO raw JSON, which is exactly the P0.6 requirement.
+  Frontend test suite (`vitest run`) green: 2 files / 4 tests.
+
 - **Whole-codebase review (2nd pass, commit 36876fd)**: fresh-context
   security + code reviewers audited the ENTIRE codebase. Every Critical/High
   fixed + verified: Stripe webhook secret prod boot-gate + fail-closed
