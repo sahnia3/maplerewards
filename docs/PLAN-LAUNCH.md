@@ -5,6 +5,22 @@
 
 ## Execution log
 
+- **#127 review + QA**: fresh-context `security-reviewer` + `code-reviewer`
+  subagents audited the full session diff. Every HIGH/MEDIUM finding fixed
+  and re-verified (commit batch "fix(review)…"): tolerant `parsePromoDate`
+  (a feed-starvation regression I'd introduced in P0.5), same-day-expiry
+  calendar-date comparison (+ real IST timezone bug caught by the test),
+  domain-separated email-unsub key (no JWT-secret reuse), 90-day token
+  expiry, Referer/history token scrub, `/goodbye` stale-isPro race removed.
+  Reviewer non-issues (webhook idempotency, no SSRF/redirect, parameterized
+  SQL, no XSS) confirmed sound. Headless-browser smoke (chrome-devtools):
+  `/loyalty` shows correct CPP for all 28 programs (Flying Blue **1.20¢**,
+  not 120 — P0.3 proven in the live UI), `/tools` no longer shows the
+  embeds/CPP-badge card with corrected lede (P3 proven), `/unsubscribe`
+  renders its graceful no-token error state, zero console errors across
+  sampled pages. Full Go `-race` suite green, frontend production build
+  green, tsc 0 source errors.
+
 - **P0.1–P0.6**: shipped + tested (commits d174ee7 → 2421d37).
 - **P1** (billing finish): shipped + tested (45673e9 save-screen/post-cancel/lifetime; 02a4499 win-back + CASL unsubscribe infra — also closed the discovered digest-opt-out compliance gap).
 - **P2 triage outcome**: the Pro-Tools tiles the founder reported as "don't work"
