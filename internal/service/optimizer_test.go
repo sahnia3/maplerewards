@@ -831,3 +831,85 @@ func TestSafeStr(t *testing.T) {
 		t.Errorf("expected empty string for nil, got %q", got)
 	}
 }
+
+// TestGetBestCard_SharedCapGroupEnforcedWhenMultiplierCapNil is the regression
+// test for the P0.1 optimizer bug: a card whose cap lives in a shared cap_group
+// (per-multiplier cap_amount NULL — Amex Cobalt after migration 000038) was
+// skipping cap enforcement entirely because the cap-group lookup was gated
+// behind multiplier.CapAmount != nil. Result: Cobalt ranked $10k spend at a
+// flat 5x instead of its true blended rate, beating better uncapped cards.
+//
+// Scenario: Cobalt 5x groceries (cap_amount NIL on the multiplier) with a
+// $2,500/mo shared cap group, vs a plain uncapped 3x card, on $10,000 of
+// grocery spend, same program/CPP so the comparison is purely about the cap.
+//   Cobalt blended rate = (2500*5 + 7500*1) / 10000 = 2.0x  → 4.0% return
+//   Plain 3x (uncapped)  = 3.0x                               → 6.0% return
+// The uncapped card must win and Cobalt must report the blended rate + cap hit.
+func TestGetBestCard_SharedCapGroupEnforcedWhenMultiplierCapNil(t *testing.T) {
+	ts := newTestOptimizer()
+
+	ts.cardRepo.categories["groceries"] = &model.Category{ID: "cat-1", Name: "Groceries", Slug: "groceries"}
+	ts.walletRepo.users["sess"] = &model.User{ID: "user-1", SessionID: "sess"}
+	ts.walletRepo.cards["user-1"] = []model.UserCard{
+		{
+			ID: "uc-cobalt", UserID: "user-1", CardID: "card-cobalt",
+			Card: &model.Card{
+				ID: "card-cobalt", Name: "Amex Cobalt", LoyaltyProgramID: "lp-1",
+				LoyaltyProgram: &model.LoyaltyProgram{ID: "lp-1", Name: "Amex MR", Slug: "amex-mr", BaseCPP: 2.0},
+			},
+		},
+		{
+			ID: "uc-plain", UserID: "user-1", CardID: "card-plain",
+			Card: &model.Card{
+				ID: "card-plain", Name: "Plain 3x", LoyaltyProgramID: "lp-1",
+				LoyaltyProgram: &model.LoyaltyProgram{ID: "lp-1", Name: "Amex MR", Slug: "amex-mr", BaseCPP: 2.0},
+			},
+		},
+	}
+	// Cobalt: 5x grocery but per-multiplier cap is NIL (cap lives in the group).
+	ts.cardRepo.multipliers["card-cobalt:cat-1"] = &model.CardMultiplier{
+		EarnRate: 5.0, EarnType: "points", CapAmount: nil, FallbackEarnRate: 1.0,
+	}
+	// Plain competitor: 3x, no cap of any kind.
+	ts.cardRepo.multipliers["card-plain:cat-1"] = &model.CardMultiplier{
+		EarnRate: 3.0, EarnType: "points", FallbackEarnRate: 1.0,
+	}
+	// The shared $2,500/mo cap group covering groceries (cat-1).
+	ts.spendRepo.capGroups["card-cobalt:cat-1"] = &model.CapGroup{
+		ID: "cg-1", CardID: "card-cobalt", Name: "food_drink_streaming",
+		CapAmount: 2500, CapPeriod: "monthly", CategoryIDs: []string{"cat-1"},
+	}
+	ts.valuationRepo.cpps["amex-mr:base"] = 2.0
+
+	recs, err := ts.svc.GetBestCard(context.Background(), model.OptimizeRequest{
+		SessionID: "sess", CategorySlug: "groceries", SpendAmount: 10000,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 recommendations, got %d", len(recs))
+	}
+
+	// Uncapped 3x must outrank the group-capped Cobalt.
+	if recs[0].CardName != "Plain 3x" {
+		t.Errorf("expected 'Plain 3x' ranked #1, got %q (cap not enforced — the bug)", recs[0].CardName)
+	}
+
+	var cobalt *model.CardRecommendation
+	for i := range recs {
+		if recs[i].CardName == "Amex Cobalt" {
+			cobalt = &recs[i]
+		}
+	}
+	if cobalt == nil {
+		t.Fatal("Cobalt recommendation missing")
+	}
+	// Blended effective return must be ~4.0%, NOT the buggy uncapped ~10.0%.
+	if !almostEqual(cobalt.EffectiveReturn, 4.0, 0.01) {
+		t.Errorf("Cobalt effective return: expected ~4.0%% (blended), got %.2f%% — cap group not applied", cobalt.EffectiveReturn)
+	}
+	if !cobalt.IsCapHit {
+		t.Error("Cobalt should report IsCapHit=true for $10k spend over a $2,500 cap")
+	}
+}

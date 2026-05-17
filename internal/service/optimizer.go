@@ -175,35 +175,44 @@ func (s *OptimizerService) scoreCard(
 	}
 
 	// ── Cap logic ─────────────────────────────────────────────────────────
+	// A card's spend cap is modelled one of two mutually-exclusive ways:
+	//   1. Shared cap group — several categories share one cap (Amex Cobalt:
+	//      groceries+dining+streaming share $2,500/mo). The per-multiplier
+	//      cap_amount is NULL; the cap lives in cap_groups (migration 000038
+	//      moved Cobalt to this model).
+	//   2. Per-multiplier cap — cap_amount set on the card_multipliers row
+	//      (still used by 31 multipliers).
+	// The shared-group check MUST run independent of multiplier.CapAmount.
+	// Gating it behind cap_amount != nil (the old bug) made group-capped
+	// cards skip cap enforcement entirely and rank on their uncapped headline
+	// rate — e.g. Cobalt winning $10k spend at a flat 5x when its 5x is
+	// capped at $2,500/mo.
 	effectiveRate := multiplier.EarnRate
 	isCapHit := false
 	note := ""
 
-	if multiplier.CapAmount != nil && *multiplier.CapAmount > 0 {
-		currentMonth := beginningOfMonth(time.Now())
-
-		// Check if this category belongs to a shared cap group
-		capGroup, capErr := s.spendRepo.GetCapGroupForCard(ctx, uc.CardID, categoryID)
-		if capErr == nil && capGroup != nil {
-			// Shared cap group: sum spend across all grouped categories
-			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
-			var totalCappedSpend float64
-			for _, catID := range capGroup.CategoryIDs {
-				totalCappedSpend += monthlySpend[catID]
-			}
-			effectiveRate, isCapHit, note = calculateBlendedRate(
-				spendAmount, totalCappedSpend, capGroup.CapAmount, capGroup.CapPeriod,
-				multiplier.EarnRate, multiplier.FallbackEarnRate,
-			)
-		} else {
-			// Per-category cap (no shared group)
-			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
-			currentSpend := monthlySpend[categoryID]
-			effectiveRate, isCapHit, note = calculateBlendedRate(
-				spendAmount, currentSpend, *multiplier.CapAmount, safeStr(multiplier.CapPeriod),
-				multiplier.EarnRate, multiplier.FallbackEarnRate,
-			)
+	currentMonth := beginningOfMonth(time.Now())
+	capGroup, capErr := s.spendRepo.GetCapGroupForCard(ctx, uc.CardID, categoryID)
+	switch {
+	case capErr == nil && capGroup != nil:
+		// Shared cap group: sum spend across all grouped categories.
+		monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
+		var totalCappedSpend float64
+		for _, catID := range capGroup.CategoryIDs {
+			totalCappedSpend += monthlySpend[catID]
 		}
+		effectiveRate, isCapHit, note = calculateBlendedRate(
+			spendAmount, totalCappedSpend, capGroup.CapAmount, capGroup.CapPeriod,
+			multiplier.EarnRate, multiplier.FallbackEarnRate,
+		)
+	case multiplier.CapAmount != nil && *multiplier.CapAmount > 0:
+		// Per-multiplier cap (no shared group).
+		monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
+		currentSpend := monthlySpend[categoryID]
+		effectiveRate, isCapHit, note = calculateBlendedRate(
+			spendAmount, currentSpend, *multiplier.CapAmount, safeStr(multiplier.CapPeriod),
+			multiplier.EarnRate, multiplier.FallbackEarnRate,
+		)
 	}
 
 	// ── Cashback cards (Rogers Platinum, Tangerine, etc.) ────────────────
