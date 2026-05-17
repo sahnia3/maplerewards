@@ -16,6 +16,29 @@ import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { ApiError, createPortalSession } from "@/lib/api";
 
+// Shared style for the full-width billing action button (matches the
+// Sign-out button treatment elsewhere on this page).
+function billingBtnStyle(loading: boolean): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "14px 18px",
+    borderRadius: 10,
+    background: "transparent",
+    border: "1px solid var(--rule-strong)",
+    color: "var(--ink-2)",
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: "0.10em",
+    textTransform: "uppercase",
+    cursor: loading ? "not-allowed" : "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    opacity: loading ? 0.6 : 1,
+  };
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isPro, plan, isAuthenticated, isLoading, logout, updateProfile } = useAuth();
@@ -262,9 +285,10 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Billing — single clean button, styled like Sign out. Kept
-            accessible on purpose: Stripe's rules and click-to-cancel law
-            require cancellation to be as easy as signup. */}
+        {/* Billing. Lifetime has no subscription to cancel — say so plainly
+            instead of dropping the user into an empty Stripe portal.
+            Subscription tiers get a clear "manage" button plus a cancel
+            link that's one click away (Stripe ToS + click-to-cancel law). */}
         {isPro && (
           <section style={{ marginBottom: 18 }}>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Billing</div>
@@ -276,41 +300,61 @@ export default function ProfilePage() {
                 {portalError}
               </p>
             )}
-            <button
-              type="button"
-              onClick={handleManageBilling}
-              disabled={portalLoading}
-              className="mono"
-              style={{
-                width: "100%",
-                padding: "14px 18px",
-                borderRadius: 10,
-                background: "transparent",
-                border: "1px solid var(--rule-strong)",
-                color: "var(--ink-2)",
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                cursor: portalLoading ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                opacity: portalLoading ? 0.6 : 1,
-              }}
-            >
-              {portalLoading ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <CreditCard size={14} />
-              )}
-              {portalLoading
-                ? "Opening…"
-                : planText === "Lifetime"
-                ? "Billing & invoices"
-                : "Manage billing or cancel"}
-            </button>
+
+            {planText === "Lifetime" ? (
+              <>
+                <p
+                  className="serif"
+                  style={{ fontSize: 14, color: "var(--ink-2)", fontStyle: "italic", lineHeight: 1.5, marginBottom: 12 }}
+                >
+                  You own MapleRewards <strong style={{ color: "var(--ink)" }}>for life</strong>.
+                  It was a one-time purchase — there&rsquo;s no subscription to cancel and
+                  nothing to renew. You&rsquo;re set, forever.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleManageBilling}
+                  disabled={portalLoading}
+                  className="mono"
+                  style={billingBtnStyle(portalLoading)}
+                >
+                  {portalLoading ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+                  {portalLoading ? "Opening…" : "View receipt & invoices"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleManageBilling}
+                  disabled={portalLoading}
+                  className="mono"
+                  style={billingBtnStyle(portalLoading)}
+                >
+                  {portalLoading ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+                  {portalLoading ? "Opening…" : "Manage billing & payment method"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push("/cancel")}
+                  className="mono"
+                  style={{
+                    marginTop: 10,
+                    background: "none",
+                    border: "none",
+                    color: "var(--ink-3)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  Cancel subscription
+                </button>
+              </>
+            )}
           </section>
         )}
 

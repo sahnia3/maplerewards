@@ -50,6 +50,7 @@ type BillingService struct {
 	successURL      string
 	cancelURL       string
 	portalReturnURL string
+	goodbyeURL      string
 }
 
 // NewBillingService creates a new billing service.
@@ -70,6 +71,7 @@ func NewBillingService(repo BillingRepository) *BillingService {
 		successURL:      frontendURL + "/pricing?success=true",
 		cancelURL:       frontendURL + "/pricing?canceled=true",
 		portalReturnURL: frontendURL + "/settings",
+		goodbyeURL:      frontendURL + "/goodbye",
 	}
 }
 
@@ -217,7 +219,10 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 // Requires a Stripe customer ID (set at first checkout). Lifetime buyers
 // have a customer ID but no subscription, so the portal correctly shows
 // only billing history with nothing to cancel.
-func (s *BillingService) CreatePortalSession(ctx context.Context, userID string) (*model.CheckoutSession, error) {
+// cancelFlow=true returns the user to /goodbye after the portal (used by the
+// "Continue to cancel" path) so a completed cancellation lands on the
+// post-cancel page; otherwise they return to /settings.
+func (s *BillingService) CreatePortalSession(ctx context.Context, userID string, cancelFlow bool) (*model.CheckoutSession, error) {
 	if s.stripeKey == "" {
 		return nil, fmt.Errorf("stripe not configured")
 	}
@@ -233,9 +238,14 @@ func (s *BillingService) CreatePortalSession(ctx context.Context, userID string)
 		return nil, fmt.Errorf("no billing account")
 	}
 
+	returnURL := s.portalReturnURL
+	if cancelFlow {
+		returnURL = s.goodbyeURL
+	}
+
 	form := url.Values{}
 	form.Set("customer", *user.StripeCustomerID)
-	form.Set("return_url", s.portalReturnURL)
+	form.Set("return_url", returnURL)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.stripe.com/v1/billing_portal/sessions", strings.NewReader(form.Encode()))
 	if err != nil {

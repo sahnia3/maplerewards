@@ -72,7 +72,10 @@ func (h *BillingHandler) CreatePortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.svc.CreatePortalSession(r.Context(), userID)
+	// ?flow=cancel returns the user to /goodbye after the portal so a
+	// completed cancellation lands on the post-cancel page.
+	cancelFlow := r.URL.Query().Get("flow") == "cancel"
+	session, err := h.svc.CreatePortalSession(r.Context(), userID, cancelFlow)
 	if err != nil {
 		slog.Error("portal session creation failed", "err", err, "user_id", userID)
 		switch {
