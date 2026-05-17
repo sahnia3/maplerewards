@@ -163,14 +163,19 @@ func main() {
 	)
 
 	// Run an immediate sweep on boot, then enter the steady-state tickers.
+	// Every sweep is panic-isolated: a panic in one (e.g. a nil deref on a
+	// scrubbed recipient) must not take down award-watch + digests +
+	// cleanup together and stop all crons until a manual restart.
 	if awardWatchEnabled {
-		runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
+		safely(log, "award", func() {
+			runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
+		})
 	}
-	runIssuerSweep(ctx, log, issuerWatch, issuerBatchSize)
-	digestSvc.RunSweep(ctx, log, time.Now())
-	missedRewardsDigestSvc.RunSweep(ctx, log, time.Now())
-	promoSvc.RunSweep(ctx, log)
-	accountCleanupSvc.RunSweep(ctx, log)
+	safely(log, "issuer", func() { runIssuerSweep(ctx, log, issuerWatch, issuerBatchSize) })
+	safely(log, "issuer-digest", func() { digestSvc.RunSweep(ctx, log, time.Now()) })
+	safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
+	safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
+	safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
 
 	awardTicker := time.NewTicker(time.Duration(awardTickHours) * time.Hour)
 	defer awardTicker.Stop()
@@ -190,23 +195,38 @@ func main() {
 			return
 		case <-awardTicker.C:
 			if awardWatchEnabled {
-				runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
+				safely(log, "award", func() {
+					runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
+				})
 			}
 		case <-issuerTicker.C:
-			runIssuerSweep(ctx, log, issuerWatch, issuerBatchSize)
+			safely(log, "issuer", func() { runIssuerSweep(ctx, log, issuerWatch, issuerBatchSize) })
 		case <-digestTicker.C:
-			digestSvc.RunSweep(ctx, log, time.Now())
-			missedRewardsDigestSvc.RunSweep(ctx, log, time.Now())
-			accountCleanupSvc.RunSweep(ctx, log)
+			safely(log, "issuer-digest", func() { digestSvc.RunSweep(ctx, log, time.Now()) })
+			safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
+			safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
 			// Valuation refresh runs in the same daily slot. The 7-day staleness
 			// threshold is honored by checking the freshness chip in the UI
 			// rather than gating here — running daily costs ~0 since the
 			// rescan is a bounded ~27-row sweep.
-			valuationRefreshSvc.RunSweep(ctx, log)
+			safely(log, "valuation-refresh", func() { valuationRefreshSvc.RunSweep(ctx, log) })
 		case <-promoTicker.C:
-			promoSvc.RunSweep(ctx, log)
+			safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
 		}
 	}
+}
+
+// safely runs one sweep with panic isolation. A panic in any sweep is
+// logged and contained so the worker process keeps running and the other
+// crons (award-watch, digests, cleanup, valuation) are unaffected.
+func safely(log *slog.Logger, name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("sweep panicked — isolated; other sweeps unaffected",
+				"sweep", name, "panic", r)
+		}
+	}()
+	fn()
 }
 
 // runIssuerSweep delegates to the IssuerWatchService and logs the rollup.

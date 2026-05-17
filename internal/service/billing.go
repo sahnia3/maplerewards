@@ -324,10 +324,14 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		return nil
 	}
 
-	// Save Stripe customer ID
+	// Save Stripe customer ID. This MUST be fatal, not log-and-continue:
+	// without it CreatePortalSession returns "no billing account" forever,
+	// so the user can never cancel/update card/get receipts (permanent for
+	// Lifetime; breaks the "cancel anytime" promise for subscribers). The
+	// webhook is idempotent, so returning the error lets Stripe retry.
 	if session.Customer != "" {
 		if err := s.repo.SetStripeCustomerID(ctx, userID, session.Customer); err != nil {
-			slog.Error("failed to save stripe customer id", "err", err, "user_id", userID)
+			return fmt.Errorf("save stripe customer id for user %s: %w", userID, err)
 		}
 	}
 
@@ -362,6 +366,15 @@ func (s *BillingService) handleSubscriptionUpdated(ctx context.Context, data jso
 	}
 	if user == nil {
 		slog.Warn("subscription update for unknown customer", "customer", sub.Customer)
+		return nil
+	}
+
+	// Lifetime is a permanent one-time entitlement with no subscription.
+	// If a Lifetime buyer ever also has a subscription object (e.g. they
+	// later start a trial on another tier), a non-active status here must
+	// NOT flip is_pro=false and revoke their lifetime access.
+	if user.Plan == "lifetime" {
+		slog.Info("subscription update ignored for lifetime account", "user_id", user.ID, "status", sub.Status)
 		return nil
 	}
 

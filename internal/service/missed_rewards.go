@@ -66,6 +66,13 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	// GetUserBySession returns (nil,nil) for an unknown/scrubbed session.
+	// The digest worker calls this directly with stored session IDs; if a
+	// recipient's row was hard-deleted between the recipient query and here,
+	// dereferencing user.ID below would panic and kill the whole sweep.
+	if user == nil {
+		return nil, nil
+	}
 
 	// Pull spend history (paginated). Break early once we hit maxEntries —
 	// repo returns rows ordered most-recent-first, so the cap keeps the

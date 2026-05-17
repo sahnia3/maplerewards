@@ -104,15 +104,21 @@ func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify Stripe webhook signature
+	// Verify Stripe webhook signature. Fail CLOSED: an empty secret used to
+	// skip verification entirely, which (if STRIPE_WEBHOOK_SECRET were ever
+	// unset) turned this into an unauthenticated free-Pro grant for any
+	// user ID. Production is boot-gated to require the secret; here we
+	// additionally refuse to process any webhook we cannot authenticate.
 	webhookSecret := h.svc.GetWebhookSecret()
-	if webhookSecret != "" {
-		sigHeader := r.Header.Get("Stripe-Signature")
-		if !verifyStripeSignature(body, sigHeader, webhookSecret) {
-			slog.Warn("stripe webhook signature verification failed")
-			jsonErrorCode(w, "UNAUTHORIZED", "invalid signature", http.StatusUnauthorized)
-			return
-		}
+	if webhookSecret == "" {
+		slog.Error("stripe webhook rejected: STRIPE_WEBHOOK_SECRET not configured — refusing to process unsigned webhook")
+		jsonError(w, "webhook not configured", http.StatusInternalServerError)
+		return
+	}
+	if !verifyStripeSignature(body, r.Header.Get("Stripe-Signature"), webhookSecret) {
+		slog.Warn("stripe webhook signature verification failed")
+		jsonErrorCode(w, "UNAUTHORIZED", "invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	// Parse the event
@@ -229,7 +235,11 @@ func verifyStripeSignature(payload []byte, sigHeader, secret string) bool {
 	if err != nil {
 		return false
 	}
-	if time.Now().Unix()-ts > 300 {
+	// Reject skew in BOTH directions. The old one-sided check
+	// (now-ts > 300) let a far-future timestamp through, making the
+	// 5-minute replay window effectively unbounded into the future.
+	now := time.Now().Unix()
+	if ts > now+300 || now-ts > 300 {
 		return false
 	}
 

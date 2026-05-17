@@ -853,23 +853,6 @@ type CardValueSummary struct {
 	IsPositive   bool                 `json:"is_positive"`
 }
 
-// ── India-outbound hotel arbitrage ───────────────────────────────────────────
-
-type IndiaArbitrageProperty struct {
-	ProgramSlug      string  `json:"program_slug"`
-	PropertyName     string  `json:"property_name"`
-	City             string  `json:"city"`
-	PointsPerNight   int     `json:"points_per_night"`
-	CashRateINR      *int    `json:"cash_rate_inr,omitempty"`
-	CashRateCAD      float64 `json:"cash_rate_cad"`
-	ValueCADPerPoint float64 `json:"value_cad_per_point"`
-	UserBalance      int     `json:"user_balance"`
-	NightsAffordable int     `json:"nights_affordable"`
-	TotalSavingsCAD  float64 `json:"total_savings_cad"`
-	Notes            string  `json:"notes,omitempty"`
-	SourceURL        string  `json:"source_url,omitempty"`
-}
-
 // ── Tangerine MCC resolver ───────────────────────────────────────────────────
 
 type TangerineCategory struct {

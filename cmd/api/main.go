@@ -147,6 +147,17 @@ func main() {
 		log.Warn("JWT_SECRET shorter than recommended minimum",
 			"len", len(jwtSecret), "min", minJWTSecretLen)
 	}
+
+	// STRIPE_WEBHOOK_SECRET must be present in production. Without it the
+	// webhook handler cannot verify Stripe's signature, and an
+	// unauthenticated POST of a forged checkout.session.completed would
+	// grant arbitrary users Pro. Fail fast rather than launch an open
+	// free-Pro endpoint (same posture as the JWT/CORS gates above).
+	if appEnv == "production" && getEnv("STRIPE_WEBHOOK_SECRET", "") == "" {
+		log.Error("STRIPE_WEBHOOK_SECRET must be set when APP_ENV=production (webhook signature verification cannot be skipped in prod)")
+		os.Exit(1)
+	}
+
 	walletSvc := service.NewWalletService(walletRepo, cardRepo, spendRepo, bonusRepo, redisCache)
 	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache)
 	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""))

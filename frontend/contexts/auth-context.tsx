@@ -61,9 +61,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ── Storage keys ────────────────────────────────────────────────────────────
-
-const REFRESH_TOKEN_KEY = "maple_refresh_token";
 
 // ── Provider ────────────────────────────────────────────────────────────────
 
@@ -83,19 +80,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // returns 401 because the 15-minute access token expired, lib/api.ts calls
   // this handler instead of bubbling the error to the user — refresh succeeds
   // → original request retried; refresh fails → token cleared, user re-logs in.
+  // The refresh token is NEVER stored in JS-readable storage. The backend
+  // issues it as an httpOnly, Path=/api/v1/auth, SameSite cookie
+  // (setTokenCookies) on register/login/google/refresh, and /auth/refresh
+  // reads it from that cookie. Persisting it in localStorage (the old
+  // behaviour) made a 30-day account-takeover credential readable by any
+  // XSS — defeating the backend's httpOnly hardening. We keep only the
+  // short-lived access token in memory; the cookie rides every refresh via
+  // credentials:"include".
   useEffect(() => {
     setAuthRefreshHandler(async () => {
-      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-      if (!refreshToken) return null;
       try {
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: "POST",
           headers: await csrfHeaders(),
           credentials: "include",
-          body: JSON.stringify({ refresh_token: refreshToken }),
         });
         if (!res.ok) {
-          localStorage.removeItem(REFRESH_TOKEN_KEY);
           setAccessToken(null);
           setUser(null);
           return null;
@@ -103,7 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data: TokenPair = await res.json();
         setAccessToken(data.access_token);
         setUser(data.user);
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
         tokenRef.current = data.access_token;
         return data.access_token;
       } catch {
@@ -112,23 +112,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Try to restore session on mount using refresh token
+  // Restore session on mount: attempt a cookie-based refresh. No cookie
+  // (logged-out) → 401 → anonymous; valid cookie → fresh access token.
   useEffect(() => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) {
-      setIsLoading(false);
-      return;
-    }
-
-    // Attempt to refresh the access token. CSRF is async so we kick off
-    // the header build first, then issue the fetch — only fires on mount.
     (async () => {
       const headers = await csrfHeaders();
       return fetch(`${BASE_URL}/auth/refresh`, {
         method: "POST",
         headers,
         credentials: "include",
-        body: JSON.stringify({ refresh_token: refreshToken }),
       });
     })()
       .then((res) => {
@@ -138,20 +130,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((data: TokenPair) => {
         setAccessToken(data.access_token);
         setUser(data.user);
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
       })
       .catch(() => {
-        // Refresh failed — clear stale token
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        /* not logged in — stay anonymous */
       })
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Handle token pair response (shared by login/register/google)
+  // Handle token pair response (shared by login/register/google). The
+  // refresh token is set by the server as an httpOnly cookie; we only
+  // hold the access token in memory.
   const handleTokenPair = useCallback((data: TokenPair) => {
     setAccessToken(data.access_token);
     setUser(data.user);
-    localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
   }, []);
 
   // Register with email/password
@@ -230,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setAccessToken(null);
     setUser(null);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    // The httpOnly refresh cookie is cleared server-side by /auth/logout.
   }, [accessToken]);
 
   // Update profile

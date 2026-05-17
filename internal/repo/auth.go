@@ -293,11 +293,11 @@ func (r *AuthRepo) GetUserByStripeCustomerID(ctx context.Context, customerID str
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
-		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		       is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 		FROM users WHERE stripe_customer_id = $1 AND deleted_at IS NULL
 	`, customerID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
