@@ -107,11 +107,20 @@ func (r *WalletRepo) RemoveCard(ctx context.Context, userID, cardID string) erro
 }
 
 func (r *WalletRepo) UpdateBalance(ctx context.Context, userID, cardID string, balance int64) error {
-	_, err := r.db.Exec(ctx, `
+	tag, err := r.db.Exec(ctx, `
 		UPDATE user_cards SET point_balance = $3
 		WHERE user_id = $1 AND card_id = $2
 	`, userID, cardID, balance)
-	return err
+	if err != nil {
+		return fmt.Errorf("update balance: %w", err)
+	}
+	// 0 rows affected means the (user_id, card_id) pair didn't match — e.g.
+	// the caller passed a wallet-row id instead of the catalog card_id.
+	// Surface it instead of returning a fake success the UI trusts.
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("update balance: no card %s in wallet for user", cardID)
+	}
+	return nil
 }
 
 func (r *WalletRepo) UpdateCardDetails(ctx context.Context, userID, cardID string, req model.UpdateCardDetailsRequest) error {

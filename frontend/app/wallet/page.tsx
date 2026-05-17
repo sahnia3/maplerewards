@@ -268,7 +268,11 @@ function WalletRow({
     setSaving(true);
     setErrMsg(null);
     try {
-      await updateCardBalance(sessionId, userCard.id, bal);
+      // Backend keys by catalog card_id (PUT /wallet/:sid/cards/:cardID →
+      // user_cards WHERE user_id=$1 AND card_id=$2). Sending the wallet-row
+      // id (userCard.id) matches zero rows and silently no-ops — same gotcha
+      // the remove path documents below.
+      await updateCardBalance(sessionId, userCard.card_id, bal);
       onChanged();
       setEditing(false);
     } catch { setErrMsg("Update failed"); }
