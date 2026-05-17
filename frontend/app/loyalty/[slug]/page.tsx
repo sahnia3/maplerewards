@@ -329,7 +329,7 @@ export default function ProgramDetailPage() {
     {
       title: "Partner Business Class",
       desc: "Book partner airlines in business class for up to 3–5¢/pt. Search early for Saver space.",
-      value: `~${(firstCpp * 100).toFixed(1)}¢/pt`,
+      value: `~${firstCpp.toFixed(1)}¢/pt`,
       tag: "Best value",
       tone: "best" as TagTone,
     },
@@ -343,7 +343,7 @@ export default function ProgramDetailPage() {
     {
       title: "Economy Award Space",
       desc: "Domestic and short-haul economy redemptions offer solid value at lower point costs.",
-      value: `~${(baseCpp * 1.5 * 100).toFixed(1)}¢/pt`,
+      value: `~${(baseCpp * 1.5).toFixed(1)}¢/pt`,
       tag: "Easy to book",
       tone: "tip" as TagTone,
     },
@@ -360,7 +360,7 @@ export default function ProgramDetailPage() {
     {
       title: "Off-Peak & Category Sweet Spots",
       desc: "Category 1–3 properties and off-peak dates offer the best points-per-night value.",
-      value: `~${(businessCpp * 100).toFixed(1)}¢/pt`,
+      value: `~${businessCpp.toFixed(1)}¢/pt`,
       tag: "Best CPP",
       tone: "warn" as TagTone,
     },
@@ -387,7 +387,7 @@ export default function ProgramDetailPage() {
     {
       title: "Statement Credits & Travel",
       desc: "Redeem against travel charges on your statement — simple and reliable at base CPP.",
-      value: `${(baseCpp * 100).toFixed(1)}¢/pt`,
+      value: `${baseCpp.toFixed(2)}¢/pt`,
       tag: "Easy",
       tone: "info" as TagTone,
     },
@@ -502,7 +502,7 @@ export default function ProgramDetailPage() {
               }}
             >
               <div className="display" style={{ fontSize: 26, color: "var(--ink)", lineHeight: 1, letterSpacing: "-0.01em" }}>
-                {(cpp * 100).toFixed(1)}¢
+                {cpp.toFixed(2)}¢
               </div>
               <div
                 className="mono"

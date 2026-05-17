@@ -221,7 +221,7 @@ function TransferPartnerCard({ partner }: { partner: TransferPartner }) {
               Dest. CPP
             </p>
             <p className="display" style={{ fontSize: 14, color: "var(--accent)", lineHeight: 1.1, fontStyle: "italic" }}>
-              {(program.base_cpp * 100).toFixed(1)}¢/pt
+              {program.base_cpp.toFixed(2)}¢/pt
             </p>
           </div>
         )}
@@ -438,7 +438,7 @@ export default function CardDetailPage() {
               )}
               {value_range_high > 0 && (
                 <Pill tone="accent">
-                  {(value_range_low * 100).toFixed(1)}–{(value_range_high * 100).toFixed(1)}¢/pt
+                  {value_range_low.toFixed(2)}–{value_range_high.toFixed(2)}¢/pt
                 </Pill>
               )}
             </div>
@@ -562,7 +562,7 @@ export default function CardDetailPage() {
               {value_range_low > 0 && value_range_high > 0 && (
                 <InfoRow
                   label="Point value range"
-                  value={`${(value_range_low * 100).toFixed(1)}¢ – ${(value_range_high * 100).toFixed(1)}¢ per point`}
+                  value={`${value_range_low.toFixed(2)}¢ – ${value_range_high.toFixed(2)}¢ per point`}
                 />
               )}
               <InfoRow label="Network" value={card.network.toUpperCase()} isLast />

@@ -358,7 +358,7 @@ export default function LoyaltyPage() {
                           color: "var(--accent)",
                         }}
                       >
-                        {(program.base_cpp * 100).toFixed(1)}¢/pt
+                        {program.base_cpp.toFixed(2)}¢/pt
                       </div>
                       <InfoTooltip term="cpp" />
                     </div>
