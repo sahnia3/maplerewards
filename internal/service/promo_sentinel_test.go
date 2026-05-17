@@ -121,3 +121,39 @@ func TestCredibleSource(t *testing.T) {
 		})
 	}
 }
+
+func TestParsePromoDate_TolerantFormats(t *testing.T) {
+	good := []string{
+		"2026-04-30",
+		"2026-04-30T00:00:00Z",
+		"2026-04-30T12:30:00",
+		"2026/04/30",
+		"04/30/2026",
+		"April 30, 2026",
+		"Apr 30, 2026",
+		"30 April 2026",
+		"  2026-04-30  ", // trimmed
+	}
+	for _, s := range good {
+		if parsePromoDate(s) == nil {
+			t.Errorf("parsePromoDate(%q) = nil, want a date (feed-starvation regression)", s)
+		}
+	}
+	bad := []string{"", "ongoing", "soon", "next month", "2026-13-99"}
+	for _, s := range bad {
+		if parsePromoDate(s) != nil {
+			t.Errorf("parsePromoDate(%q) parsed, want nil", s)
+		}
+	}
+}
+
+func TestValidatePromo_SameDayExpiryKept(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	p := extractedPromo{
+		FromProgram: "amex-mr-ca", ToProgram: "aeroplan",
+		BonusPercent: 30, Confidence: 0.9, ExpiresAt: today,
+	}
+	if !validatePromo(p) {
+		t.Error("a promo expiring today was rejected; must match the read query's expires_at >= CURRENT_DATE")
+	}
+}

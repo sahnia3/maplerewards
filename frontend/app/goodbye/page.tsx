@@ -20,25 +20,26 @@ import { LeafDivider } from "@/components/editorial/leaf-divider";
  */
 export default function GoodbyePage() {
   const router = useRouter();
-  const { isPro, isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [settled, setSettled] = useState(false);
 
+  // This page is only reached via the Stripe portal's cancel-flow return
+  // URL, so the visitor went through cancellation. We deliberately do NOT
+  // gate on the client's `isPro` — it's a stale cached value racing an
+  // async webhook, and bouncing a user who DID cancel back to /profile
+  // (the old behaviour) defeated the entire post-cancel page. Just require
+  // an authenticated session and a brief settle for visual smoothness.
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated) {
       router.replace("/");
       return;
     }
-    // Give the cancellation webhook a moment to land before deciding.
-    const t = setTimeout(() => setSettled(true), 1500);
+    const t = setTimeout(() => setSettled(true), 800);
     return () => clearTimeout(t);
   }, [isLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (settled && isPro) router.replace("/profile");
-  }, [settled, isPro, router]);
-
-  if (isLoading || !settled || isPro) {
+  if (isLoading || !settled) {
     return (
       <div style={{ display: "flex", justifyContent: "center", minHeight: "60vh", alignItems: "center" }}>
         <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />

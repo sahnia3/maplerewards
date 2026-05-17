@@ -25,13 +25,14 @@ func NewEmailHandler(authRepo *repo.AuthRepo) *EmailHandler {
 func (h *EmailHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		U string `json:"u"`
+		E string `json:"e"`
 		T string `json:"t"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	if !service.VerifyUnsubToken(body.U, body.T) {
+	if !service.VerifyUnsubToken(body.U, body.E, body.T) {
 		// Constant-time verify already done; don't leak whether the user
 		// exists — just reject the bad signature.
 		jsonErrorCode(w, "INVALID_TOKEN", "invalid or expired unsubscribe link", http.StatusBadRequest)

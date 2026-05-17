@@ -291,9 +291,16 @@ func validatePromo(p extractedPromo) bool {
 		return false
 	}
 	// Reject already-expired and absurdly-far-future (>1y = likely a
-	// hallucinated/mis-parsed year) windows.
+	// hallucinated/mis-parsed year) windows. Compare on DATE granularity so
+	// a promo expiring *today* is kept — parsed dates are midnight, so a
+	// raw exp.Before(now) would drop a still-valid same-day promo and
+	// disagree with the read query (expires_at >= CURRENT_DATE).
 	now := time.Now()
-	if exp.Before(now) || exp.After(now.AddDate(1, 0, 0)) {
+	ey, em, ed := exp.Date()
+	ny, nm, nd := now.Date()
+	expDate := time.Date(ey, em, ed, 0, 0, 0, 0, time.UTC)
+	todayDate := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
+	if expDate.Before(todayDate) || exp.After(now.AddDate(1, 0, 0)) {
 		return false
 	}
 	return true
@@ -324,15 +331,31 @@ func credibleSource(rawURL string) bool {
 	return true
 }
 
+// parsePromoDate is deliberately tolerant. The prompt asks for YYYY-MM-DD but
+// LLMs routinely emit RFC3339, slashed, or long-form dates; since validatePromo
+// now hard-rejects an unparsable expiry, a strict parser would silently starve
+// the feed of legitimate promos. Try the common shapes, first match wins.
 func parsePromoDate(s string) *time.Time {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
-	t, err := time.Parse("2006-01-02", s)
-	if err != nil {
-		return nil
+	layouts := []string{
+		"2006-01-02",
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006/01/02",
+		"01/02/2006",
+		"January 2, 2006",
+		"Jan 2, 2006",
+		"2 January 2006",
 	}
-	return &t
+	for _, l := range layouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return &t
+		}
+	}
+	return nil
 }
 
 func floatPtrIfSet(v float64) *float64 {

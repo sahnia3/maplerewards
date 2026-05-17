@@ -2,37 +2,51 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"maplerewards/internal/model"
 )
 
 func TestUnsubToken_RoundTrip(t *testing.T) {
-	tok := SignUnsubToken("user-123")
+	tok, exp := SignUnsubToken("user-123")
+	expStr := strconv.FormatInt(exp, 10)
 	if tok == "" {
 		t.Fatal("empty token")
 	}
-	if !VerifyUnsubToken("user-123", tok) {
+	if !VerifyUnsubToken("user-123", expStr, tok) {
 		t.Error("valid token rejected")
 	}
-	if VerifyUnsubToken("user-999", tok) {
+	if VerifyUnsubToken("user-999", expStr, tok) {
 		t.Error("token accepted for the wrong user")
 	}
-	if VerifyUnsubToken("user-123", tok+"x") {
+	if VerifyUnsubToken("user-123", expStr, tok+"x") {
 		t.Error("tampered token accepted")
 	}
-	if VerifyUnsubToken("", "") || VerifyUnsubToken("user-123", "") {
+	if VerifyUnsubToken("user-123", "9999999999", tok) {
+		t.Error("token accepted with a different exp than it was signed for")
+	}
+	if VerifyUnsubToken("", "", "") || VerifyUnsubToken("user-123", expStr, "") {
 		t.Error("empty inputs accepted")
 	}
-	if SignUnsubToken("a") == SignUnsubToken("b") {
+	// Expired token must be rejected even with a valid signature for that exp.
+	pastExp := time.Now().Add(-time.Hour).Unix()
+	pastTok := signUnsub("user-123", pastExp)
+	if VerifyUnsubToken("user-123", strconv.FormatInt(pastExp, 10), pastTok) {
+		t.Error("expired token accepted")
+	}
+	a, _ := SignUnsubToken("a")
+	b, _ := SignUnsubToken("b")
+	if a == b {
 		t.Error("different users produced the same token")
 	}
 }
 
 func TestUnsubscribeURL_Shape(t *testing.T) {
 	url := UnsubscribeURL("user-123")
-	if !strings.Contains(url, "/unsubscribe?u=user-123&t=") {
+	if !strings.Contains(url, "/unsubscribe?u=user-123&e=") || !strings.Contains(url, "&t=") {
 		t.Errorf("unexpected unsubscribe URL: %s", url)
 	}
 }

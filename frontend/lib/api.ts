@@ -864,11 +864,15 @@ export async function createPortalSession(
 }
 
 // Public, token-authenticated email unsubscribe (CASL). Called from the
-// /unsubscribe page with the u + t params from an email footer link.
-export async function unsubscribeEmail(u: string, t: string): Promise<{ status: string }> {
+// /unsubscribe page with the u + e + t params from an email footer link.
+export async function unsubscribeEmail(
+  u: string,
+  e: string,
+  t: string
+): Promise<{ status: string }> {
   return request<{ status: string }>("/email/unsubscribe", {
     method: "POST",
-    body: JSON.stringify({ u, t }),
+    body: JSON.stringify({ u, e, t }),
   });
 }
 

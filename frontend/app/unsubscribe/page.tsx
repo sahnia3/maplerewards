@@ -17,6 +17,7 @@ import { LeafDivider } from "@/components/editorial/leaf-divider";
 function UnsubscribeInner() {
   const params = useSearchParams();
   const u = params.get("u") ?? "";
+  const e = params.get("e") ?? "";
   const t = params.get("t") ?? "";
   const [state, setState] = useState<"working" | "done" | "error">("working");
   const ran = useRef(false);
@@ -24,14 +25,20 @@ function UnsubscribeInner() {
   useEffect(() => {
     if (ran.current) return; // guard React StrictMode double-invoke
     ran.current = true;
-    if (!u || !t) {
+    // Scrub the signed token out of the URL immediately so it can't leak via
+    // Referer, browser history, or analytics — a leaked (u,t) is a standing
+    // unsubscribe credential until it expires.
+    if (typeof window !== "undefined" && (u || t || e)) {
+      window.history.replaceState(null, "", "/unsubscribe");
+    }
+    if (!u || !e || !t) {
       setState("error");
       return;
     }
-    unsubscribeEmail(u, t)
+    unsubscribeEmail(u, e, t)
       .then(() => setState("done"))
       .catch(() => setState("error"));
-  }, [u, t]);
+  }, [u, e, t]);
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
