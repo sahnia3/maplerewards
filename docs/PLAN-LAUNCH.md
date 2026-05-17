@@ -16,24 +16,17 @@
   DTOs removed. Reviewers explicitly confirmed JWT/CORS gates, refresh
   reuse-detection, IDOR middleware, SQL parameterization, AI tool session
   binding, CSRF, and login timing defense are sound.
-- **Known follow-ups (documented, NOT shipped rushed — would violate
-  "every change ratified/verified")**:
-  - *H3* `internal/service/missed_rewards.go` + `optimizer.go`: the
-    missed-rewards replay calls `GetBestCard` per spend entry (N+1, large
-    histories can be slow) and scores each historical entry against the
-    *current* month's live cap state, so "$X left on the table" is
-    systematically off and non-deterministic. Correct fix: load
-    wallet/multipliers/valuations once and score per-entry with the cap
-    state of that entry's month (or document that caps are ignored in the
-    replay). Bounded refactor; needs its own test pass.
-  - *M4* `internal/service/auth.go:197-217`: refresh rotation
-    (revoke-then-issue) isn't transactional; two concurrent refreshes
-    (common SPA double-fire) can both pass the reuse check and later
-    trip false reuse-detection → forced logout. Fix: atomic
-    `UPDATE … WHERE revoked_at IS NULL RETURNING` to claim the rotation.
-  These are real but require careful isolated work + verification; shipping
-  them under time pressure would itself risk regressions in money-facing
-  and auth-critical paths.
+- **M4 + H3 — now FIXED (commit "close the two deferred review findings")**,
+  not deferred: refresh rotation is atomic (conditional claim, no false
+  reuse-logout); missed-rewards scores per-purchase deterministically
+  (`OptimizeRequest.PerPurchase`), with regression tests. Verified green.
+- **Sole remaining residual (perf note, NOT a bug)**: the missed-rewards
+  replay still calls `GetBestCard` per entry. This is **hard-bounded** by
+  `maxEntries = 1000`, so it's slow on very large histories but never
+  unbounded and is correct. Optimizing it to a single in-memory pass is a
+  pure performance improvement with no behavioural change — safe to do
+  post-launch. Every correctness/security/data-integrity issue surfaced
+  by two full fresh-context reviews has been fixed and verified.
 
 - **#127 review + QA**: fresh-context `security-reviewer` + `code-reviewer`
   subagents audited the full session diff. Every HIGH/MEDIUM finding fixed
