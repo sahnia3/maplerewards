@@ -137,6 +137,10 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 			SessionID:    sessionID,
 			CategorySlug: e.CategorySlug,
 			SpendAmount:  e.Amount,
+			// Score each historical purchase independently. Using the
+			// current live month's running cap state for a months-old
+			// transaction made the "$X left" total wrong + non-deterministic.
+			PerPurchase: true,
 		})
 		if err != nil || len(recs) == 0 {
 			// Skip entries we can't score (e.g. category not resolved).

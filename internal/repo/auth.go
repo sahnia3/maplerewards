@@ -241,14 +241,23 @@ func (r *AuthRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*mode
 }
 
 // RevokeRefreshToken marks a token as revoked.
-func (r *AuthRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
-	_, err := r.pool.Exec(ctx, `
-		UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1
+// RevokeRefreshToken atomically claims the rotation: it only flips a token
+// that is still un-revoked, and reports whether THIS call did it. Two
+// concurrent refreshes with the same token (common SPA double-fire) both
+// pass the earlier reuse check, but only the one whose UPDATE affects a row
+// may mint a new pair — the loser is told the token is invalid and retries
+// with the winner's token. This closes the revoke-then-issue race that
+// previously minted two valid refresh tokens and later tripped false
+// reuse-detection (forced logout).
+func (r *AuthRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = NOW()
+		WHERE token_hash = $1 AND revoked_at IS NULL
 	`, tokenHash)
 	if err != nil {
-		return fmt.Errorf("revoke refresh token: %w", err)
+		return false, fmt.Errorf("revoke refresh token: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
 
 // RevokeAllUserTokens revokes all refresh tokens for a user.

@@ -913,3 +913,48 @@ func TestGetBestCard_SharedCapGroupEnforcedWhenMultiplierCapNil(t *testing.T) {
 		t.Error("Cobalt should report IsCapHit=true for $10k spend over a $2,500 cap")
 	}
 }
+
+// TestGetBestCard_PerPurchaseIgnoresMonthlySpend is the regression test for
+// H3: the missed-rewards replay scored months-old transactions against the
+// CURRENT live month's running cap state, making "$X left on the table"
+// wrong and non-deterministic. PerPurchase mode must score each call as an
+// independent transaction — fully ignoring accumulated monthly spend.
+func TestGetBestCard_PerPurchaseIgnoresMonthlySpend(t *testing.T) {
+	ts := newTestOptimizer()
+	ts.cardRepo.categories["groceries"] = &model.Category{ID: "cat-g", Slug: "groceries"}
+	ts.walletRepo.users["sess-1"] = &model.User{ID: "u1"}
+	ts.walletRepo.cards["u1"] = []model.UserCard{
+		{
+			ID: "uc-1", UserID: "u1", CardID: "c1",
+			Card: &model.Card{
+				ID: "c1", Name: "Capped Card", LoyaltyProgramID: "lp-1",
+				LoyaltyProgram: &model.LoyaltyProgram{ID: "lp-1", Slug: "prog", BaseCPP: 1.0},
+			},
+		},
+	}
+	capAmt := 500.0
+	period := "monthly"
+	ts.cardRepo.multipliers["c1:cat-g"] = &model.CardMultiplier{
+		EarnRate: 5.0, EarnType: "points", FallbackEarnRate: 1.0,
+		CapAmount: &capAmt, CapPeriod: &period,
+	}
+	ts.valuationRepo.cpps["prog:base"] = 1.0
+
+	// Seed the live month as if the cap were already blown a hundred times
+	// over. Non-per-purchase scoring would collapse to the 1x fallback.
+	month := beginningOfMonth(time.Now())
+	ts.spendRepo.monthlySpend["u1:c1:"+month.Format("2006-01-02")] = map[string]float64{"cat-g": 50000}
+
+	recs, err := ts.svc.GetBestCard(context.Background(), model.OptimizeRequest{
+		SessionID: "sess-1", CategorySlug: "groceries", SpendAmount: 300,
+		PerPurchase: true,
+	})
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("unexpected: err=%v recs=%d", err, len(recs))
+	}
+	// $300 < $500 cap → full 5x at 1.0¢: 300*5=1500 pts → $15 → 5.0% return.
+	// If the seeded $50,000 leaked in, this would be the 1x fallback (~1.0%).
+	if !almostEqual(recs[0].EffectiveReturn, 5.0, 0.01) {
+		t.Errorf("per-purchase return: got %.2f%%, want 5.00%% — monthly spend state leaked into the replay (H3)", recs[0].EffectiveReturn)
+	}
+}

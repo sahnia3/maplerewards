@@ -317,6 +317,11 @@ type OptimizeRequest struct {
 	// Merchant is an optional merchant slug that triggers network-routing rules.
 	// "costco_ca" → only Mastercard cards eligible (Costco Canada accepts MC only since 2014).
 	Merchant string `json:"merchant,omitempty"`
+	// PerPurchase scores this request as an independent single transaction
+	// (prior accumulated monthly spend treated as 0). The missed-rewards
+	// replay sets this so historical entries aren't scored against the
+	// current live month's cap state (which was wrong + non-deterministic).
+	PerPurchase bool `json:"-"`
 }
 
 type CardRecommendation struct {

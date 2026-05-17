@@ -124,7 +124,7 @@ func (s *OptimizerService) GetBestCard(
 					results[idx] = result{err: fmt.Errorf("card-score panic: %v", r)}
 				}
 			}()
-			rec, err := s.scoreCard(ctx, userCard, category.ID, req.SpendAmount, segment)
+			rec, err := s.scoreCard(ctx, userCard, category.ID, req.SpendAmount, segment, req.PerPurchase)
 			results[idx] = result{rec: rec, err: err}
 		}(i, uc)
 	}
@@ -150,6 +150,7 @@ func (s *OptimizerService) scoreCard(
 	categoryID string,
 	spendAmount float64,
 	segment string,
+	perPurchase bool,
 ) (model.CardRecommendation, error) {
 	if uc.Card == nil || uc.Card.LoyaltyProgram == nil {
 		return model.CardRecommendation{}, fmt.Errorf("card %s missing program data", uc.CardID)
@@ -193,13 +194,22 @@ func (s *OptimizerService) scoreCard(
 
 	currentMonth := beginningOfMonth(time.Now())
 	capGroup, capErr := s.spendRepo.GetCapGroupForCard(ctx, uc.CardID, categoryID)
+	// perPurchase scores each call as an independent single transaction:
+	// prior accumulated spend is treated as 0. The missed-rewards replay
+	// uses this — applying the *current* live month's running cap state to
+	// a transaction from months ago made "$X left on the table"
+	// systematically wrong and non-deterministic (it changed as the month
+	// accumulated). Per-purchase is the correct, deterministic semantics
+	// for "which card should you have used for THIS purchase".
 	switch {
 	case capErr == nil && capGroup != nil:
 		// Shared cap group: sum spend across all grouped categories.
-		monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
 		var totalCappedSpend float64
-		for _, catID := range capGroup.CategoryIDs {
-			totalCappedSpend += monthlySpend[catID]
+		if !perPurchase {
+			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
+			for _, catID := range capGroup.CategoryIDs {
+				totalCappedSpend += monthlySpend[catID]
+			}
 		}
 		effectiveRate, isCapHit, note = calculateBlendedRate(
 			spendAmount, totalCappedSpend, capGroup.CapAmount, capGroup.CapPeriod,
@@ -207,8 +217,11 @@ func (s *OptimizerService) scoreCard(
 		)
 	case multiplier.CapAmount != nil && *multiplier.CapAmount > 0:
 		// Per-multiplier cap (no shared group).
-		monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
-		currentSpend := monthlySpend[categoryID]
+		var currentSpend float64
+		if !perPurchase {
+			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
+			currentSpend = monthlySpend[categoryID]
+		}
 		effectiveRate, isCapHit, note = calculateBlendedRate(
 			spendAmount, currentSpend, *multiplier.CapAmount, safeStr(multiplier.CapPeriod),
 			multiplier.EarnRate, multiplier.FallbackEarnRate,

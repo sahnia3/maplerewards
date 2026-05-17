@@ -27,7 +27,7 @@ type AuthRepository interface {
 	MergeAnonymousUser(ctx context.Context, authUserID, anonUserID string) error
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt interface{}) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*model.RefreshToken, error)
-	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeRefreshToken(ctx context.Context, tokenHash string) (claimed bool, err error)
 	RevokeAllUserTokens(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error
 }
@@ -200,9 +200,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, rawToken string) (*model
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
-	// Revoke the old token (rotation)
-	if err := s.repo.RevokeRefreshToken(ctx, tokenHash); err != nil {
+	// Atomically claim the rotation. If we didn't claim it, a concurrent
+	// refresh of the same token already did — the winner minted a fresh
+	// pair the client will use. Don't mint a second pair, and DON'T trip
+	// RevokeAllUserTokens: a benign SPA double-refresh is not an attack
+	// (genuine replay of an already-revoked token is still caught by the
+	// stored.RevokedAt check above).
+	claimed, err := s.repo.RevokeRefreshToken(ctx, tokenHash)
+	if err != nil {
 		return nil, fmt.Errorf("revoking old token: %w", err)
+	}
+	if !claimed {
+		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
 	// Look up the user

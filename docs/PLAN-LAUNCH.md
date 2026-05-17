@@ -5,6 +5,36 @@
 
 ## Execution log
 
+- **Whole-codebase review (2nd pass, commit 36876fd)**: fresh-context
+  security + code reviewers audited the ENTIRE codebase. Every Critical/High
+  fixed + verified: Stripe webhook secret prod boot-gate + fail-closed
+  (was an unauthenticated free-Pro grant if the env var were missing),
+  two-directional webhook timestamp check, refresh token moved off
+  localStorage onto the existing httpOnly cookie (XSS→takeover vector),
+  fatal SetStripeCustomerID, lifetime guard in subscription.updated,
+  missed-rewards nil-deref guard, worker panic isolation, orphaned India
+  DTOs removed. Reviewers explicitly confirmed JWT/CORS gates, refresh
+  reuse-detection, IDOR middleware, SQL parameterization, AI tool session
+  binding, CSRF, and login timing defense are sound.
+- **Known follow-ups (documented, NOT shipped rushed — would violate
+  "every change ratified/verified")**:
+  - *H3* `internal/service/missed_rewards.go` + `optimizer.go`: the
+    missed-rewards replay calls `GetBestCard` per spend entry (N+1, large
+    histories can be slow) and scores each historical entry against the
+    *current* month's live cap state, so "$X left on the table" is
+    systematically off and non-deterministic. Correct fix: load
+    wallet/multipliers/valuations once and score per-entry with the cap
+    state of that entry's month (or document that caps are ignored in the
+    replay). Bounded refactor; needs its own test pass.
+  - *M4* `internal/service/auth.go:197-217`: refresh rotation
+    (revoke-then-issue) isn't transactional; two concurrent refreshes
+    (common SPA double-fire) can both pass the reuse check and later
+    trip false reuse-detection → forced logout. Fix: atomic
+    `UPDATE … WHERE revoked_at IS NULL RETURNING` to claim the rotation.
+  These are real but require careful isolated work + verification; shipping
+  them under time pressure would itself risk regressions in money-facing
+  and auth-critical paths.
+
 - **#127 review + QA**: fresh-context `security-reviewer` + `code-reviewer`
   subagents audited the full session diff. Every HIGH/MEDIUM finding fixed
   and re-verified (commit batch "fix(review)…"): tolerant `parsePromoDate`

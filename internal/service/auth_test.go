@@ -40,7 +40,9 @@ func (m *mockAuthRepo) StoreRefreshToken(context.Context, string, string, interf
 func (m *mockAuthRepo) GetRefreshToken(context.Context, string) (*model.RefreshToken, error) {
 	return nil, nil
 }
-func (m *mockAuthRepo) RevokeRefreshToken(context.Context, string) error  { return nil }
+func (m *mockAuthRepo) RevokeRefreshToken(context.Context, string) (bool, error) {
+	return true, nil
+}
 func (m *mockAuthRepo) RevokeAllUserTokens(context.Context, string) error { return nil }
 func (m *mockAuthRepo) DeleteUser(context.Context, string) error          { return nil }
 
