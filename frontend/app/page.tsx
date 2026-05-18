@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -13,21 +14,52 @@ import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
 import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proof";
 import { Counter } from "@/components/editorial/counter";
-import { FintechCommand } from "@/components/editorial/fintech-command";
-import { BriefCard } from "@/components/editorial/brief-card";
 import { Term } from "@/components/term";
 import { HomeTour } from "@/components/home-tour";
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Editorial Dashboard.
+ * Authenticated home — a single, inviting first-login hero.
  *
- * Layout mirrors prototype `screens.jsx#Dashboard` verbatim:
- *   1. mr-hero — masthead text-left + free-floating CardFan right + 3-up stats
- *   2. mr-hero-move panel (best move today) — placed below stats, not over cards
- *   3. <FintechCommand /> 5-up KPI grid
- *   4. <BriefCard /> daily brief grid (3-up)
- *   5. Recent activity ledger
+ * Replaces the old triple-rendered metric surface (hero stats + FintechCommand
+ * + BriefCard trio all repeated wallet value / CPP / recoverable). There is now
+ * ONE coherent stat surface, folded into the masthead, plus the real "best move
+ * today" derived from the missed-rewards report (links to /optimizer).
+ *
+ * Everything on screen is live data: wallet value + points + programs from the
+ * wallet summary, the best card / category / dollar gap from the missed-rewards
+ * report, and the real recent-activity ledger. No fabricated literals.
+ *
+ * Motion: a staggered framer-motion entrance on mount that respects
+ * prefers-reduced-motion (and the settings-page reduce-motion attr — the
+ * variants collapse to a no-op when reduced motion is requested).
  * ───────────────────────────────────────────────────────────────────────────── */
+
+/* Staggered first-login entrance. Editorial, not bouncy: short distance,
+ * confident ease, children cascade. `initial` is disabled at the call site
+ * when reduced motion is requested, so this never animates in that mode. */
+const EASE = [0.2, 0.7, 0.2, 1] as const;
+
+const heroContainer: Variants = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.07, delayChildren: 0.04 },
+  },
+};
+
+const heroItem: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: EASE } },
+};
+
+const heroArt: Variants = {
+  hidden: { opacity: 0, x: 28, scale: 0.96 },
+  show: {
+    opacity: 1,
+    x: 0,
+    scale: 1,
+    transition: { duration: 0.8, ease: EASE, delay: 0.1 },
+  },
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -67,27 +99,25 @@ export default function HomePage() {
 
   useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
 
+  // Honour both prefers-reduced-motion AND the settings-page reduce-motion
+  // toggle (the variants collapse to a no-op when reduced motion is on; the
+  // globals.css attr selector also zeroes any residual transition).
+  const reduceMotion = useReducedMotion();
+
   const totalPoints = walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0;
   const totalValue = walletSummary?.value_range_high ?? 0;
   const cardsCount = wallet.length;
   const programsCount = walletSummary?.cards.length ?? 0;
 
-  // Compute average CPP across wallet (rough: total CAD / total points × 100;
-  // value_range_high is CAD dollars from summary.go). Clamped at 25¢/pt: no
-  // real program exceeds a few cents/point, so an absurd value (e.g. the old
-  // "120¢/pt" units-drift report) is a bug — never surface it to the user.
-  const avgCPP =
-    totalPoints > 0 && totalValue > 0
-      ? Math.min((totalValue * 100) / totalPoints, 25)
-      : 1.0;
-
-  // First-name greeting for the masthead kicker.
+  // First-name greeting for the masthead.
   const firstName =
     isAuthenticated && user?.display_name ? user.display_name.split(" ")[0] : null;
 
-  // Best card right now (from missed-rewards report). Falls back gracefully.
-  const bestCardName = missed?.by_category?.[0]?.optimal_card_name ?? "Cobalt";
-  const bestCategory = missed?.by_category?.[0]?.category_name ?? "groceries";
+  // Best card right now — strictly from the missed-rewards report. No
+  // fabricated fallback: the hero only renders these when `hasBestMove` is
+  // true (a real by_category[0] with a positive gap).
+  const bestCardName = missed?.by_category?.[0]?.optimal_card_name ?? "";
+  const bestCategory = missed?.by_category?.[0]?.category_name ?? "";
   const recoverable = missed?.total_gap ?? 0;
 
   /* ── Marketing landing for unauthenticated visitors ─────────────────── */
@@ -327,223 +357,121 @@ export default function HomePage() {
     );
   }
 
+  // Has the missed-rewards report produced a real, actionable "best move"?
+  // (a positive dollar gap on a known optimal card). When it hasn't — new
+  // wallet, no scored spend yet — we show a routed-cleanly state instead of
+  // inventing a number.
+  const hasBestMove = !!missed && recoverable > 0 && !!missed.by_category?.[0];
+  const greeting = firstName ? `Welcome back, ${firstName}.` : "Welcome back.";
+
   return (
     <div className="screen-shell dashboard-screen reveal" style={{ paddingTop: 0 }}>
       <HomeTour />
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px clamp(16px, 1.5vw, 28px)" }}>
-        {/* ── Masthead: kicker + display title + lede + CardFan + 3-up stats ── */}
-        <section className="mr-hero">
-          <div className="mr-hero-grid" />
-
-          {/* Free-floating fan — sits behind the text on the right */}
-          <div className="mr-hero-art">
+        {/* ── The one inviting, animated first-login hero ──────────────────
+           * Single coherent stat surface (folded into the masthead) + the
+           * real "best move today". No duplicated grids, no fabricated cards. */}
+        <motion.section
+          className="mr-hero home-hero"
+          variants={heroContainer}
+          initial={reduceMotion ? false : "hidden"}
+          animate="show"
+        >
+          {/* Elevated free-floating card fan — fades + lifts in on the right */}
+          <motion.div className="mr-hero-art" variants={heroArt}>
             <CardFan height="100%" intensity={0.65} focusIndex={2} />
-          </div>
+          </motion.div>
 
-          {/* Masthead text */}
           <div className="mr-hero-copy">
-            <div className="mr-hero-kicker">
-              <span className="eyebrow">
-                Rewards desk{firstName ? ` · ${firstName.toLowerCase()}` : ""}
-              </span>
+            <motion.div className="home-hero-eyebrow" variants={heroItem}>
+              <span className="eyebrow">{greeting}</span>
               <span className="mr-kicker-line" />
-              <span className="eyebrow">CAD denominated · Canada</span>
-            </div>
+            </motion.div>
 
-            <h1 className="display mr-hero-title">
+            <motion.h1 className="display mr-hero-title" variants={heroItem}>
               Best card for<br />
-              <span style={{ color: "var(--accent)" }}>every</span> purchase.
-            </h1>
+              <span style={{ color: "var(--accent)", fontStyle: "italic" }}>every</span>{" "}
+              purchase.
+            </motion.h1>
 
-            <p className="serif mr-hero-lede">
-              We rank your cards by what they actually earn. In CAD, with caps,
+            <motion.p className="serif mr-hero-lede" variants={heroItem}>
+              Your wallet, ranked by what it actually earns — in CAD, with caps,
               transfer partners, and award value factored in.
-            </p>
+            </motion.p>
 
-            {/* 3-up stats */}
-            <div className="mr-hero-stats">
-              <div className="mr-hero-stat">
+            {/* THE single stat surface — wallet value, points/programs, cards.
+               * One ribbon, no repetition anywhere else on the page. */}
+            <motion.div className="home-stat-ribbon" variants={heroItem}>
+              <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Wallet value</div>
-                <div className="display" style={{ fontSize: 34, color: "var(--ink)" }}>
+                <div className="display home-stat-num">
                   $<Counter value={Math.round(totalValue)} />
                 </div>
-                <div className="mono" style={{ marginTop: 5, color: "var(--ink-3)", fontSize: 10 }}>
-                  {totalPoints.toLocaleString()} pts · {programsCount} program{programsCount === 1 ? "" : "s"}
+                <div className="mono home-stat-sub">CAD · est. high</div>
+              </div>
+              <div className="home-stat">
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Points</div>
+                <div className="display home-stat-num">
+                  <Counter value={totalPoints} />
+                </div>
+                <div className="mono home-stat-sub">
+                  {programsCount} program{programsCount === 1 ? "" : "s"}
                 </div>
               </div>
-              <div className="mr-hero-stat">
-                <div className="eyebrow" style={{ marginBottom: 6 }}>
-                  Avg <Term k="cpp">CPP</Term>
-                </div>
-                <div className="display" style={{ fontSize: 34, color: "var(--ink)" }}>
-                  <Counter value={avgCPP} decimals={2} />¢
-                </div>
-                <div
-                  className="mono"
-                  style={{
-                    marginTop: 5,
-                    color: recoverable > 0 ? "var(--accent)" : "var(--gain)",
-                    fontSize: 10,
-                  }}
-                >
-                  {recoverable > 0 ? (
-                    <>${recoverable.toFixed(2)} <Term k="leakage" /></>
-                  ) : (
-                    "all routed cleanly"
-                  )}
-                </div>
-              </div>
-              <div className="mr-hero-stat">
+              <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Cards</div>
-                <div className="display" style={{ fontSize: 34, color: "var(--ink)" }}>
+                <div className="display home-stat-num">
                   <Counter value={cardsCount} />
                 </div>
-                <div className="mono" style={{ marginTop: 5, color: "var(--ink-3)", fontSize: 10 }}>
-                  in your wallet
-                </div>
+                <div className="mono home-stat-sub">in your wallet</div>
               </div>
-            </div>
+            </motion.div>
 
-            {/* Best move panel — sits in the copy column under the stats so it doesn't cover the cards */}
-            <div className="mr-hero-move">
-              <div className="eyebrow" style={{ marginBottom: 12 }}>Best move today</div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    className="display"
-                    style={{ fontSize: 18, lineHeight: 1.1, letterSpacing: "-0.005em" }}
+            {/* The real "best move today" → /optimizer. Derived from the
+               * missed-rewards report; falls back to a routed-cleanly state
+               * rather than a fabricated number. */}
+            <motion.div variants={heroItem}>
+              <Link href="/optimizer" className="home-move" aria-label="Open the optimizer">
+                <div className="home-move-head">
+                  <span className="eyebrow">Best move today</span>
+                  <span
+                    className="mono home-move-gap"
+                    style={{ color: hasBestMove ? "var(--gain)" : "var(--ink-3)" }}
                   >
-                    {bestCardName}
-                  </div>
-                  <div
-                    className="mono"
-                    style={{ marginTop: 4, color: "var(--ink-3)", fontSize: 10, letterSpacing: "0.06em" }}
-                  >
-                    {bestCategory.toUpperCase()}
-                  </div>
+                    {hasBestMove ? `+$${recoverable.toFixed(2)}` : "all routed cleanly"}
+                  </span>
                 </div>
-                <div className="mono" style={{ color: "var(--gain)", fontSize: 13, fontWeight: 600 }}>
-                  {recoverable > 0 ? `+$${recoverable.toFixed(2)}` : "+0¢"}
-                </div>
-              </div>
-              <div style={{ height: 1, background: "var(--rule)", margin: "13px 0" }} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.10em" }}>RECOVER</div>
-                  <div className="mono" style={{ fontSize: 13, color: "var(--ink)" }}>
-                    {recoverable > 0 ? `$${recoverable.toFixed(2)}` : "$0.00"}
-                  </div>
-                </div>
-                <div>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.10em" }}>SCORED</div>
-                  <div className="mono" style={{ fontSize: 13, color: "var(--accent)" }}>
-                    {missed?.entry_count ?? 0} txns
-                  </div>
-                </div>
-              </div>
-              <Link
-                href="/insights"
-                className="mono"
-                style={{
-                  marginTop: 14,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  color: "var(--accent)",
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  textDecoration: "none",
-                }}
-              >
-                See report →
-              </Link>
-            </div>
-          </div>
-
-          {/* Caption mark, bottom-right of hero */}
-          <div className="mr-hero-caption">
-            {cardsCount}-card wallet model · live earn assumptions
-          </div>
-        </section>
-
-        {/* ── Fintech command center ─────────────────────────────────── */}
-        <FintechCommand
-          brandTitle="Rewards OS"
-          brandEyebrow="Maple Pro"
-          brandNote="linked wallet · live CPP assumptions · CAD"
-          items={[
-            {
-              label: "Wallet value",
-              value: `$${Math.round(totalValue).toLocaleString()}`,
-              sub: `${totalPoints.toLocaleString()} pts`,
-              subColor: "var(--gain)",
-            },
-            {
-              label: "Recoverable (90d)",
-              value: `$${recoverable.toFixed(2)}`,
-              sub: "missed routing",
-              subColor: "var(--accent)",
-            },
-            {
-              label: "Programs",
-              value: programsCount.toString(),
-              sub: "linked",
-              subColor: "var(--ink-3)",
-            },
-            {
-              label: "CPP",
-              value: `${avgCPP.toFixed(2)}¢`,
-              sub: "weighted avg",
-              subColor: "var(--ink-3)",
-            },
-          ]}
-        />
-
-        {/* ── Daily brief grid ───────────────────────────────────────── */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 14,
-            marginBottom: 32,
-          }}
-        >
-          <BriefCard
-            eyebrow="Best card now"
-            title={bestCardName}
-            serifNote={`Best expected return for ${bestCategory.toLowerCase()} spend.`}
-            accent={recoverable > 0 ? `$${recoverable.toFixed(2)} recoverable` : "—"}
-            footer={`${missed?.entry_count ?? 0} txns scored`}
-            href="/optimizer"
-          />
-          <BriefCard
-            eyebrow="Bonus runway"
-            title={
-              <>
-                {wallet.length > 0
-                  ? `${Math.min(wallet.length * 12, 100)}`
-                  : "—"}
-                <span className="mono" style={{ fontSize: 18, color: "var(--ink-3)", marginLeft: 4 }}>
-                  / 100
+                {hasBestMove ? (
+                  <p className="serif home-move-line">
+                    Route <strong style={{ color: "var(--ink)", fontWeight: 600 }}>{bestCategory.toLowerCase()}</strong>{" "}
+                    spend to your{" "}
+                    <strong style={{ color: "var(--ink)", fontWeight: 600 }}>{bestCardName}</strong>.{" "}
+                    That&rsquo;s the gap across {missed?.entry_count ?? 0} scored swipes.
+                  </p>
+                ) : (
+                  <p className="serif home-move-line">
+                    Tap a category and an amount — we&rsquo;ll rank every card in
+                    your wallet by what it would actually earn.
+                  </p>
+                )}
+                <span className="mono home-move-cta">
+                  Open the optimizer →
                 </span>
-              </>
-            }
-            serifNote="Days remain on your tracked welcome bonus."
-            accent="$3,400 to go"
-            footer="50,000 pts on completion"
-            progress={Math.min((wallet.length / 8), 0.7)}
-            href="/milestones"
-          />
-          <BriefCard
-            eyebrow="Award price"
-            title="YYZ → CDG"
-            serifNote="Aeroplan business · transferable from Amex MR · 2.3¢ CPP."
-            accent="55,000 pts"
-            footer="Apify-watched · live"
-            href="/trip-planner"
-          />
-        </div>
+              </Link>
+            </motion.div>
+
+            <motion.div className="home-hero-foot" variants={heroItem}>
+              <span className="mono">
+                {cardsCount}-card wallet · live earn assumptions
+              </span>
+              {recoverable > 0 && (
+                <Link href="/insights" className="mono home-hero-foot-link">
+                  Full <Term k="leakage" /> report →
+                </Link>
+              )}
+            </motion.div>
+          </div>
+        </motion.section>
 
         {/* ── Recent activity ledger ────────────────────────────────── */}
         {recentSpend.length > 0 && (
