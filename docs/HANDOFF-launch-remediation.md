@@ -16,6 +16,19 @@ milestone; cap-only commit infeasible (work intermixed) → whole-tree baseline.
 - `4a8f3b7` — **P0.2 DONE & verified**: synchronous wallet cache invalidation,
   nil-user guards, negative/empty-body balance validation, `wallet_test.go`
   (3 tests, `-race` green). Google path verified already-correct (no change).
+- `a025514` — **P0.3 + P0.4 DONE**: P0.3 (120¢/pt) verified NOT a bug
+  (data/API correct, NUMERIC(6,4), API serves 1.20) — defensive Avg-CPP
+  clamp at frontend/app/page.tsx. P0.4 ($0–$0) root-caused to
+  card_value_components covering only 6/104 cards; repo/card_value.go now
+  adds a computed baseline earn component (multiplier×CPP over $24k std
+  spend) for uncovered cards (Aeroplan $480 etc.) + nil-user guard.
+- `bc2b396` — **RecordSpend dedup fixed**: migration 000050 widens
+  idx_spend_entries_dedup to include category_id; both ON CONFLICT + fallback
+  SELECTs aligned (RecordSpend & CreateSpendEntry). Round-trip + `-race` green.
+  **Next new migration starts at 000051.**
+
+### Phase 1 status: P0.2 ✓ · P0.3 ✓ · P0.4 ✓ · RecordSpend-dedup ✓ · P0-1/2/3 (security) ✓
+### Phase 1 REMAINING: P0.5 promo pipeline · P0.6 error-JSON+rate-limit · P0-5 security perimeter tests
 
 ## Security audit status (docs/SECURITY-BUG-AUDIT-2026-05-18.md) — verified at HEAD
 | # | Issue | Status |
