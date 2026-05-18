@@ -342,11 +342,19 @@ func main() {
 	r.Use(mw.LatencyRecorder)
 	r.Use(corsMiddleware)
 
-	// Rate limit per IP per minute. Default 300 in dev, 60 in prod; override
-	// with RATE_LIMIT_PER_MINUTE for load testing or paid tiers.
+	// Rate limit per IP per minute. This is a GLOBAL, coarse anti-flood gate
+	// applied to every route (incl. GETs). It is NOT the precise abuse control
+	// — that is the per-authenticated-user limiter below (150 free / 600 Pro).
+	// 60/min in prod (LAUNCH-ISSUES.md P0.6) tripped during ORDINARY
+	// navigation: a single multi-widget SPA page fires ~10 parallel reads, so
+	// ~6 page loads exhausted the 60-token burst, and shared NAT/corporate
+	// IPs hit it collectively. Raised to a navigation-realistic 180/min
+	// (3 req/s sustained, 180 burst) — still bounds anonymous flooding while
+	// the per-user limiter handles authenticated abuse. Override via
+	// RATE_LIMIT_PER_MINUTE.
 	defaultRPM := 300
 	if appEnv == "production" {
-		defaultRPM = 60
+		defaultRPM = 180
 	}
 	rpm := getEnvInt("RATE_LIMIT_PER_MINUTE", defaultRPM)
 	rl := mw.NewRateLimiter(rpm, time.Minute)
