@@ -27,6 +27,19 @@ milestone; cap-only commit infeasible (work intermixed) → whole-tree baseline.
   SELECTs aligned (RecordSpend & CreateSpendEntry). Round-trip + `-race` green.
   **Next new migration starts at 000051.**
 
+## PROGRESS (commits on launch-remediation, ahead of main)
+- **Phase 0 ✓** baseline. **Phase 1 ✓** (P0.2 cache, P0.3 clamp, P0.4 baseline, dedup mig 000050, P0.5 link+geo, P0.6 ratelimit, P0-5 45 sec-tests, CI floor). **Phase 2 ✓** (2A homepage redesign — e2e green; 2B Maple+remark-gfm; 2C verified). **Phase 3 ✓** P1 billing — VERIFIED ALREADY DONE by bundle (19 billing tests pass, one-click cancel + CASL one-shot + Lifetime state confirmed; no code). **P3.1 ✓** Applications→eligibility advisor (api.ts getCardEligibility + page verdict).
+- **Recurring pattern:** the cloud bundle pre-implemented much of LAUNCH-ISSUES; verify-don't-reimplement. DONE-by-bundle: P0-1/2/3, P0.3, P0.6, 2C, all Phase 3, P3.4 Loblaws, P3.2 tools (clean), Forensics P2.7, India ~gone.
+
+## Phase 4 — REMAINING (precise specs; next new migration = 000051)
+- **P2.8 Save-the-Itinerary** MISSING: `frontend/app/trip-planner/page.tsx:619` onSaveTrip is an empty no-op. Need saved_trips table (mig 000051) + handler + POST/GET `/wallet/{sid}/saved-trips` + wire onSaveTrip/list.
+- **P4.2 offer-expiry notifications** MISSING (founder: "useless without alerts"): no worker/notify. Need card_offers table (mig 0000xx) + POST `/wallet/{sid}/offers` + `cmd/worker/main.go` daily cron → RESEND/VAPID (reuse award-watch pattern) → mark notified; CardOffersTile countdown.
+- **P2.5 welcome-bonus "Activate from wallet"** PARTIAL: `WelcomeBonusMissionTile.tsx:88` links to /wallet (dead-end). Need activate endpoint (set card bonus active) + wire button + refresh mission.
+- **P2.6 Credits calendar "Add cards"** PARTIAL: `CreditsTile.tsx:46` links to /wallet. Need inline form (card/amount/expiry) + POST `/wallet/{sid}/credits`.
+- **P4.1 stack suggester** PARTIAL: `/stack-recommend` endpoint exists but returns canned templates; `stack-templates.tsx` 4 static. Need profile inference from logged spend (reuse OptimizerService.GetBestCard) → recommend+explain.
+- **P2.9 SQC** no bug — document the logged-spend→SQC data flow only. **P3.3** one informational India route label in `aeroplan_lockin.go` (legit award zone, not arbitrage — optional).
+## Phase 5 — full QA gate: headless sweep, scripts/check-source-links STRICT=1, optimizer-cap-sweep, full go/frontend gate, migration round-trip.
+
 ### Phase 1 status: P0.2 ✓ · P0.3 ✓ · P0.4 ✓ · RecordSpend-dedup ✓ · P0-1/2/3 (security) ✓
 ### Phase 1 REMAINING: P0.5 promo pipeline · P0.6 error-JSON+rate-limit · P0-5 security perimeter tests
 
