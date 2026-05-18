@@ -84,10 +84,24 @@ func (s *PromoSentinelService) RunSweep(ctx context.Context, log *slog.Logger) P
 	}
 
 	res := PromoSweepResult{ArticlesScanned: len(articles)}
+	liveURL := map[string]bool{} // per-sweep cache: one liveness check per article URL
 	for _, article := range articles {
 		promos, err := s.extractPromos(ctx, article.Title, article.URL, article.Content)
 		if err != nil {
 			log.Warn("promo sentinel: extract failed", "url", article.URL, "err", err)
+			continue
+		}
+		// Link health: drop the article's promos if its SOURCE link doesn't
+		// resolve (the founder's exact trust break — Prince of Travel /
+		// Milesopedia article URLs returning 404). Checked once per URL.
+		live, checked := liveURL[article.URL]
+		if !checked {
+			live = sourceURLLive(ctx, s.httpClient, article.URL)
+			liveURL[article.URL] = live
+		}
+		if !live {
+			log.Warn("promo sentinel: source link dead, dropping promos", "url", article.URL)
+			res.PromosSkipped += len(promos)
 			continue
 		}
 		if !credibleSource(article.URL) {
@@ -104,10 +118,18 @@ func (s *PromoSentinelService) RunSweep(ctx context.Context, log *slog.Logger) P
 				res.PromosSkipped++
 				continue
 			}
+			fromC := canonicalProgramSlug(p.FromProgram)
+			toC := canonicalProgramSlug(p.ToProgram)
+			// Geo gate: both endpoints must be Canadian loyalty currencies.
+			// Kills US content (Citi AAdvantage, Chase) in a Canadian product.
+			if !isCanadianProgram(fromC) || !isCanadianProgram(toC) {
+				res.PromosSkipped++
+				continue
+			}
 			res.PromosExtracted++
 			ev := repo.TransferBonusEvent{
-				FromProgram:  canonicalProgramSlug(p.FromProgram),
-				ToProgram:    canonicalProgramSlug(p.ToProgram),
+				FromProgram:  fromC,
+				ToProgram:    toC,
 				BonusPercent: p.BonusPercent,
 				SourceURL:    article.URL,
 				SourceTitle:  article.Title,
@@ -329,6 +351,55 @@ func credibleSource(rawURL string) bool {
 		}
 	}
 	return true
+}
+
+// canadianPrograms is the geo allowlist: a promo whose canonicalised
+// from/to program is not a Canadian loyalty currency is dropped. This is the
+// hard guard against US content leaking into a Canadian product
+// (LAUNCH-ISSUES.md P0.5: "Citi AAdvantage", "Chase Total Checking"). It
+// mirrors the canonical-slug list in the extraction prompt.
+var canadianPrograms = map[string]bool{
+	"aeroplan": true, "amex-mr-ca": true, "ba-avios": true, "flying-blue": true,
+	"marriott-bonvoy": true, "world-of-hyatt": true, "rbc-avion": true,
+	"cibc-aventura": true, "td-rewards": true, "bmo-rewards": true,
+	"scene-plus": true, "air-miles": true, "westjet-rewards": true,
+}
+
+func isCanadianProgram(canonicalSlug string) bool {
+	return canadianPrograms[strings.ToLower(strings.TrimSpace(canonicalSlug))]
+}
+
+// sourceURLLive verifies a promo's "SOURCE" link actually resolves before we
+// persist it. credibleSource only checks URL *shape*; the founder's core
+// trust break was citable-looking domains (Prince of Travel, Milesopedia)
+// whose specific article URLs 404. HEAD first; many sites 405/403 HEAD, so
+// fall back to a range-limited GET. 2xx/3xx = live; anything else (incl.
+// transport error / timeout) = treat as dead and drop the promo rather than
+// surface an uncitable 404 link.
+func sourceURLLive(ctx context.Context, client *http.Client, rawURL string) bool {
+	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	try := func(method string) (int, error) {
+		req, err := http.NewRequestWithContext(cctx, method, rawURL, nil)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("User-Agent", "MapleRewardsPromoSentinel/1.0")
+		if method == http.MethodGet {
+			req.Header.Set("Range", "bytes=0-0")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		resp.Body.Close()
+		return resp.StatusCode, nil
+	}
+	if code, err := try(http.MethodHead); err == nil && code >= 200 && code < 400 {
+		return true
+	}
+	code, err := try(http.MethodGet)
+	return err == nil && code >= 200 && code < 400
 }
 
 // parsePromoDate is deliberately tolerant. The prompt asks for YYYY-MM-DD but
