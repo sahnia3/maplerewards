@@ -88,11 +88,20 @@ Probed every money-facing surface for the same class of bug:
 |---|---|---|
 | Optimizer | **CONFIRMED CRITICAL** | 181 uncapped bonus multipliers / 72 cards (above). |
 | `buy_points.go` Evaluate | **CONFIRMED — same class** | Prices/recommends `PointsNeeded` with **no per-program annual purchase ceiling**. Real programs cap purchased points/yr (Aeroplan, Marriott, etc.); `buy_promo_pricing` has no max column and `Evaluate` never bounds the quantity. Entering 2,000,000 points yields a confident "BUY — save $X" for a physically impossible purchase. Fix: add `max_purchasable_per_year` to the promo data + clamp/flag in `Evaluate`. |
+| `stack.go` Recommend | **CONFIRMED — same class** | `merchant_discount`/`bonus_points` offers computed as `spend × rate` with **no max-credit cap** — a "20% back up to $40" Amex offer projects $20,000 on $100k. Flat `statement_credit` offers were already correct. |
 | SQC projector (`sqc.go`) | Clear (1 minor lead) | `SpendToNextTier` is bounded by the real `aeroplan_status_thresholds` tiers — no impossible status projected. Minor: `NextTier`/`SQCToNextTier` assume `tiers` is ascending-ordered from `GetUserSQCContext`; verify ordering (low-risk, not this class). |
 | Portfolio / `summary.go` | Clear | Value = `point_balance × CPP`, bounded by the user's actual entered balance. Not a spend projection. (P0.4 copy already corrected.) |
 
-Net: **two confirmed bugs of this class** (optimizer caps, buy-points ceiling),
-two surfaces cleared. Both confirmed bugs are data+guard gaps, not broken math.
+Net: **three confirmed bugs of this class** — optimizer caps, buy-points
+ceiling, stack offer credits — two surfaces cleared. All three are
+data+guard gaps, not broken math.
+
+**Guardrails SHIPPED for all three** (conservative defaults + disclosure +
+regression tests, full `-race` suite green): no surface can now project an
+unbounded/impossible figure. The **verified per-card / per-program /
+per-offer cap values** that replace the conservative defaults, plus the
+period-aware accumulation code fix and the exhaustive QA matrix, remain the
+`/ultraplan`-gated remediation per explicit founder sequencing.
 
 ## Remediation scope (the gated goal)
 
