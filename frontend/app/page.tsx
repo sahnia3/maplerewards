@@ -72,9 +72,14 @@ export default function HomePage() {
   const cardsCount = wallet.length;
   const programsCount = walletSummary?.cards.length ?? 0;
 
-  // Compute average CPP across wallet (rough: total CAD / total points × 100).
+  // Compute average CPP across wallet (rough: total CAD / total points × 100;
+  // value_range_high is CAD dollars from summary.go). Clamped at 25¢/pt: no
+  // real program exceeds a few cents/point, so an absurd value (e.g. the old
+  // "120¢/pt" units-drift report) is a bug — never surface it to the user.
   const avgCPP =
-    totalPoints > 0 && totalValue > 0 ? (totalValue * 100) / totalPoints : 1.0;
+    totalPoints > 0 && totalValue > 0
+      ? Math.min((totalValue * 100) / totalPoints, 25)
+      : 1.0;
 
   // First-name greeting for the masthead kicker.
   const firstName =

@@ -25,6 +25,9 @@ func (s *CardValueService) Summary(ctx context.Context, sessionID string) ([]mod
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
 	out, err := s.cardValRepo.SummaryForUserCards(ctx, user.ID)
 	if err != nil {
 		return nil, err

@@ -61,6 +61,51 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 			s.TotalEVCAD += c.AnnualEVCAD
 		}
 		compRows.Close()
+
+		// P0.4 (docs/LAUNCH-ISSUES.md): only 6/104 cards have hand-curated
+		// card_value_components, so 98 cards rendered a misleading
+		// "$0–$0 modeled on insurance + lounge + multipliers + credits".
+		// When no curated components exist, surface a real, trusted baseline
+		// instead of $0: the card's base (everything-else) earn rate × program
+		// CPP over a transparent, conservative standard annual spend. Uses only
+		// already-verified multiplier/CPP data — no fabricated insurance/lounge
+		// values. Hand-curated component backfill for the remaining cards is a
+		// tracked follow-up; this stops the page from looking broken.
+		if len(s.Components) == 0 {
+			const stdAnnualSpend = 24000.0 // ~$2,000/mo typical everyday spend
+			var earnRate, baseCPP float64
+			var earnType string
+			qerr := r.db.QueryRow(ctx, `
+				SELECT COALESCE(cm.earn_rate, 1.0),
+				       COALESCE(cm.earn_type, 'points'),
+				       COALESCE(lp.base_cpp, 1.0)
+				FROM cards c
+				JOIN loyalty_programs lp ON lp.id = c.loyalty_program_id
+				LEFT JOIN categories cat ON cat.slug = 'everything-else'
+				LEFT JOIN card_multipliers cm
+				       ON cm.card_id = c.id AND cm.category_id = cat.id
+				      AND cm.effective_to IS NULL
+				WHERE c.id = $1
+				LIMIT 1
+			`, k.id).Scan(&earnRate, &earnType, &baseCPP)
+			if qerr == nil {
+				var ev float64
+				if earnType == "cashback_pct" {
+					ev = stdAnnualSpend * earnRate / 100
+				} else {
+					ev = stdAnnualSpend * earnRate * (baseCPP / 100)
+				}
+				ev = float64(int(ev*100+0.5)) / 100 // round to cents
+				s.Components = append(s.Components, model.CardValueComponent{
+					ComponentType: "multiplier",
+					AnnualEVCAD:   ev,
+					Description:   "Estimated base rewards on ~$24,000/yr typical spend (insurance/lounge/credits not yet modelled for this card)",
+					SortOrder:     0,
+				})
+				s.TotalEVCAD += ev
+			}
+		}
+
 		s.NetEVCAD = s.TotalEVCAD - s.AnnualFee
 		s.IsPositive = s.NetEVCAD >= 0
 		out = append(out, s)
