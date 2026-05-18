@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
-import { getCardCredits, recordCreditRedemption } from "@/lib/api";
-import type { CardCreditStatus } from "@/lib/types";
+import { getCardCredits, recordCreditRedemption, getWallet, createCardCredit } from "@/lib/api";
+import type { CardCreditStatus, UserCard } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { fmtCAD, sectionStyle } from "./_shared";
@@ -17,18 +17,55 @@ export function CreditsTile({ sessionId, isReady }: Props) {
   const [credits, setCredits] = useState<CardCreditStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // P2.6 self-log: a held-card picker + fields so users can add a credit
+  // their card carries that we haven't curated yet.
+  const [cards, setCards] = useState<UserCard[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [fCard, setFCard] = useState("");
+  const [fName, setFName] = useState("");
+  const [fValue, setFValue] = useState("");
+  const [fRec, setFRec] = useState("annual");
+  const [saving, setSaving] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!isReady || !sessionId) return;
     setLoading(true);
     setErr(null);
-    getCardCredits(sessionId)
-      .then(setCredits)
+    Promise.all([
+      getCardCredits(sessionId),
+      getWallet(sessionId).catch(() => [] as UserCard[]),
+    ])
+      .then(([cr, held]) => { setCredits(cr); setCards(held); })
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not load credits"))
       .finally(() => setLoading(false));
   }, [sessionId, isReady]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleAddCredit() {
+    if (!sessionId || !fCard || !fName.trim() || !(Number(fValue) > 0)) {
+      setFormErr("Pick a card, a name, and a value > 0.");
+      return;
+    }
+    setSaving(true);
+    setFormErr(null);
+    try {
+      const next = await createCardCredit(sessionId, {
+        card_id: fCard,
+        name: fName.trim(),
+        value_cad: Number(fValue),
+        recurrence: fRec,
+      });
+      setCredits(next);
+      setFName(""); setFValue(""); setFCard(""); setFRec("annual");
+      setShowForm(false);
+    } catch (e) {
+      setFormErr(e instanceof Error ? e.message : "Could not add credit");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function markRedeemed(c: CardCreditStatus) {
     if (!sessionId) return;
@@ -56,6 +93,60 @@ export function CreditsTile({ sessionId, isReady }: Props) {
         >
           Annual credits expire quietly. Renewals drop without warning. Maple lists every credit window and fee date, with one tap to mark redeemed.
         </p>
+
+        {/* P2.6 self-log: always-available "log a credit" for anything we
+            haven't curated for this card yet. */}
+        <div style={{ marginBottom: 16 }}>
+          {!showForm ? (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="mono"
+              style={{
+                fontSize: 11, padding: "7px 13px", borderRadius: 8,
+                border: "1px solid var(--rule)", background: "transparent",
+                color: "var(--ink-2)", letterSpacing: "0.1em",
+                textTransform: "uppercase", cursor: "pointer",
+              }}
+            >
+              + Log a credit
+            </button>
+          ) : (
+            <div style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "14px 16px", background: "var(--surface)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <select value={fCard} onChange={(e) => setFCard(e.target.value)} className="mono"
+                  style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid var(--rule)", background: "var(--paper)", color: "var(--ink)", fontSize: 12, gridColumn: "1 / -1" }}>
+                  <option value="">{cards.length ? "Pick a held card…" : "No cards in wallet — add one first"}</option>
+                  {cards.map((uc) => (
+                    <option key={uc.card_id} value={uc.card_id}>{uc.nickname || uc.card?.name || uc.card_id}</option>
+                  ))}
+                </select>
+                <input value={fName} onChange={(e) => setFName(e.target.value)} placeholder="Credit name (e.g. Travel Credit)"
+                  style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid var(--rule)", background: "var(--paper)", color: "var(--ink)", fontSize: 13, gridColumn: "1 / -1" }} />
+                <input value={fValue} onChange={(e) => setFValue(e.target.value)} type="number" min="1" placeholder="Annual value (CAD)"
+                  style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid var(--rule)", background: "var(--paper)", color: "var(--ink)", fontSize: 13 }} />
+                <select value={fRec} onChange={(e) => setFRec(e.target.value)} className="mono"
+                  style={{ padding: "9px 11px", borderRadius: 8, border: "1px solid var(--rule)", background: "var(--paper)", color: "var(--ink)", fontSize: 12 }}>
+                  <option value="annual">Annual</option>
+                  <option value="biennial">Every 2 years</option>
+                  <option value="quadrennial">Every 4 years (NEXUS)</option>
+                  <option value="once">One-time</option>
+                </select>
+              </div>
+              {formErr && <p style={{ color: "var(--loss)", fontSize: 12, margin: "8px 0 0" }}>{formErr}</p>}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button type="button" onClick={handleAddCredit} disabled={saving} className="mono"
+                  style={{ fontSize: 11, padding: "8px 16px", borderRadius: 8, border: "none", background: saving ? "var(--surface-2)" : "var(--accent)", color: saving ? "var(--ink-3)" : "#fff", letterSpacing: "0.1em", textTransform: "uppercase", cursor: saving ? "default" : "pointer" }}>
+                  {saving ? "Saving…" : "Save credit"}
+                </button>
+                <button type="button" onClick={() => { setShowForm(false); setFormErr(null); }} className="mono"
+                  style={{ fontSize: 11, padding: "8px 16px", borderRadius: 8, border: "1px solid var(--rule)", background: "transparent", color: "var(--ink-3)", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Loading credit calendar…</p>}
         {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}

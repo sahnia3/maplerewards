@@ -18,6 +18,21 @@ type mockCreditRepo struct {
 	// captured
 	lastUserID, lastDefID, lastNote string
 	lastAmount                      float64
+	createErr                       error
+	createdCardID, createdName, createdRecurrence string
+	createdValue                    float64
+}
+
+func (m *mockCreditRepo) CreateUserCredit(ctx context.Context, userID, cardID, name, description string, valueCAD float64, recurrence string) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.lastUserID = userID
+	m.createdCardID = cardID
+	m.createdName = name
+	m.createdValue = valueCAD
+	m.createdRecurrence = recurrence
+	return nil
 }
 
 func (m *mockCreditRepo) ListUserCardCredits(ctx context.Context, userID string) ([]model.CardCreditStatus, error) {
@@ -181,5 +196,63 @@ func TestCredits_Record_RejectsBadSession(t *testing.T) {
 	}
 	if c.lastDefID != "" {
 		t.Fatal("repo should not have been called when session lookup fails")
+	}
+}
+
+// ── AddUserCredit (P2.6 self-log) ─────────────────────────────────────────
+
+func TestAddUserCredit_Validation(t *testing.T) {
+	cases := []struct {
+		name string
+		req  model.CreateCreditRequest
+		ok   bool
+	}{
+		{"missing card", model.CreateCreditRequest{Name: "X", ValueCAD: 50}, false},
+		{"missing name", model.CreateCreditRequest{CardID: "c1", ValueCAD: 50}, false},
+		{"zero value", model.CreateCreditRequest{CardID: "c1", Name: "X", ValueCAD: 0}, false},
+		{"bad recurrence", model.CreateCreditRequest{CardID: "c1", Name: "X", ValueCAD: 50, Recurrence: "weekly"}, false},
+		{"valid default recurrence", model.CreateCreditRequest{CardID: "c1", Name: "Travel Credit", ValueCAD: 200}, true},
+		{"valid quadrennial", model.CreateCreditRequest{CardID: "c1", Name: "NEXUS", ValueCAD: 100, Recurrence: "quadrennial"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &mockCreditRepo{}
+			err := newCreditsSvc(c).AddUserCredit(context.Background(), "sess", tc.req)
+			if tc.ok && err != nil {
+				t.Fatalf("expected success, got %v", err)
+			}
+			if !tc.ok {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if c.createdCardID != "" {
+					t.Fatal("repo must not be called on invalid input")
+				}
+				return
+			}
+			if c.createdName != tc.req.Name || c.createdValue != tc.req.ValueCAD {
+				t.Fatalf("repo got name=%q value=%.0f, want %q %.0f",
+					c.createdName, c.createdValue, tc.req.Name, tc.req.ValueCAD)
+			}
+			wantRec := tc.req.Recurrence
+			if wantRec == "" {
+				wantRec = "annual"
+			}
+			if c.createdRecurrence != wantRec {
+				t.Fatalf("recurrence = %q, want %q", c.createdRecurrence, wantRec)
+			}
+		})
+	}
+}
+
+func TestAddUserCredit_EmptySessionRejected(t *testing.T) {
+	c := &mockCreditRepo{}
+	err := newCreditsSvc(c).AddUserCredit(context.Background(), "",
+		model.CreateCreditRequest{CardID: "c1", Name: "X", ValueCAD: 50})
+	if err == nil {
+		t.Fatal("expected session error")
+	}
+	if c.createdCardID != "" {
+		t.Fatal("repo must not be called when session lookup fails")
 	}
 }

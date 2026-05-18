@@ -575,6 +575,16 @@ type CreditRedemptionRequest struct {
 	Note           string  `json:"note,omitempty"`
 }
 
+// CreateCreditRequest is the body for POST /wallet/{sid}/credits — a user
+// self-logging a private credit on a card they hold (P2.6).
+type CreateCreditRequest struct {
+	CardID      string  `json:"card_id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	ValueCAD    float64 `json:"value_cad"`
+	Recurrence  string  `json:"recurrence,omitempty"` // annual|biennial|quadrennial|once
+}
+
 // ── 2026 Aeroplan SQC (Status Qualifying Credits) projector ──────────────────
 
 // SQCCardContribution: one Aeroplan-cobranded card the user holds, with its

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,6 +40,9 @@ func (r *CreditRepo) ListUserCardCredits(ctx context.Context, userID string) ([]
 			AND ucc.user_id = uc.user_id
 			AND ucc.anniversary_year = $2
 		WHERE uc.user_id = $1
+		  -- curated (user_id NULL) OR this user's own self-logged credit;
+		  -- never another user's private def (P2.6 self-log isolation).
+		  AND (ccd.user_id IS NULL OR ccd.user_id = uc.user_id)
 		ORDER BY c.name, ccd.sort_order, ccd.name
 	`, userID, year)
 	if err != nil {
@@ -160,4 +164,22 @@ func (r *CreditRepo) UpsertRedemption(ctx context.Context, userID, creditDefID s
 		s.Status = "partial"
 	}
 	return &s, nil
+}
+
+// CreateUserCredit self-logs a private credit definition (user_id set) on a
+// card. Idempotent on the user's own (user_id, card_id, name) — re-adding the
+// same credit is a no-op rather than a duplicate. The credit only surfaces in
+// ListUserCardCredits if the user actually holds the card (that query joins
+// user_cards), so an orphan def is harmless.
+func (r *CreditRepo) CreateUserCredit(ctx context.Context, userID, cardID, name, description string, valueCAD float64, recurrence string) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO card_credit_defs
+		    (user_id, card_id, name, description, value_cad, recurrence, sort_order)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, 1000)
+		ON CONFLICT (user_id, card_id, name) WHERE user_id IS NOT NULL DO NOTHING
+	`, userID, cardID, name, description, valueCAD, recurrence)
+	if err != nil {
+		return fmt.Errorf("create user credit: %w", err)
+	}
+	return nil
 }

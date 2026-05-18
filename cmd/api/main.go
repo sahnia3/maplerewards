@@ -604,6 +604,7 @@ func main() {
 
 			// Card credits + renewal countdown
 			r.Get("/wallet/{sessionID}/credits", creditsH.ListCredits)
+			r.Post("/wallet/{sessionID}/credits", creditsH.AddCredit)
 			r.Post("/wallet/{sessionID}/credits/{creditDefID}/redeem", creditsH.RecordRedemption)
 
 			// 2026 Aeroplan SQC projector

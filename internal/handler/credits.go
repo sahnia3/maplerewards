@@ -32,6 +32,31 @@ func (h *CreditsHandler) ListCredits(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, out)
 }
 
+// AddCredit handles POST /api/v1/wallet/{sessionID}/credits — user self-logs
+// a private credit on a held card (P2.6).
+func (h *CreditsHandler) AddCredit(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
+		jsonError(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+	var req model.CreateCreditRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.AddUserCredit(r.Context(), sessionID, req); err != nil {
+		jsonMaskedError(w, "credits.add", err, "could not add credit", http.StatusBadRequest)
+		return
+	}
+	out, err := h.svc.ListCredits(r.Context(), sessionID)
+	if err != nil {
+		jsonMaskedError(w, "credits.add.list", err, "credit saved, reload to see it", http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, out)
+}
+
 // RecordRedemption handles POST /api/v1/wallet/{sessionID}/credits/{creditDefID}/redeem
 func (h *CreditsHandler) RecordRedemption(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")

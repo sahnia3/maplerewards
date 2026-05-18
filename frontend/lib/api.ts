@@ -628,6 +628,18 @@ export async function getCardCredits(sessionId: string): Promise<CardCreditStatu
   return request<CardCreditStatus[]>(`/wallet/${sessionId}/credits`);
 }
 
+/** Self-log a private credit on a held card (P2.6). Returns the refreshed
+ *  credit list so the caller can render immediately. */
+export async function createCardCredit(
+  sessionId: string,
+  body: { card_id: string; name: string; description?: string; value_cad: number; recurrence?: string },
+): Promise<CardCreditStatus[]> {
+  return request<CardCreditStatus[]>(`/wallet/${sessionId}/credits`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function recordCreditRedemption(
   sessionId: string,
   creditDefId: string,

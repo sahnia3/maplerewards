@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"maplerewards/internal/model"
 )
@@ -11,6 +12,12 @@ import (
 type CreditRepository interface {
 	ListUserCardCredits(ctx context.Context, userID string) ([]model.CardCreditStatus, error)
 	UpsertRedemption(ctx context.Context, userID, creditDefID string, amount float64, note string) (*model.CardCreditStatus, error)
+	CreateUserCredit(ctx context.Context, userID, cardID, name, description string, valueCAD float64, recurrence string) error
+}
+
+// validCreditRecurrence mirrors the card_credit_defs.recurrence domain.
+var validCreditRecurrence = map[string]bool{
+	"annual": true, "biennial": true, "quadrennial": true, "once": true,
 }
 
 // CreditsService surfaces per-card credits + annual-fee countdowns and lets
@@ -52,5 +59,34 @@ func (s *CreditsService) RecordRedemption(ctx context.Context, sessionID, credit
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
 	return s.creditRepo.UpsertRedemption(ctx, user.ID, creditDefID, req.RedeemedAmount, req.Note)
+}
+
+// AddUserCredit self-logs a private credit on a held card (P2.6 self-log).
+func (s *CreditsService) AddUserCredit(ctx context.Context, sessionID string, req model.CreateCreditRequest) error {
+	name := strings.TrimSpace(req.Name)
+	if req.CardID == "" || name == "" {
+		return fmt.Errorf("card_id and name are required")
+	}
+	if req.ValueCAD <= 0 {
+		return fmt.Errorf("value_cad must be > 0")
+	}
+	rec := req.Recurrence
+	if rec == "" {
+		rec = "annual"
+	}
+	if !validCreditRecurrence[rec] {
+		return fmt.Errorf("recurrence must be one of annual|biennial|quadrennial|once")
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("session not found")
+	}
+	return s.creditRepo.CreateUserCredit(ctx, user.ID, req.CardID, name, strings.TrimSpace(req.Description), req.ValueCAD, rec)
 }
