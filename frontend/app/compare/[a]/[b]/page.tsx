@@ -130,6 +130,9 @@ export default function CompareTwoCards({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
+            // Escape </script> breakout and JS line separators. JSON.stringify
+            // does NOT escape <, >, & or U+2028/U+2029, so a card name like
+            // "</script><script>…" would break out of this inline block.
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "ItemList",
@@ -150,7 +153,12 @@ export default function CompareTwoCards({
                   description: `${bCard.name} is a Canadian credit card from ${bCard.issuer}.`,
                 },
               ],
-            }),
+            })
+              .replace(/</g, "\\u003c")
+              .replace(/>/g, "\\u003e")
+              .replace(/&/g, "\\u0026")
+              .replace(/\u2028/g, "\\u2028")
+              .replace(/\u2029/g, "\\u2029"),
           }}
         />
       </div>

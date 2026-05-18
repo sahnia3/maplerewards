@@ -15,6 +15,19 @@ import (
 	"maplerewards/internal/model"
 )
 
+// refreshReuseGraceWindow is how long after a refresh token is rotated
+// (revoked) a re-presentation of that same token is still treated as a
+// benign concurrent/retry double-refresh rather than theft. Genuine stolen
+// tokens are replayed long after rotation; a benign SPA double-fire or
+// network retry lands within milliseconds. Kept short to minimize the window
+// in which a truly stolen, just-rotated token escapes family revocation.
+const refreshReuseGraceWindow = 10 * time.Second
+
+// jwtIssuer is set as the `iss` claim on every minted access token and
+// required at validation. Binds tokens to this service so a token signed
+// with a shared/leaked secret by another component is not accepted here.
+const jwtIssuer = "maplerewards"
+
 // AuthRepository abstracts auth-related DB operations.
 type AuthRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
@@ -188,13 +201,25 @@ func (s *AuthService) RefreshToken(ctx context.Context, rawToken string) (*model
 		return nil, fmt.Errorf("looking up refresh token: %w", err)
 	}
 	if stored == nil {
+		// Unknown or expired token — never existed in usable form. Not a
+		// reuse signal (we cannot attribute it to a user), so just reject.
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
-	// Reuse detection — the repo's GetRefreshToken returns nil for
-	// already-revoked or expired rows in the happy path. If we got a non-nil
-	// stored token whose RevokedAt is set, this is a replay. Revoke everything.
+	// Reuse detection. GetRefreshToken now returns already-revoked rows so a
+	// replay of a previously-rotated token is detectable here. A revoked row
+	// has two causes:
+	//   1. Genuine theft/replay: an attacker presents a token that was rotated
+	//      out long ago. -> Revoke the whole token family (forced re-login).
+	//   2. Benign concurrent/retry double-refresh: an SPA fires refresh twice,
+	//      or a network retry replays the same token milliseconds after the
+	//      winning rotation revoked it. Forcing logout here would be a
+	//      false-positive. -> Within a short grace window, just reject this
+	//      request (client retries with the new token it already received).
 	if stored.RevokedAt != nil {
+		if time.Since(*stored.RevokedAt) <= refreshReuseGraceWindow {
+			return nil, fmt.Errorf("invalid or expired refresh token")
+		}
 		slog.Warn("refresh token reuse detected — revoking all user tokens", "user_id", stored.UserID)
 		_ = s.repo.RevokeAllUserTokens(ctx, stored.UserID)
 		return nil, fmt.Errorf("invalid or expired refresh token")
@@ -302,7 +327,18 @@ func (s *AuthService) ValidateAccessToken(tokenString string) (string, bool, err
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.jwtSecret, nil
-	})
+	},
+		// Defense in depth beyond the keyfunc method check:
+		// - WithValidMethods: reject anything but HS256 at the parser level
+		//   (blocks alg=none and HS/RS confusion even if keyfunc changes).
+		// - WithExpirationRequired: golang-jwt only validates exp WHEN PRESENT;
+		//   without this a token that simply omits exp is valid forever.
+		// - WithIssuer: a token minted by another service that happens to
+		//   share this secret cannot be replayed here.
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(jwtIssuer),
+	)
 	if err != nil {
 		return "", false, err
 	}
@@ -333,12 +369,13 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (
 
 	// Create access token
 	accessClaims := jwt.MapClaims{
-		"sub":       user.ID,
-		"email":     user.Email,
-		"is_pro":    user.IsPro,
-		"provider":  user.AuthProvider,
-		"iat":       now.Unix(),
-		"exp":       accessExpiry.Unix(),
+		"sub":      user.ID,
+		"email":    user.Email,
+		"is_pro":   user.IsPro,
+		"provider": user.AuthProvider,
+		"iss":      jwtIssuer,
+		"iat":      now.Unix(),
+		"exp":      accessExpiry.Unix(),
 	}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessStr, err := accessToken.SignedString(s.jwtSecret)

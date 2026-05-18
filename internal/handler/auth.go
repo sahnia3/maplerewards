@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,11 +17,12 @@ import (
 )
 
 type AuthHandler struct {
-	svc *service.AuthService
+	svc      *service.AuthService
+	throttle *loginThrottle
 }
 
 func NewAuthHandler(svc *service.AuthService) *AuthHandler {
-	return &AuthHandler{svc: svc}
+	return &AuthHandler{svc: svc, throttle: newLoginThrottle()}
 }
 
 // Register handles POST /auth/register
@@ -65,18 +65,27 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-account throttle: blocks distributed credential stuffing against
+	// one email that the per-IP limiter cannot (attacker rotates IPs).
+	if !h.throttle.allowed(req.Email) {
+		jsonErrorCode(w, "RATE_LIMITED", "too many failed login attempts; try again later", http.StatusTooManyRequests)
+		return
+	}
+
 	tokens, err := h.svc.Login(r.Context(), req)
 	if err != nil {
 		switch err.Error() {
 		case "email and password are required":
 			jsonErrorCode(w, "INVALID_REQUEST", err.Error(), http.StatusBadRequest)
 		case "invalid credentials":
+			h.throttle.recordFailure(req.Email)
 			jsonErrorCode(w, "UNAUTHORIZED", "invalid email or password", http.StatusUnauthorized)
 		default:
 			jsonError(w, "login failed", http.StatusInternalServerError)
 		}
 		return
 	}
+	h.throttle.recordSuccess(req.Email)
 
 	setTokenCookies(w, tokens)
 	mw.RotateCSRFCookie(w) // bind CSRF token to the new auth state
@@ -196,10 +205,20 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.ChangePassword(r.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
-		// Pass the service-crafted message through — these are intentional
-		// validation copy ("current password is incorrect", "must be 8+
-		// chars", etc.), safe to surface.
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		// Only the known validation messages are safe to surface verbatim.
+		// ChangePassword also wraps infra failures ("looking up user: <db
+		// error>", "hashing password: ...", "updating password: ...") — those
+		// must NOT leak internal detail to the client (CLAUDE.md rule).
+		switch err.Error() {
+		case "current and new password are required",
+			"new password must be at least 8 characters",
+			"current password is incorrect",
+			"password change unavailable for this account":
+			jsonError(w, err.Error(), http.StatusBadRequest)
+		default:
+			slog.Error("change password failed", "user_id", userID, "error", err)
+			jsonError(w, "password change failed", http.StatusInternalServerError)
+		}
 		return
 	}
 	// All other refresh tokens were revoked inside ChangePassword. Rotate the
@@ -287,44 +306,24 @@ func verifyGoogleIDToken(ctx context.Context, token string) (googleID, email, di
 		displayName = v
 	}
 
-	// Optionally enforce email_verified == true. Google sets this when the
-	// underlying account has confirmed its email; tokens for unverified
-	// accounts shouldn't grant login.
-	if v, ok := payload.Claims["email_verified"].(bool); ok && !v {
+	// Enforce email_verified, FAIL CLOSED. The old check only rejected when
+	// the claim was present AND boolean-false; a missing claim, or the
+	// string form Google has historically emitted ("true"/"false"), slipped
+	// through unverified. Require an explicit truthy value in either form.
+	verified := false
+	switch v := payload.Claims["email_verified"].(type) {
+	case bool:
+		verified = v
+	case string:
+		verified = v == "true"
+	}
+	if !verified {
 		return "", "", "", fmt.Errorf("google account email is not verified")
 	}
 	return googleID, email, displayName, nil
 }
 
-// decodeGoogleIDTokenTestOnlyUnsafe is the legacy un-verified decoder. Kept
-// ONLY for tests that need to introspect a JWT payload without a real network
-// round-trip. The name encodes the intent so static review + grep -i "unsafe"
-// catch any accidental production use. Production code path goes through
-// verifyGoogleIDToken.
-func decodeGoogleIDTokenTestOnlyUnsafe(token string) (googleID, email, displayName string, err error) {
-	parts := strings.SplitN(token, ".", 3)
-	if len(parts) != 3 {
-		return "", "", "", fmt.Errorf("invalid token format")
-	}
-
-	// Decode the payload (base64url-encoded)
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", "", "", fmt.Errorf("decoding token payload: %w", err)
-	}
-
-	var claims struct {
-		Sub   string `json:"sub"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", "", "", fmt.Errorf("parsing token claims: %w", err)
-	}
-
-	if claims.Sub == "" {
-		return "", "", "", fmt.Errorf("missing subject in token")
-	}
-
-	return claims.Sub, claims.Email, claims.Name, nil
-}
+// (Removed decodeGoogleIDTokenTestOnlyUnsafe: an unverified JWT decoder that
+// was dead code — referenced nowhere, including tests. Its mere presence in
+// the production binary was a latent auth-bypass footgun. The only Google
+// auth path is verifyGoogleIDToken, which validates against Google JWKS.)

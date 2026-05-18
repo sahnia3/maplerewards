@@ -18,6 +18,9 @@ type mockMissedSpendRepo struct {
 func (m *mockMissedSpendRepo) GetMonthlySpend(ctx context.Context, userID, cardID string, month time.Time) (map[string]float64, error) {
 	return map[string]float64{}, nil
 }
+func (m *mockMissedSpendRepo) GetSpendSince(ctx context.Context, userID, cardID string, since time.Time) (map[string]float64, error) {
+	return map[string]float64{}, nil
+}
 func (m *mockMissedSpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, categoryID string, month time.Time, amount float64) error {
 	return nil
 }
@@ -25,6 +28,9 @@ func (m *mockMissedSpendRepo) GetCapGroupForCard(ctx context.Context, cardID, ca
 	return nil, nil
 }
 func (m *mockMissedSpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry) (*model.SpendEntry, error) {
+	return &entry, nil
+}
+func (m *mockMissedSpendRepo) RecordSpend(ctx context.Context, entry model.SpendEntry, month time.Time, bonusAmount float64, applyBonus bool) (*model.SpendEntry, error) {
 	return &entry, nil
 }
 func (m *mockMissedSpendRepo) ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error) {
@@ -103,6 +109,71 @@ func todayMinus(days int) string {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
+
+// P6 sibling re-sweep: now that caps exist, the missed-rewards replay (which
+// drives the REAL optimizer with PerPurchase=true) must report an optimal
+// value bounded by the CAPPED recommendation — no pre-cap inflation. A $100k
+// grocery entry on a 5x card with a $50k annual cap must yield optimal
+// 50k×5 + 50k×1 = 300,000 pts ($3,000 @ 1¢), never the uncapped $5,000.
+func TestMissedRewards_OptimalBoundedByCap(t *testing.T) {
+	cardRepo := &mockCardRepo{
+		categories: map[string]*model.Category{
+			"groceries": {ID: "cat-g", Slug: "groceries"},
+		},
+		multipliers: map[string]*model.CardMultiplier{
+			"c1:cat-g": {EarnRate: 5.0, EarnType: "points", FallbackEarnRate: 1.0},
+		},
+	}
+	walletRepo := &mockWalletRepo{
+		users: map[string]*model.User{"sess": {ID: "u-opt"}},
+		cards: map[string][]model.UserCard{"u-opt": {{
+			ID: "uc1", UserID: "u-opt", CardID: "c1",
+			Card: &model.Card{ID: "c1", Name: "Capped 5x Card",
+				LoyaltyProgramID: "lp", LoyaltyProgram: &model.LoyaltyProgram{ID: "lp", Slug: "scene", BaseCPP: 1.0}},
+		}}},
+	}
+	spendRepo := &mockSpendRepo{
+		monthlySpend: map[string]map[string]float64{},
+		capGroups: map[string]*model.CapGroup{
+			"c1:cat-g": {ID: "cg", CardID: "c1", Name: "$50k cap",
+				CapAmount: 50000, CapPeriod: "annual", CategoryIDs: []string{"cat-g"}},
+		},
+	}
+	opt := NewOptimizerService(
+		cardRepo, walletRepo,
+		&mockValuationRepo{cpps: map[string]float64{"scene:base": 1.0}},
+		&mockTransferRepo{routes: map[string][]model.TransferPartner{}},
+		spendRepo,
+		&mockCache{valuations: map[string]float64{}},
+	)
+
+	entries := []model.SpendEntry{{
+		ID: "e1", UserID: "u1", CardID: "cX",
+		CategoryID: "cat-g", CategorySlug: "groceries", CategoryName: "Groceries",
+		Amount: 100000, DollarValue: 1000, // user actually got $1k
+		SpentAt: todayMinus(1),
+	}}
+	svc := NewMissedRewardsService(
+		&mockMissedWalletRepo{},
+		&mockMissedSpendRepo{entries: entries},
+		opt,
+	)
+
+	r, err := svc.ComputeMissedRewards(context.Background(), "sess", 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.EntryCount != 1 {
+		t.Fatalf("expected 1 scored entry, got %d", r.EntryCount)
+	}
+	// Capped/blended optimal = (50000*5 + 50000*1) pts * 1¢ = $3,000.
+	if r.TotalOptimal > 3000+1 {
+		t.Fatalf("PRE-CAP INFLATION: optimal $%.2f exceeds capped bound $3000 (uncapped would be $5000)", r.TotalOptimal)
+	}
+	if r.TotalOptimal <= 0 {
+		t.Fatalf("expected a positive capped optimal, got $%.2f", r.TotalOptimal)
+	}
+}
 
 func TestMissedRewards_EmptySpend(t *testing.T) {
 	svc := newMissedSvc(nil, nil)

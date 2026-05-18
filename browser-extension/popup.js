@@ -58,8 +58,10 @@ async function getSessionID() {
     try {
       const cookie = await chrome.cookies.get({ url, name: "mr_session" });
       if (cookie && cookie.value) {
-        // Cache for offline popup opens. Refreshed on each successful read.
-        await chrome.storage.local.set({ mr_session_id: cookie.value });
+        // Do NOT persist the session value. It is bearer-equivalent (anyone
+        // holding it can read the wallet); writing it to storage.local made
+        // it survive logout and readable by any extension code path. Read it
+        // fresh from the httpOnly-domain cookie on every popup open instead.
         return cookie.value;
       }
     } catch (_) {

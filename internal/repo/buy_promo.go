@@ -18,7 +18,7 @@ func (r *BuyPromoRepo) CurrentPromos(ctx context.Context) ([]model.BuyPromo, err
 	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT ON (program_slug)
 		  program_slug, promo_label, base_cents_per_point, promo_cents_per_point,
-		  valid_from, valid_to, COALESCE(source_url, '')
+		  valid_from, valid_to, COALESCE(source_url, ''), max_purchasable_per_year
 		FROM buy_promo_pricing
 		WHERE valid_to IS NULL OR valid_to >= CURRENT_DATE
 		ORDER BY program_slug, valid_from DESC
@@ -31,7 +31,7 @@ func (r *BuyPromoRepo) CurrentPromos(ctx context.Context) ([]model.BuyPromo, err
 	for rows.Next() {
 		var p model.BuyPromo
 		if err := rows.Scan(&p.ProgramSlug, &p.PromoLabel, &p.BaseCentsPerPoint, &p.PromoCentsPerPoint,
-			&p.ValidFrom, &p.ValidTo, &p.SourceURL); err != nil {
+			&p.ValidFrom, &p.ValidTo, &p.SourceURL, &p.MaxPurchasablePerYear); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

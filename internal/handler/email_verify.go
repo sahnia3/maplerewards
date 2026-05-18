@@ -25,9 +25,11 @@ func (h *EmailVerifyHandler) SendVerification(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := h.svc.IssueAndSend(r.Context(), userID); err != nil {
-		// Service-crafted messages are user-friendly ("email already verified",
-		// "user has no email on file"); pass through.
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		// Mask: IssueAndSend wraps repo errors with %w, so passing err.Error()
+		// through leaked pgx/schema text. The genuine user-actionable states
+		// (already verified / no email) are non-blocking; a generic message
+		// is acceptable and the full error is logged for triage.
+		jsonMaskedError(w, "email_verify.issue", err, "could not send the verification email — try again shortly", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, map[string]string{"message": "verification email sent"})
@@ -47,7 +49,7 @@ func (h *EmailVerifyHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Verify(r.Context(), req.UID, req.Token); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "email_verify.verify", err, "this verification link is invalid or has expired", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, map[string]string{"message": "email verified"})

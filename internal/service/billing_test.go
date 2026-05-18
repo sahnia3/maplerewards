@@ -18,6 +18,7 @@ type mockBillingRepo struct {
 	planStatus      map[string]string      // user ID → plan tier
 	processedEvents map[string]bool        // stripe event ID → processed flag
 	unsubscribed    map[string]bool        // user ID → opted out of email
+	tokensRevoked   map[string]bool        // user ID → RevokeAllUserTokens called
 	failSetPro      bool
 }
 
@@ -29,7 +30,13 @@ func newMockBillingRepo() *mockBillingRepo {
 		planStatus:      map[string]string{},
 		processedEvents: map[string]bool{},
 		unsubscribed:    map[string]bool{},
+		tokensRevoked:   map[string]bool{},
 	}
+}
+
+func (m *mockBillingRepo) RevokeAllUserTokens(_ context.Context, userID string) error {
+	m.tokensRevoked[userID] = true
+	return nil
 }
 
 func (m *mockBillingRepo) IsEmailUnsubscribed(_ context.Context, userID string) (bool, error) {
@@ -101,11 +108,9 @@ func TestBillingWebhook_CheckoutCompleted_ActivatesPro(t *testing.T) {
 	repo := newMockBillingRepo()
 	repo.users["user-1"] = &model.User{ID: "user-1"}
 
-	body, _ := json.Marshal(map[string]string{
-		"client_reference_id": "user-1",
-		"customer":            "cus_abc",
-		"subscription":        "sub_xyz",
-	})
+	// A real paid Stripe checkout session: payment_status must be paid (or
+	// no_payment_required for trials) and metadata.plan must be a known tier.
+	body := json.RawMessage(`{"client_reference_id":"user-1","customer":"cus_abc","subscription":"sub_xyz","payment_status":"paid","metadata":{"plan":"pro"}}`)
 
 	err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "checkout.session.completed", body)
 	if err != nil {
@@ -116,6 +121,49 @@ func TestBillingWebhook_CheckoutCompleted_ActivatesPro(t *testing.T) {
 	}
 	if repo.customerToUser["cus_abc"] != "user-1" {
 		t.Fatalf("expected stripe customer mapped to user-1, got %q", repo.customerToUser["cus_abc"])
+	}
+}
+
+// Security: an unpaid completed checkout (e.g. abandoned/100%-off-abuse
+// session) must NOT grant any entitlement. Stripe fires
+// checkout.session.completed even when payment_status != paid.
+func TestBillingWebhook_CheckoutCompleted_Unpaid_NoEntitlement(t *testing.T) {
+	repo := newMockBillingRepo()
+	repo.users["user-1"] = &model.User{ID: "user-1"}
+	body := json.RawMessage(`{"client_reference_id":"user-1","customer":"cus_abc","payment_status":"unpaid","metadata":{"plan":"pro_plus"}}`)
+	if err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "checkout.session.completed", body); err != nil {
+		t.Fatalf("unpaid session should be a no-op, not an error: %v", err)
+	}
+	if repo.proStatus["user-1"] {
+		t.Fatal("unpaid checkout must NOT grant Pro (free-tier-via-abuse path)")
+	}
+}
+
+// Security: a paid session with missing/unknown plan metadata must fail
+// closed (error → Stripe retries) rather than silently defaulting to "pro".
+func TestBillingWebhook_CheckoutCompleted_UnknownPlan_FailsClosed(t *testing.T) {
+	repo := newMockBillingRepo()
+	repo.users["user-1"] = &model.User{ID: "user-1"}
+	body := json.RawMessage(`{"client_reference_id":"user-1","customer":"cus_abc","payment_status":"paid","metadata":{"plan":"enterprise_hacked"}}`)
+	if err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "checkout.session.completed", body); err == nil {
+		t.Fatal("unknown plan must fail closed (return error), not grant access")
+	}
+	if repo.proStatus["user-1"] {
+		t.Fatal("unknown plan must NOT grant any entitlement")
+	}
+}
+
+// A legitimate trial completes as no_payment_required (card on file, charge
+// deferred) — this MUST still grant access.
+func TestBillingWebhook_CheckoutCompleted_TrialNoPaymentRequired_GrantsPro(t *testing.T) {
+	repo := newMockBillingRepo()
+	repo.users["user-1"] = &model.User{ID: "user-1"}
+	body := json.RawMessage(`{"client_reference_id":"user-1","customer":"cus_abc","payment_status":"no_payment_required","metadata":{"plan":"pro"}}`)
+	if err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "checkout.session.completed", body); err != nil {
+		t.Fatalf("trial session should grant access: %v", err)
+	}
+	if !repo.proStatus["user-1"] {
+		t.Fatal("legitimate trial (no_payment_required) must grant Pro")
 	}
 }
 
@@ -135,7 +183,7 @@ func TestBillingWebhook_CheckoutCompleted_DBError_Propagates(t *testing.T) {
 	repo := newMockBillingRepo()
 	repo.users["user-1"] = &model.User{ID: "user-1"}
 	repo.failSetPro = true
-	body, _ := json.Marshal(map[string]string{"client_reference_id": "user-1", "customer": "cus_abc"})
+	body := json.RawMessage(`{"client_reference_id":"user-1","customer":"cus_abc","payment_status":"paid","metadata":{"plan":"pro"}}`)
 	err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "checkout.session.completed", body)
 	if err == nil {
 		t.Fatal("expected error when SetUserPro fails")
@@ -185,7 +233,11 @@ func TestBillingWebhook_SubscriptionUpdated_CanceledRemovesPro(t *testing.T) {
 	}
 }
 
-func TestBillingWebhook_SubscriptionUpdated_PastDueRemovesPro(t *testing.T) {
+// past_due is a Stripe dunning state — payment is being retried, the
+// customer has NOT cancelled. Revoking access here punishes a paying user
+// for a transient card decline. Pro must be retained; true end-of-life
+// arrives as customer.subscription.deleted (covered by its own test).
+func TestBillingWebhook_SubscriptionUpdated_PastDueKeepsProDuringDunning(t *testing.T) {
 	repo := newMockBillingRepo()
 	repo.users["user-1"] = &model.User{ID: "user-1"}
 	repo.customerToUser["cus_abc"] = "user-1"
@@ -195,8 +247,29 @@ func TestBillingWebhook_SubscriptionUpdated_PastDueRemovesPro(t *testing.T) {
 	if err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "customer.subscription.updated", body); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if !repo.proStatus["user-1"] {
+		t.Fatal("past_due is dunning grace — Pro must be retained, not revoked")
+	}
+}
+
+// A genuinely terminal status (canceled) revokes Pro AND must invalidate
+// existing tokens so the stale is_pro=true access-token claim can't ride
+// out its ≤15-min expiry with Pro access.
+func TestBillingWebhook_SubscriptionUpdated_CanceledRevokesProAndTokens(t *testing.T) {
+	repo := newMockBillingRepo()
+	repo.users["user-1"] = &model.User{ID: "user-1"}
+	repo.customerToUser["cus_abc"] = "user-1"
+	repo.proStatus["user-1"] = true
+
+	body, _ := json.Marshal(map[string]string{"customer": "cus_abc", "status": "canceled"})
+	if err := newBillingSvc(repo).HandleWebhookEvent(context.Background(), "customer.subscription.updated", body); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if repo.proStatus["user-1"] {
-		t.Fatal("expected Pro=false on past_due")
+		t.Fatal("canceled subscription must revoke Pro")
+	}
+	if !repo.tokensRevoked["user-1"] {
+		t.Fatal("downgrade must revoke tokens to close the stale-claim window")
 	}
 }
 
@@ -289,7 +362,7 @@ func TestBillingWebhook_DoubleDelivery_SingleProGrant(t *testing.T) {
 	repo.users["user-9"] = &model.User{ID: "user-9"}
 	svc := newBillingSvc(repo)
 	ctx := context.Background()
-	body := json.RawMessage(`{"client_reference_id":"user-9","customer":"cus_9"}`)
+	body := json.RawMessage(`{"client_reference_id":"user-9","customer":"cus_9","payment_status":"paid","metadata":{"plan":"pro"}}`)
 
 	// First delivery: reserve, then process.
 	if ok, _ := svc.RecordEvent(ctx, "evt_dup", "checkout.session.completed"); !ok {

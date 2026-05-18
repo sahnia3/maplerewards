@@ -483,6 +483,10 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 			dataSource = "estimated"
 		}
 
+		// Guard against absurd CPP from a bad KB row / tiny pts figure
+		// reaching the UI with a misleading "great value" rating.
+		cpp = sanitizeCPP(cpp, pb.baseCPP)
+
 		// Resolve airline name for flights
 		airlineName := airlineForProgram[pb.programSlug]
 
@@ -564,6 +568,8 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 				cashPrice = float64(totalPts) * edge.baseCPP / 100.0
 				dataSource = "estimated"
 			}
+
+			cpp = sanitizeCPP(cpp, edge.baseCPP)
 
 			airlineName := airlineForProgram[edge.toProgramSlug]
 
@@ -1136,4 +1142,18 @@ func (s *TripService) fetchFlightPrices(ctx context.Context, req model.TripReque
 	}
 
 	return results
+}
+
+// sanitizeCPP guards against absurd cents-per-point values reaching the UI.
+// A bad knowledge-base row (e.g. PtsPerNight=1, or a tiny flight pts figure)
+// makes cashPrice/pts*100 blow up to tens of thousands of ¢/pt; the option
+// then gets a misleading "good" SavingsRating and sorts to #1. Anything
+// non-finite, non-positive, or above a sane ceiling falls back to the
+// program's trustworthy baseline CPP.
+func sanitizeCPP(cpp, fallback float64) float64 {
+	const maxPlausibleCPP = 25.0 // ¢/pt — well above any real Canadian redemption
+	if math.IsNaN(cpp) || math.IsInf(cpp, 0) || cpp <= 0 || cpp > maxPlausibleCPP {
+		return fallback
+	}
+	return cpp
 }

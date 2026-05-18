@@ -56,3 +56,32 @@ func TestStack_OfferValueGuardrail(t *testing.T) {
 		t.Errorf("expected a cap-disclosure warning, got: %s", joined)
 	}
 }
+
+// P5: with a VERIFIED per-offer max-credit (migration 000049), a %/points
+// offer on large spend is clamped to the offer's real cap and the disclosure
+// switches to the authoritative "(offer terms)" wording.
+func TestStack_VerifiedOfferMaxCredit(t *testing.T) {
+	maxCredit := 40.0
+	svc := NewStackService(nil, &mockStackRepo{
+		merchant: &model.Merchant{Slug: "lululemon", Name: "Lululemon"},
+		offers: []model.NetworkOffer{
+			{ID: "o1", Network: "amex", Merchant: "lululemon", Title: "20% back up to $40",
+				RewardType: "merchant_discount", RewardValue: 20, MinSpend: 0,
+				MaxCreditCAD: &maxCredit},
+		},
+	}, nil)
+
+	rec, err := svc.Recommend(context.Background(), model.StackRecommendRequest{
+		MerchantSlug: "lululemon", SpendAmount: 100000,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if rec.TotalValueCAD > maxCredit+0.01 {
+		t.Errorf("offer value %.2f exceeds verified max-credit $%.0f", rec.TotalValueCAD, maxCredit)
+	}
+	joined := strings.Join(rec.Warnings, " | ")
+	if !strings.Contains(joined, "(offer terms)") {
+		t.Errorf("expected authoritative '(offer terms)' wording, got: %s", joined)
+	}
+}

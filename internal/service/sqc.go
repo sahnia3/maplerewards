@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"maplerewards/internal/model"
@@ -47,15 +48,40 @@ func (s *SQCService) Project(ctx context.Context, sessionID string) (*model.SQCP
 		out.TotalSQCEarned += c.SQCEarned
 	}
 
-	// Determine current and next tier.
+	// Determine current and next tier. The current/next logic below assumes
+	// tiers ascend by SQCRequired; GetUserSQCContext does not guarantee order
+	// (docs/OPTIMIZER-CAP-AUDIT.md sibling lead). Sort defensively so the
+	// projection is correct regardless of repo/query ordering. Sorting the
+	// slice in place also fixes the order surfaced in out.Tiers.
+	sort.SliceStable(tiers, func(i, j int) bool {
+		return tiers[i].SQCRequired < tiers[j].SQCRequired
+	})
+
 	if len(tiers) > 0 {
+		var currentTierRevFloor, nextTierRevFloor float64
 		for _, t := range tiers {
 			if out.TotalSQCEarned >= t.SQCRequired {
 				out.CurrentTier = t.StatusLevel
+				currentTierRevFloor = t.MinRevenueCAD
 			} else if out.NextTier == "" {
 				out.NextTier = t.StatusLevel
 				out.SQCToNextTier = t.SQCRequired - out.TotalSQCEarned
+				nextTierRevFloor = t.MinRevenueCAD
 			}
+		}
+		// Aeroplan status requires BOTH the SQC threshold and a minimum
+		// flight-revenue floor for most tiers. We only model SQC (card
+		// spend), not flight revenue, so a tier shown as "cleared" is
+		// cleared on SQC ALONE. Disclose this instead of silently implying
+		// full qualification (previously the floor was ignored entirely).
+		if currentTierRevFloor > 0 {
+			out.RevenueFloorNote = fmt.Sprintf(
+				"%s also requires ~$%.0f minimum flight revenue, which this projection does not track — SQC requirement shown only.",
+				out.CurrentTier, currentTierRevFloor)
+		} else if nextTierRevFloor > 0 {
+			out.RevenueFloorNote = fmt.Sprintf(
+				"%s also requires ~$%.0f minimum flight revenue in addition to the SQC shown.",
+				out.NextTier, nextTierRevFloor)
 		}
 	}
 

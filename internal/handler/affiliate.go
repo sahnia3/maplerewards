@@ -35,6 +35,14 @@ func (h *AffiliateHandler) Click(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "card id required", http.StatusBadRequest)
 		return
 	}
+	// This is a public, unauthenticated endpoint and cardID is reflected
+	// into the fallback redirect target. Constrain it to the catalog ID
+	// shape (UUID or slug) so it cannot be used to craft an open redirect /
+	// phishing pivot off our trusted domain.
+	if !isValidUUID(cardID) && !isValidSlug(cardID) {
+		http.Error(w, "invalid card id", http.StatusBadRequest)
+		return
+	}
 
 	url, err := h.repo.GetAffiliateURL(r.Context(), cardID)
 	if err != nil {

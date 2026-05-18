@@ -54,7 +54,20 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || "/";
+  // The push payload is server-controlled, but harden anyway: only honor a
+  // same-origin destination so an abused push channel cannot redirect users
+  // off-site (phishing). Anything not resolving to our own origin → home.
+  const rawTarget =
+    (event.notification.data && event.notification.data.url) || "/";
+  let target = "/";
+  try {
+    const resolved = new URL(rawTarget, self.location.origin);
+    if (resolved.origin === self.location.origin) {
+      target = resolved.pathname + resolved.search + resolved.hash;
+    }
+  } catch {
+    target = "/";
+  }
 
   event.waitUntil(
     (async () => {

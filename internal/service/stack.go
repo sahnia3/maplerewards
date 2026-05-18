@@ -113,18 +113,30 @@ func (s *StackService) Recommend(ctx context.Context, req model.StackRecommendRe
 			if val == 0 {
 				continue
 			}
-			// SAFETY GUARDRAIL — same unbounded-projection class as the
+			// MAX-CREDIT CEILING — same unbounded-projection class as the
 			// optimizer/buy-points caps (docs/OPTIMIZER-CAP-AUDIT.md). Real
-			// network offers ("20% back, up to $40") carry a max-credit cap
-			// we don't model yet, so a %/points offer on large spend would
-			// project an impossible value ($20k off $100k). Until per-offer
-			// caps land, percentage/points offers are bounded by a
-			// conservative default and the truncation is disclosed.
-			if o.RewardType != "statement_credit" && val > defaultMaxOfferCreditCAD {
-				val = defaultMaxOfferCreditCAD
-				rec.Warnings = append(rec.Warnings, fmt.Sprintf(
-					"%s offer value capped at $%.0f (estimate — most network offers cap the credit; verify the offer's max).",
-					o.Title, defaultMaxOfferCreditCAD))
+			// network offers ("20% back, up to $40") cap the credit, so a
+			// %/points offer on large spend would otherwise project an
+			// impossible value ($20k off $100k). Migration 000049 seeds the
+			// per-offer max where known; use it, else the conservative default.
+			if o.RewardType != "statement_credit" {
+				offerCap := defaultMaxOfferCreditCAD
+				capVerified := false
+				if o.MaxCreditCAD != nil && *o.MaxCreditCAD > 0 {
+					offerCap = *o.MaxCreditCAD
+					capVerified = true
+				}
+				if val > offerCap {
+					val = offerCap
+					if capVerified {
+						rec.Warnings = append(rec.Warnings, fmt.Sprintf(
+							"%s offer value capped at $%.0f (offer terms).", o.Title, offerCap))
+					} else {
+						rec.Warnings = append(rec.Warnings, fmt.Sprintf(
+							"%s offer value capped at $%.0f (estimate — most network offers cap the credit; verify the offer's max).",
+							o.Title, offerCap))
+					}
+				}
 			}
 			rec.Components = append(rec.Components, model.StackComponent{
 				Layer:     "network_offer",

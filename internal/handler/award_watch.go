@@ -21,7 +21,7 @@ func (h *AwardWatchHandler) List(w http.ResponseWriter, r *http.Request) {
 	sid := chi.URLParam(r, "sessionID")
 	out, err := h.svc.List(r.Context(), sid)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonInternalError(w, "award_watch.list", err)
 		return
 	}
 	jsonOK(w, out)
@@ -36,7 +36,7 @@ func (h *AwardWatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.svc.Create(r.Context(), sid, req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "award_watch.create", err, "could not create the award watch — check your inputs", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, out)
@@ -46,7 +46,7 @@ func (h *AwardWatchHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	sid := chi.URLParam(r, "sessionID")
 	wid := chi.URLParam(r, "watchID")
 	if err := h.svc.Delete(r.Context(), sid, wid); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "award_watch.delete", err, "could not delete the award watch", http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -17,7 +17,7 @@ func NewTangerineHandler(svc *service.TangerineService) *TangerineHandler {
 func (h *TangerineHandler) List(w http.ResponseWriter, r *http.Request) {
 	out, err := h.svc.List(r.Context())
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonInternalError(w, "tangerine.list", err)
 		return
 	}
 	jsonOK(w, out)

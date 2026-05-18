@@ -168,24 +168,19 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 		Note:         req.Note,
 	}
 
-	// Insert spend entry
-	saved, err := s.spendRepo.CreateSpendEntry(ctx, entry)
-	if err != nil {
-		return nil, fmt.Errorf("failed to record spend: %w", err)
-	}
-
-	// Update monthly spend aggregate for cap tracking
+	// Atomically insert the spend entry and, only if it is a genuinely new
+	// row, increment the monthly cap aggregate and welcome-bonus tracker —
+	// all in one transaction. Previously the two follow-up writes were
+	// fire-and-forget goroutines on context.Background() with discarded
+	// errors: a crash lost cap/bonus progress, a deduped re-import
+	// double-counted both, and failures were silent. The bonus UPDATE is a
+	// no-op when the card has no bonus row, so applyBonus simply tracks
+	// whether bonus tracking is wired at all.
 	parsedDate, _ := time.Parse("2006-01-02", spentAt)
 	month := time.Date(parsedDate.Year(), parsedDate.Month(), 1, 0, 0, 0, 0, time.UTC)
-	safeGo("wallet-upsert-monthly", func() {
-		_ = s.spendRepo.UpsertMonthlySpend(context.Background(), user.ID, req.CardID, category.ID, month, req.Amount)
-	})
-
-	// Update bonus spend tracking (if bonus exists for this card)
-	if s.bonusRepo != nil {
-		safeGo("wallet-update-bonus-spend", func() {
-			_ = s.bonusRepo.UpdateBonusSpend(context.Background(), user.ID, req.CardID, req.Amount)
-		})
+	saved, err := s.spendRepo.RecordSpend(ctx, entry, month, req.Amount, s.bonusRepo != nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record spend: %w", err)
 	}
 
 	return saved, nil

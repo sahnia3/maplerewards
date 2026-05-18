@@ -61,7 +61,12 @@ func (s *BuyPointsService) Evaluate(ctx context.Context, req model.BuyPointsRequ
 		CashAlternative:       req.CashAlternative,
 		BreakEvenCentsPerPoint: req.CashAlternative * 100 / float64(req.PointsNeeded),
 	}
-	if promo == nil {
+	// A nil promo OR a non-positive promo price means "no usable promo".
+	// Without the price check, promo.PromoCentsPerPoint == 0 makes
+	// BuyCostCAD == 0 and BreakEven > 0 always, yielding a confident "buy"
+	// recommendation for effectively free points — clearly a data error,
+	// not a real offer. Treat it as no promo.
+	if promo == nil || promo.PromoCentsPerPoint <= 0 {
 		verdict.Verdict = "pay_cash"
 		verdict.Rationale = fmt.Sprintf("No active buy-promo recorded for %s. Either earn the points organically or pay cash.", req.ProgramSlug)
 		return verdict, nil
@@ -94,18 +99,31 @@ func (s *BuyPointsService) Evaluate(ctx context.Context, req model.BuyPointsRequ
 		)
 	}
 
-	// SAFETY GUARDRAIL (same class as the optimizer cap bug — see
+	// PURCHASE CEILING (sibling of the optimizer cap bug — see
 	// docs/OPTIMIZER-CAP-AUDIT.md). Every loyalty program caps how many
-	// points you can BUY per year; we don't model per-program ceilings yet,
-	// so a request for an impossible quantity (e.g. 2,000,000 pts) would
-	// otherwise return a confident "buy". Flag anything over a conservative
-	// default so the tool never silently endorses an un-purchasable amount.
-	if req.PointsNeeded > defaultMaxAnnualPointsPurchase && verdict.Verdict == "buy" {
+	// points you can BUY per year, so a request for an impossible quantity
+	// (e.g. 2,000,000 pts) must not return a confident "buy". Migration
+	// 000049 seeds the real per-program ceiling; use it when present,
+	// otherwise fall back to the conservative default.
+	purchaseCap := defaultMaxAnnualPointsPurchase
+	capVerified := false
+	if promo.MaxPurchasablePerYear != nil && *promo.MaxPurchasablePerYear > 0 {
+		purchaseCap = *promo.MaxPurchasablePerYear
+		capVerified = true
+	}
+	if req.PointsNeeded > purchaseCap && verdict.Verdict == "buy" {
 		verdict.Verdict = "earn"
-		verdict.Rationale = fmt.Sprintf(
-			"%d points likely exceeds %s's annual point-purchase limit (most programs cap well under %d/yr) — the full amount may not be purchasable in one year. Verify the program's purchase cap; earn the balance organically or split across years. (If it IS purchasable: %s)",
-			req.PointsNeeded, promo.PromoLabel, defaultMaxAnnualPointsPurchase, verdict.Rationale,
-		)
+		if capVerified {
+			verdict.Rationale = fmt.Sprintf(
+				"%d points exceeds %s's published annual point-purchase limit of %d/yr — the full amount cannot be purchased in one year. Earn the balance organically or split the purchase across calendar years. (If split/feasible: %s)",
+				req.PointsNeeded, promo.PromoLabel, purchaseCap, verdict.Rationale,
+			)
+		} else {
+			verdict.Rationale = fmt.Sprintf(
+				"%d points likely exceeds %s's annual point-purchase limit (most programs cap well under %d/yr) — the full amount may not be purchasable in one year. Verify the program's purchase cap; earn the balance organically or split across years. (If it IS purchasable: %s)",
+				req.PointsNeeded, promo.PromoLabel, purchaseCap, verdict.Rationale,
+			)
+		}
 	}
 	return verdict, nil
 }

@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"maplerewards/internal/model"
 )
@@ -41,6 +43,35 @@ func (r *SpendRepo) GetMonthlySpend(ctx context.Context, userID, cardID string, 
 	return result, rows.Err()
 }
 
+// GetSpendSince returns total spend by category for a user+card accumulated
+// since a given month-bucket (inclusive). Period-aware cap accumulation uses
+// this: month-start for `monthly` caps, year-start for `annual` caps — so an
+// annual cap correctly accumulates year-to-date instead of only the current
+// month (docs/OPTIMIZER-CAP-AUDIT.md §"Secondary code bug").
+func (r *SpendRepo) GetSpendSince(ctx context.Context, userID, cardID string, since time.Time) (map[string]float64, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT category_id, COALESCE(SUM(total_spend), 0)
+		FROM user_monthly_spend
+		WHERE user_id = $1 AND card_id = $2 AND month >= $3
+		GROUP BY category_id
+	`, userID, cardID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]float64)
+	for rows.Next() {
+		var catID string
+		var spend float64
+		if err := rows.Scan(&catID, &spend); err != nil {
+			return nil, err
+		}
+		result[catID] = spend
+	}
+	return result, rows.Err()
+}
+
 // UpsertMonthlySpend adds an amount to the monthly spend total for a user+card+category.
 func (r *SpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, categoryID string, month time.Time, amount float64) error {
 	_, err := r.db.Exec(ctx, `
@@ -50,6 +81,94 @@ func (r *SpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, cate
 		DO UPDATE SET total_spend = user_monthly_spend.total_spend + $5, updated_at = NOW()
 	`, userID, cardID, categoryID, month, amount)
 	return err
+}
+
+// RecordSpend atomically inserts a spend entry and, only when a NEW row was
+// actually created, increments the monthly-spend aggregate and (optionally)
+// the welcome-bonus tracker — all in a single transaction.
+//
+// This replaces the old pattern of one synchronous insert plus two
+// fire-and-forget goroutines with context.Background() and discarded errors,
+// which had three failure modes:
+//   - crash/return between the writes silently lost cap & bonus progress;
+//   - a deduped re-import (ON CONFLICT) still ran the goroutines, DOUBLE
+//     counting monthly spend and bonus progress on every retry;
+//   - errors were swallowed, so corruption was undiagnosable.
+// Here the monthly/bonus updates run iff the entry was genuinely inserted,
+// and any failure rolls the whole thing back.
+func (r *SpendRepo) RecordSpend(
+	ctx context.Context,
+	entry model.SpendEntry,
+	month time.Time,
+	bonusAmount float64,
+	applyBonus bool,
+) (*model.SpendEntry, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
+
+	var createdAt time.Time
+	newlyInserted := true
+	err = tx.QueryRow(ctx, `
+		INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (user_id, card_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
+		RETURNING id, created_at
+	`, entry.UserID, entry.CardID, entry.CategoryID, entry.Amount,
+		entry.PointsEarned, entry.DollarValue, entry.SpentAt, entry.Note,
+	).Scan(&entry.ID, &createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Dedup conflict — the entry already exists. Fetch it, and do NOT
+		// re-increment monthly/bonus (that was the double-count bug).
+		newlyInserted = false
+		if fErr := tx.QueryRow(ctx, `
+			SELECT id, created_at FROM spend_entries
+			WHERE user_id = $1 AND card_id = $2 AND spent_at = $3
+			  AND amount = $4 AND COALESCE(note,'') = COALESCE($5,'')
+			LIMIT 1
+		`, entry.UserID, entry.CardID, entry.SpentAt, entry.Amount, entry.Note,
+		).Scan(&entry.ID, &createdAt); fErr != nil {
+			return &entry, fErr
+		}
+	} else if err != nil {
+		return &entry, err
+	}
+	entry.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
+
+	if newlyInserted {
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO user_monthly_spend (user_id, card_id, category_id, month, total_spend, updated_at)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+			ON CONFLICT (user_id, card_id, category_id, month)
+			DO UPDATE SET total_spend = user_monthly_spend.total_spend + $5, updated_at = NOW()
+		`, entry.UserID, entry.CardID, entry.CategoryID, month, entry.Amount); err != nil {
+			return &entry, err
+		}
+		if applyBonus {
+			if _, err = tx.Exec(ctx, `
+				UPDATE user_card_bonuses
+				SET current_spend = current_spend + $3,
+				    is_completed = CASE
+						WHEN current_spend + $3 >= min_spend THEN true
+						ELSE is_completed
+					END,
+					completed_at = CASE
+						WHEN current_spend + $3 >= min_spend AND completed_at IS NULL THEN CURRENT_DATE
+						ELSE completed_at
+					END
+				WHERE user_id = $1 AND card_id = $2
+			`, entry.UserID, entry.CardID, bonusAmount); err != nil {
+				return &entry, err
+			}
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return &entry, err
+	}
+	return &entry, nil
 }
 
 // GetCapGroupForCard returns the cap group that contains the given category for a card, if any.
@@ -107,7 +226,10 @@ func (r *SpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry
 
 	// pgx returns ErrNoRows when ON CONFLICT skipped the insert. Fetch the
 	// existing row by the dedup key so the caller has a valid result.
-	if err.Error() == "no rows in result set" {
+	// Use errors.Is, not string-matching the message (the rest of the repo
+	// layer uses the sentinel; a pgx wording change would silently break
+	// CSV-import dedup otherwise).
+	if errors.Is(err, pgx.ErrNoRows) {
 		fetchErr := r.db.QueryRow(ctx, `
 			SELECT id, created_at
 			FROM spend_entries

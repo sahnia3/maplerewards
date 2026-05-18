@@ -201,7 +201,6 @@ func (s *OptimizerService) scoreCard(
 	isCapHit := false
 	note := ""
 
-	currentMonth := beginningOfMonth(time.Now())
 	capGroup, capErr := s.spendRepo.GetCapGroupForCard(ctx, uc.CardID, categoryID)
 	// perPurchase scores each call as an independent single transaction:
 	// prior accumulated spend is treated as 0. The missed-rewards replay
@@ -213,11 +212,26 @@ func (s *OptimizerService) scoreCard(
 	switch {
 	case capErr == nil && capGroup != nil:
 		// Shared cap group: sum spend across all grouped categories.
+		// Period-aware basis: year-to-date for an `annual` cap, month-to-date
+		// for `monthly` (docs/OPTIMIZER-CAP-AUDIT.md §"Secondary code bug").
 		var totalCappedSpend float64
 		if !perPurchase {
-			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
-			for _, catID := range capGroup.CategoryIDs {
-				totalCappedSpend += monthlySpend[catID]
+			priorSpend, spendErr := s.spendRepo.GetSpendSince(
+				ctx, uc.UserID, uc.CardID, capPeriodStart(capGroup.CapPeriod))
+			if spendErr != nil {
+				// Conservative fallback: previously this error was swallowed
+				// and prior spend defaulted to 0, treating a fully-capped
+				// user as having the WHOLE cap available — over-projecting
+				// the bonus and ranking the wrong card #1. Assume the cap is
+				// consumed so the card scores at its fallback rate:
+				// under-promise on a transient blip, never over-promise.
+				slog.Warn("optimizer: prior-spend lookup failed, assuming cap consumed",
+					"card_id", uc.CardID, "err", spendErr)
+				totalCappedSpend = capGroup.CapAmount
+			} else {
+				for _, catID := range capGroup.CategoryIDs {
+					totalCappedSpend += priorSpend[catID]
+				}
 			}
 		}
 		effectiveRate, isCapHit, note = calculateBlendedRate(
@@ -225,39 +239,62 @@ func (s *OptimizerService) scoreCard(
 			multiplier.EarnRate, multiplier.FallbackEarnRate,
 		)
 	case multiplier.CapAmount != nil && *multiplier.CapAmount > 0:
-		// Per-multiplier cap (no shared group).
+		// Per-multiplier cap (no shared group). Period-aware basis as above.
 		var currentSpend float64
 		if !perPurchase {
-			monthlySpend, _ := s.spendRepo.GetMonthlySpend(ctx, uc.UserID, uc.CardID, currentMonth)
-			currentSpend = monthlySpend[categoryID]
+			priorSpend, spendErr := s.spendRepo.GetSpendSince(
+				ctx, uc.UserID, uc.CardID, capPeriodStart(safeStr(multiplier.CapPeriod)))
+			if spendErr != nil {
+				// Conservative fallback (see shared-cap branch above):
+				// assume the cap is consumed rather than defaulting prior
+				// spend to 0 and over-projecting on a transient DB error.
+				slog.Warn("optimizer: prior-spend lookup failed, assuming cap consumed",
+					"card_id", uc.CardID, "err", spendErr)
+				currentSpend = *multiplier.CapAmount
+			} else {
+				currentSpend = priorSpend[categoryID]
+			}
 		}
 		effectiveRate, isCapHit, note = calculateBlendedRate(
 			spendAmount, currentSpend, *multiplier.CapAmount, safeStr(multiplier.CapPeriod),
 			multiplier.EarnRate, multiplier.FallbackEarnRate,
 		)
 	default:
-		// SAFETY GUARDRAIL. ~181 bonus multipliers across 72 cards have no
-		// modelled cap (the catalog data is incomplete — see
+		// SAFETY GUARDRAIL (unconditional). ~181 bonus multipliers across 72
+		// cards have no modelled cap (the catalog data is incomplete — see
 		// docs/OPTIMIZER-CAP-AUDIT.md). Almost every real Canadian card caps
 		// accelerated earn; without a cap the optimizer projected absurd,
 		// credibility-destroying numbers (e.g. Scotiabank Gold = 500,000 pts
-		// on $100k). Until verified per-card caps land, an *accelerated* rate
-		// (bonus above its own fallback) with no modelled cap is bounded by a
-		// conservative default annual cap so a projection can never be
-		// unbounded. Deliberately errs LOW (under-promise, not over-promise)
-		// and the note discloses it's an unverified estimate. Cards that earn
-		// a flat rate (EarnRate == FallbackEarnRate, e.g. true unlimited
-		// ultra-premium) are unaffected.
-		if multiplier.EarnRate > multiplier.FallbackEarnRate && multiplier.EarnRate > 1 {
-			effectiveRate, isCapHit, note = calculateBlendedRate(
-				spendAmount, 0, defaultUnverifiedAnnualCap, "annual",
-				multiplier.EarnRate, multiplier.FallbackEarnRate,
-			)
-			if isCapHit {
-				note = "Estimate — accelerated earn assumed capped at $" +
-					strconv.Itoa(int(defaultUnverifiedAnnualCap)) +
-					"/yr pending verified card terms. " + note
-			}
+		// on $100k).
+		//
+		// Every no-cap multiplier is now routed through calculateBlendedRate
+		// with a conservative default annual cap and the card's own fallback
+		// as the post-cap rate — UNCONDITIONALLY. This is provably bounded for
+		// ALL cases regardless of how EarnRate/FallbackEarnRate are modelled:
+		//   - Accelerated (bonus > fallback): the bonus portion is capped, the
+		//     rest blends down to fallback. Cannot project unbounded points.
+		//   - Flat / true unlimited (bonus == fallback): the blend is
+		//     mathematically identical to the flat rate (bonus*cap +
+		//     fallback*rest)/spend == rate, so legit unlimited cards are
+		//     UNAFFECTED in value — no under-promising.
+		//   - Mis-modelled (bonus <= fallback, or bonus <= 1): still bounded;
+		//     the previous heuristic let these escape entirely.
+		// Errs LOW (under-promise) and discloses the estimate only when the
+		// bound actually changed the value (genuine accelerated earn).
+		accelerated := multiplier.EarnRate > multiplier.FallbackEarnRate
+		effectiveRate, isCapHit, note = calculateBlendedRate(
+			spendAmount, 0, defaultUnverifiedAnnualCap, "annual",
+			multiplier.EarnRate, multiplier.FallbackEarnRate,
+		)
+		if isCapHit && accelerated {
+			note = "Estimate — accelerated earn assumed capped at $" +
+				strconv.Itoa(int(defaultUnverifiedAnnualCap)) +
+				"/yr pending verified card terms. " + note
+		} else if !accelerated {
+			// Flat/unlimited or mis-modelled: value is unchanged by the bound,
+			// so don't show a misleading "cap hit" note or flag.
+			isCapHit = false
+			note = ""
 		}
 	}
 
@@ -389,4 +426,19 @@ func safeStr(s *string) string {
 
 func beginningOfMonth(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
+}
+
+func beginningOfYear(t time.Time) time.Time {
+	return time.Date(t.Year(), 1, 1, 0, 0, 0, 0, t.Location())
+}
+
+// capPeriodStart returns the accumulation-window start for a cap period:
+// year-start for "annual", month-start otherwise (the safe default for
+// "monthly" and any unset/unknown period).
+func capPeriodStart(period string) time.Time {
+	now := time.Now()
+	if period == "annual" {
+		return beginningOfYear(now)
+	}
+	return beginningOfMonth(now)
 }

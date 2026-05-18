@@ -1025,6 +1025,21 @@ func (s *AIService) registerTools() {
 			if args.Amount <= 0 {
 				return errResultJSON("invalid_args", "amount must be > 0"), nil
 			}
+			// Bound LLM/user-supplied inputs. Without this, a hallucinated
+			// bonus_percent (e.g. 100000) projects a six/seven-figure fake CAD
+			// valuation, a negative bonus_percent yields negative points, and
+			// an unbounded amount can overflow the int conversion below. Real
+			// transfer bonuses top out around 100%; no program lets you move
+			// tens of millions of points in one transfer.
+			if args.Amount > 10_000_000 {
+				return errResultJSON("invalid_args", "amount exceeds the 10,000,000-point per-transfer ceiling"), nil
+			}
+			if args.BonusPercent < 0 {
+				return errResultJSON("invalid_args", "bonus_percent cannot be negative"), nil
+			}
+			if args.BonusPercent > 200 {
+				args.BonusPercent = 200 // clamp — no real transfer bonus exceeds ~100%
+			}
 			if args.Segment == "" {
 				args.Segment = "base"
 			}

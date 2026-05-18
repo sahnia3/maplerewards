@@ -44,6 +44,30 @@ func (h *TripHandler) Evaluate(w http.ResponseWriter, r *http.Request) {
 		req.Cabin = "economy"
 	}
 
+	// Validate before the service forwards to paid external scrapers.
+	// Hotels use free-text city; flights must be IATA codes.
+	if req.TripType == "flight" {
+		if !isValidIATA(req.Origin) || !isValidIATA(req.Destination) {
+			jsonError(w, "flight origin and destination must be 3-letter airport codes", http.StatusBadRequest)
+			return
+		}
+	} else if req.Origin == "" || req.Destination == "" {
+		jsonError(w, "origin and destination required", http.StatusBadRequest)
+		return
+	}
+	if !isValidFlightDate(req.Date) {
+		jsonError(w, "date must be a valid YYYY-MM-DD within the next ~2 years", http.StatusBadRequest)
+		return
+	}
+	if req.Passengers < 0 || req.Passengers > 9 {
+		jsonError(w, "passengers must be between 1 and 9", http.StatusBadRequest)
+		return
+	}
+	if req.Nights < 0 || req.Nights > 30 {
+		jsonError(w, "nights must be 30 or fewer", http.StatusBadRequest)
+		return
+	}
+
 	options, err := h.tripSvc.EvaluateTrip(r.Context(), req)
 	if err != nil {
 		jsonInternalError(w, "trip.evaluate", err)

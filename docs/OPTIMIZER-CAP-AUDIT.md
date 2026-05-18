@@ -3,14 +3,32 @@
 **Date:** 2026-05-18
 **Trigger:** Founder QA — `/optimizer` projected Scotiabank Gold Amex at a flat 5x
 for $100,000 spend (500,000 pts), ignoring its real ~$50K/yr accelerated cap.
-**Status:** Investigation + audit complete. **Safety guardrail SHIPPED**
-(commit "safety guardrail kills unbounded/impossible projections"): the
-optimizer can no longer project an unbounded accelerated total, and
-buy-points no longer endorses an impossible quantity — both bounded by
-conservative, clearly-disclosed defaults, with regression tests.
-**Still gated (post-`/ultraplan` + formal goal):** the *verified per-card
-cap values* that replace the conservative defaults, the period-aware
-accumulation code fix, and the exhaustive QA matrix.
+**Status: remediated locally — pending commit/CI/merge (2026-05-18).** The
+remediation below is implemented and verified on a dev environment (clean
+migrate v47→49, `go build/vet/test -race`, `optimizer-cap-sweep.sh` all
+green) but is **not yet merged**; it ships as the Phase 0 foundation commit
+of the launch-remediation branch and is not "done" until CI-green on merge.
+The `/ultraplan` cap-remediation work is complete:
+- Migration `000048_cap_remediation` — 8 verified shared cap_groups (incl.
+  **Scotiabank Gold Amex $50k/yr** — the founder bug) + 15 per-multiplier
+  caps, all source-cited (`docs/cap-remediation-checklist.md`).
+- Migration `000049_purchase_offer_ceilings` — real per-program buy ceilings
+  + per-offer max-credit; `buy_points.go`/`stack.go` use them (guardrail now
+  the documented fallback).
+- Period-aware accumulation: `GetSpendSince` + `capPeriodStart` (year vs
+  month basis) wired into `scoreCard`.
+- QA: table-driven cap-invariant matrix (`optimizer_cap_invariant_test.go`),
+  buy-points/stack verified-ceiling tests, headless end-to-end
+  `scripts/optimizer-cap-sweep.sh` — all green; full `-race` suite green.
+- Founder scenario verified end-to-end: Scotia Gold @ $100k groceries →
+  **300,000 pts** ("$50000 at 5.0x + $50000 at 1.0x"), not 500,000.
+- Sibling re-sweep: SQC tier-ordering hardened + regression test;
+  missed-rewards cap-bounded integration test; portfolio confirmed
+  structurally bounded. Pro-tool endpoint stress + link-integrity +
+  Playwright E2E (14 tiles / 4 tabs) added.
+The 146 remaining guardrail-bounded pairs are NOCAP-legit (PC Optimum,
+Tangerine, Amex MR/Aeroplan, CIBC "no limit", RBC/Rogers/Triangle) or
+UNVERIFIED-discontinued (HSBC, MBNA Alaska, etc.) — see the checklist.
 
 ## Root cause (sharpened)
 

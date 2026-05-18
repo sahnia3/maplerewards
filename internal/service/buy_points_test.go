@@ -54,3 +54,39 @@ func TestBuyPoints_ImpossibleQuantityGuardrail(t *testing.T) {
 		t.Errorf("expected over-limit caveat in rationale, got: %s", v.Rationale)
 	}
 }
+
+// P5: with a VERIFIED per-program ceiling (migration 000049), a quantity over
+// the real cap must never return "buy" and must cite the published limit;
+// a quantity under it with favourable math must still return "buy".
+func TestBuyPoints_VerifiedPurchaseCeiling(t *testing.T) {
+	cap := 100000 // Aeroplan published annual buy cap
+	svc := NewBuyPointsService(&mockBuyPromoRepo{promos: []model.BuyPromo{{
+		ProgramSlug: "aeroplan", PromoLabel: "Aeroplan sale",
+		BaseCentsPerPoint: 3.0, PromoCentsPerPoint: 1.5,
+		MaxPurchasablePerYear: &cap,
+	}}})
+
+	over, err := svc.Evaluate(context.Background(), model.BuyPointsRequest{
+		ProgramSlug: "aeroplan", PointsNeeded: 150000, CashAlternative: 4500,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if over.Verdict == "buy" {
+		t.Errorf("over verified cap (150k > 100k) must not be 'buy'")
+	}
+	if !strings.Contains(over.Rationale, "published annual point-purchase limit") {
+		t.Errorf("expected verified-cap wording, got: %s", over.Rationale)
+	}
+
+	under, err := svc.Evaluate(context.Background(), model.BuyPointsRequest{
+		ProgramSlug: "aeroplan", PointsNeeded: 80000, CashAlternative: 2400,
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if under.Verdict != "buy" {
+		t.Errorf("under verified cap with favourable math should be 'buy', got %q (%s)",
+			under.Verdict, under.Rationale)
+	}
+}

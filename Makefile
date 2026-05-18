@@ -53,11 +53,20 @@ remote-setup:
 #   :7681 → general terminal (zsh)
 #   :7682 → Claude Code directly
 remote-start:
-	@echo "Starting web terminals..."
-	@echo "General terminal : http://localhost:7681  (also via Tailscale IP)"
-	@echo "Claude Code      : http://localhost:7682"
-	@ttyd -p 7681 --writable zsh &
-	@ttyd -p 7682 --writable claude
+	@if [ -z "$$TTYD_CRED" ]; then \
+		echo "REFUSING TO START: TTYD_CRED is unset."; \
+		echo "ttyd --writable is a remote ROOT-equivalent shell. It must not"; \
+		echo "run unauthenticated on 0.0.0.0 (one Tailscale-ACL/LAN mistake ="; \
+		echo "full RCE + access to .env secrets). Set credentials first:"; \
+		echo "  export TTYD_CRED='user:strong-password'"; \
+		exit 1; \
+	fi
+	@echo "Starting web terminals (bound to 127.0.0.1, basic-auth required)..."
+	@echo "Access ONLY via Tailscale (tailscale serve) or an SSH tunnel."
+	@echo "General terminal : http://127.0.0.1:7681"
+	@echo "Claude Code      : http://127.0.0.1:7682"
+	@ttyd -i 127.0.0.1 -p 7681 -c "$$TTYD_CRED" --writable zsh &
+	@ttyd -i 127.0.0.1 -p 7682 -c "$$TTYD_CRED" --writable claude
 
 # ── AI debugging ──────────────────────────────────────────────────────────────
 # Print the most recent AI conversation trace from the API log file.

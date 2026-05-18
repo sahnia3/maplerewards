@@ -4,12 +4,18 @@
   "short_name": "MapleRewards",
   "version": "0.1.0",
   "description": "Tells you the best Canadian credit card to use on every checkout — in CAD, with caps and transfer partners baked in.",
-  "permissions": ["storage", "activeTab", "tabs", "cookies"],
+  "permissions": ["storage", "activeTab", "cookies"],
   "host_permissions": [
     "http://localhost:8080/*",
     "https://maplerewards.app/*",
     "https://*.maplerewards.app/*"
   ],
+  "externally_connectable": {
+    "matches": []
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "action": {
     "default_title": "MapleRewards",
     "default_popup": "popup.html",

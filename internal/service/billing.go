@@ -23,6 +23,11 @@ type BillingRepository interface {
 	// SetUserPlan persists the purchased tier (free|pro|pro_plus|lifetime)
 	// and keeps is_pro in sync atomically (any paid plan ⇒ is_pro=true).
 	SetUserPlan(ctx context.Context, userID, plan string) error
+	// RevokeAllUserTokens forces re-authentication. Called on downgrade so a
+	// cancelled user's still-valid 15-min access token (which carries a
+	// stale is_pro=true claim) cannot keep Pro access until expiry — the
+	// next request must refresh, and refresh reloads is_pro from the DB.
+	RevokeAllUserTokens(ctx context.Context, userID string) error
 	// IsEmailUnsubscribed reports whether the user opted out of commercial
 	// email — the win-back send is suppressed when true (CASL).
 	IsEmailUnsubscribed(ctx context.Context, userID string) (bool, error)
@@ -170,7 +175,11 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 		if user.Email != nil && *user.Email != "" {
 			form.Set("customer_email", *user.Email)
 		}
-		form.Set("allow_promotion_codes", "true")
+		// Promotion codes are intentionally NOT customer-enterable. A
+			// customer-applied 100%-off code completes checkout for $0 and the
+			// webhook would still grant the full tier (free Pro / Pro Plus).
+			// Any promotion must be a Stripe-dashboard coupon on the price,
+			// not the customer-entered code field.
 	}
 
 	// Create checkout session via Stripe API
@@ -310,6 +319,7 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		ClientReferenceID string `json:"client_reference_id"`
 		Customer          string `json:"customer"`
 		Subscription      string `json:"subscription"`
+		PaymentStatus     string `json:"payment_status"`
 		Metadata          struct {
 			Plan string `json:"plan"`
 		} `json:"metadata"`
@@ -324,6 +334,20 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		return nil
 	}
 
+	// Payment-status gate. Stripe fires checkout.session.completed even for
+	// sessions that were never paid for. "paid" = charged now; "no_payment_
+	// required" = legit 3-day trial (card on file, charge deferred) — both
+	// grant access. "unpaid" must NOT grant: that is the free-tier-via-abuse
+	// path (e.g. a 100%-off / failed-collection session). Fail closed.
+	switch session.PaymentStatus {
+	case "paid", "no_payment_required":
+		// ok
+	default:
+		slog.Warn("checkout completed but not paid — no entitlement granted",
+			"user_id", userID, "payment_status", session.PaymentStatus)
+		return nil
+	}
+
 	// Save Stripe customer ID. This MUST be fatal, not log-and-continue:
 	// without it CreatePortalSession returns "no billing account" forever,
 	// so the user can never cancel/update card/get receipts (permanent for
@@ -335,13 +359,22 @@ func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.
 		}
 	}
 
-	// Record the purchased tier. metadata.plan is set at checkout creation;
-	// fall back to "pro" if absent (legacy in-flight links / safety) since a
-	// completed checkout always means a paid user. SetUserPlan keeps is_pro
-	// in sync, so this also grants access.
+	// Record the purchased tier. metadata.plan is set by us at checkout
+	// creation, so a paid session must carry a known plan. Validate against
+	// an explicit allowlist and FAIL CLOSED on empty/unknown values: the old
+	// `plan == "" -> "pro"` default would grant Pro on any plan-less session
+	// (and SetUserPlan grants is_pro for ANY non-"free" string, so an
+	// unvalidated value is an over-grant). The webhook is idempotent and
+	// Stripe retries on error, so returning an error here is safe and
+	// surfaces genuinely malformed events instead of silently over-granting.
 	plan := session.Metadata.Plan
-	if plan == "" {
-		plan = "pro"
+	switch plan {
+	case "pro", "pro_plus", "lifetime":
+		// known paid tier
+	default:
+		slog.Error("checkout completed with missing/unknown plan metadata — refusing to grant",
+			"user_id", userID, "plan", plan)
+		return fmt.Errorf("checkout for user %s has invalid plan metadata %q", userID, plan)
 	}
 	if err := s.repo.SetUserPlan(ctx, userID, plan); err != nil {
 		return fmt.Errorf("activate plan %q for user %s: %w", plan, userID, err)
@@ -378,10 +411,28 @@ func (s *BillingService) handleSubscriptionUpdated(ctx context.Context, data jso
 		return nil
 	}
 
-	// Active statuses where the user should have Pro access
-	isPro := sub.Status == "active" || sub.Status == "trialing"
+	// Pro-access statuses. past_due / unpaid are DUNNING states — Stripe is
+	// still retrying the payment and the customer is mid-grace; instantly
+	// revoking access there punishes a paying customer for a transient card
+	// decline (and an out-of-order stale `updated` event could otherwise
+	// flap a healthy account). True end-of-life is delivered separately as
+	// customer.subscription.deleted, which reverts to free.
+	var isPro bool
+	switch sub.Status {
+	case "active", "trialing", "past_due", "unpaid":
+		isPro = true
+	default: // canceled, incomplete, incomplete_expired, paused, ...
+		isPro = false
+	}
 	if err := s.repo.SetUserPro(ctx, user.ID, isPro); err != nil {
 		return fmt.Errorf("update pro status: %w", err)
+	}
+	if !isPro {
+		// Close the stale-claim window: invalidate existing tokens so the
+		// next request must refresh and pick up is_pro=false from the DB.
+		if err := s.repo.RevokeAllUserTokens(ctx, user.ID); err != nil {
+			slog.Warn("failed to revoke tokens on downgrade", "user_id", user.ID, "err", err)
+		}
 	}
 
 	slog.Info("subscription updated", "user_id", user.ID, "status", sub.Status, "is_pro", isPro)
@@ -410,6 +461,11 @@ func (s *BillingService) handleSubscriptionDeleted(ctx context.Context, data jso
 	// them — their 'lifetime' plan is permanent, as intended.
 	if err := s.repo.SetUserPlan(ctx, user.ID, "free"); err != nil {
 		return fmt.Errorf("revert plan to free: %w", err)
+	}
+	// Invalidate tokens so the cancelled user cannot keep Pro on a stale
+	// is_pro=true access-token claim until its ≤15-min expiry.
+	if err := s.repo.RevokeAllUserTokens(ctx, user.ID); err != nil {
+		slog.Warn("failed to revoke tokens on cancellation", "user_id", user.ID, "err", err)
 	}
 
 	slog.Info("subscription canceled, reverted to free", "user_id", user.ID)

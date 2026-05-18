@@ -29,6 +29,13 @@ func NewCSVImportService(walletSvc *WalletService) *CSVImportService {
 	return &CSVImportService{walletSvc: walletSvc}
 }
 
+// maxCSVRows bounds the parsed row count. The HTTP body is already capped at
+// 5 MB, but that is ~100k+ CSV rows and Commit does one synchronous DB INSERT
+// per row — a handful of concurrent max-size imports would exhaust the
+// connection pool and take the whole API down. A real bank statement is well
+// under this; legitimate users are unaffected.
+const maxCSVRows = 5000
+
 // CSVImportPreview is what the API returns to the frontend before commit:
 // detected columns, parsed row count, sample rows, plus any per-row warnings
 // the user should know about.
@@ -62,6 +69,9 @@ func (s *CSVImportService) Parse(r io.Reader) (*CSVImportPreview, []ParsedTxn, e
 	}
 	if len(rows) < 2 {
 		return nil, nil, fmt.Errorf("csv has no data rows")
+	}
+	if len(rows) > maxCSVRows+1 { // +1 for the header row
+		return nil, nil, fmt.Errorf("csv has too many rows (%d); maximum is %d", len(rows)-1, maxCSVRows)
 	}
 
 	cols := detectColumns(rows[0])
@@ -183,6 +193,11 @@ var ErrCardNotInWallet = fmt.Errorf("card not in wallet")
 func (s *CSVImportService) Commit(ctx context.Context, sessionID, cardID, fallbackCategorySlug string, txns []ParsedTxn) (int, error) {
 	if cardID == "" {
 		return 0, fmt.Errorf("card_id required for import")
+	}
+	// Defense in depth: bound the per-row INSERT loop even if a caller
+	// reaches Commit without going through Parse.
+	if len(txns) > maxCSVRows {
+		return 0, fmt.Errorf("too many transactions (%d); maximum is %d", len(txns), maxCSVRows)
 	}
 	if fallbackCategorySlug == "" {
 		fallbackCategorySlug = "everything-else"

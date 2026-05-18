@@ -2,10 +2,25 @@ package middleware
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 )
+
+// clientIP returns the rate-limit bucket key for a request. r.RemoteAddr is
+// "host:port"; the ephemeral source port changes on every new TCP connection,
+// so keying on it raw lets an attacker open fresh connections to get a fresh
+// full bucket each time — the per-IP limit becomes a no-op. Strip the port so
+// all connections from one host share a bucket. When an upstream trusted-proxy
+// middleware has already rewritten RemoteAddr to a bare IP (no port),
+// SplitHostPort fails and we use the value as-is.
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
 
 // RateLimiter is a per-IP token-bucket limiter. Fixed-window limiters let an
 // attacker fire `rate` requests at the very end of one window and `rate`
@@ -86,7 +101,7 @@ func (rl *RateLimiter) cleanup() {
 // Handler returns an HTTP middleware that rate-limits by client IP.
 func (rl *RateLimiter) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
+		ip := clientIP(r)
 
 		rl.mu.Lock()
 		allowed, retrySec := rl.takeLocked(ip)

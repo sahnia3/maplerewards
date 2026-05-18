@@ -41,7 +41,7 @@ func (h *SpendHandler) RecordSpend(w http.ResponseWriter, r *http.Request) {
 
 	entry, err := h.svc.LogSpend(r.Context(), sessionID, req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "spend.log", err, "could not record this spend — check the card and amount", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, entry)
@@ -70,7 +70,7 @@ func (h *SpendHandler) ListSpendHistory(w http.ResponseWriter, r *http.Request) 
 
 	entries, err := h.svc.GetSpendHistory(r.Context(), sessionID, limit, offset)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonInternalError(w, "spend.history", err)
 		return
 	}
 	if entries == nil {
@@ -91,7 +91,7 @@ func (h *SpendHandler) ExportSpend(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := h.svc.GetSpendHistory(r.Context(), sessionID, 10000, 0)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonInternalError(w, "spend.export", err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *SpendHandler) GetSpendStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.svc.GetSpendStats(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonInternalError(w, "spend.stats", err)
 		return
 	}
 	jsonOK(w, stats)

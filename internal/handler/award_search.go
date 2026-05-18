@@ -40,16 +40,19 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	if !requireBodySessionOwner(w, r, h.sessionLookup, req.SessionID) {
 		return
 	}
-	if req.Origin == "" {
-		jsonError(w, "origin required", http.StatusBadRequest)
+	// Validate BEFORE the service forwards these to paid external scrapers
+	// (Apify/Seats.aero/SerpAPI). Unvalidated junk burned metered quota and
+	// could shape arbitrary third-party query strings.
+	if !isValidIATA(req.Origin) {
+		jsonError(w, "origin must be a 3-letter airport code", http.StatusBadRequest)
 		return
 	}
-	if req.Destination == "" {
-		jsonError(w, "destination required", http.StatusBadRequest)
+	if !isValidIATA(req.Destination) {
+		jsonError(w, "destination must be a 3-letter airport code", http.StatusBadRequest)
 		return
 	}
-	if req.Date == "" {
-		jsonError(w, "date required (YYYY-MM-DD)", http.StatusBadRequest)
+	if !isValidFlightDate(req.Date) {
+		jsonError(w, "date must be a valid YYYY-MM-DD within the next ~2 years", http.StatusBadRequest)
 		return
 	}
 	if req.Cabin == "" {
@@ -57,6 +60,10 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Passengers <= 0 {
 		req.Passengers = 1
+	}
+	if req.Passengers > 9 {
+		jsonError(w, "passengers must be 9 or fewer", http.StatusBadRequest)
+		return
 	}
 
 	results, err := h.svc.Search(r.Context(), req)

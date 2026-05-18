@@ -158,6 +158,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// REDIS_PASSWORD must be set in production. Redis caches full wallets
+	// (point balances, card IDs, nicknames) and valuations; an
+	// unauthenticated Redis on a shared network is a PII disclosure / cache
+	// poisoning vector. Fail fast rather than run with an open cache.
+	if appEnv == "production" && getEnv("REDIS_PASSWORD", "") == "" {
+		log.Error("REDIS_PASSWORD must be set when APP_ENV=production (cache holds wallet PII; unauthenticated Redis is a disclosure vector)")
+		os.Exit(1)
+	}
+
 	walletSvc := service.NewWalletService(walletRepo, cardRepo, spendRepo, bonusRepo, redisCache)
 	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache)
 	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""))

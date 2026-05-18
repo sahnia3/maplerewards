@@ -23,11 +23,11 @@ func (r *AuthRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
-		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		       is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 		FROM users WHERE email = $1 AND deleted_at IS NULL
 	`, email).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -42,11 +42,11 @@ func (r *AuthRepo) GetUserByGoogleID(ctx context.Context, googleID string) (*mod
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, email, session_id, password_hash, google_id, display_name,
-		       is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		       is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 		FROM users WHERE google_id = $1 AND deleted_at IS NULL
 	`, googleID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -82,10 +82,10 @@ func (r *AuthRepo) CreateAuthUser(ctx context.Context, email, passwordHash, disp
 		INSERT INTO users (email, password_hash, display_name, session_id, auth_provider, updated_at)
 		VALUES ($1, $2, $3, $4, 'email', NOW())
 		RETURNING id, email, session_id, password_hash, google_id, display_name,
-		          is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		          is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 	`, email, passwordHash, displayName, sessionID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create auth user: %w", err)
@@ -103,10 +103,10 @@ func (r *AuthRepo) UpsertGoogleUser(ctx context.Context, googleID, email, displa
 			display_name = COALESCE(EXCLUDED.display_name, users.display_name),
 			updated_at = NOW()
 		RETURNING id, email, session_id, password_hash, google_id, display_name,
-		          is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		          is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 	`, googleID, email, displayName, sessionID).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("upsert google user: %w", err)
@@ -118,12 +118,12 @@ func (r *AuthRepo) UpdateProfile(ctx context.Context, userID, displayName string
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		UPDATE users SET display_name = $2, updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING id, email, session_id, password_hash, google_id, display_name,
-		          is_pro, auth_provider, stripe_customer_id, created_at, updated_at
+		          is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 	`, userID, displayName).Scan(
 		&u.ID, &u.Email, &u.SessionID, &u.PasswordHash, &u.GoogleID, &u.DisplayName,
-		&u.IsPro, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsPro, &u.Plan, &u.AuthProvider, &u.StripeCustomerID, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
@@ -195,10 +195,21 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 		return fmt.Errorf("merge user_card_bonuses: %w", err)
 	}
 
-	// Delete remaining duplicate data for anon user
-	_, _ = tx.Exec(ctx, `DELETE FROM user_cards WHERE user_id = $1`, anonUserID)
-	_, _ = tx.Exec(ctx, `DELETE FROM user_monthly_spend WHERE user_id = $1`, anonUserID)
-	_, _ = tx.Exec(ctx, `DELETE FROM user_card_bonuses WHERE user_id = $1`, anonUserID)
+	// Delete remaining duplicate data for anon user. Errors here MUST be
+	// returned, not discarded: a failed Exec aborts the pgx transaction, so
+	// every later statement (incl. the users delete and Commit) fails with an
+	// opaque "current transaction is aborted" and the whole merge silently
+	// rolls back — the user loses their wallet/spend after signup with no
+	// diagnosable cause. Surface the real error so the caller can retry.
+	if _, err := tx.Exec(ctx, `DELETE FROM user_cards WHERE user_id = $1`, anonUserID); err != nil {
+		return fmt.Errorf("merge cleanup user_cards: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_monthly_spend WHERE user_id = $1`, anonUserID); err != nil {
+		return fmt.Errorf("merge cleanup user_monthly_spend: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_card_bonuses WHERE user_id = $1`, anonUserID); err != nil {
+		return fmt.Errorf("merge cleanup user_card_bonuses: %w", err)
+	}
 
 	// Delete the anonymous user
 	_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, anonUserID)
@@ -221,13 +232,19 @@ func (r *AuthRepo) StoreRefreshToken(ctx context.Context, userID, tokenHash stri
 	return nil
 }
 
-// GetRefreshToken looks up a non-revoked, non-expired token by hash.
+// GetRefreshToken looks up a non-expired token by hash, INCLUDING already
+// revoked rows. Revoked rows must be returned so the service layer can run
+// reuse-detection: a presented token whose row has revoked_at set is a replay
+// of an already-rotated token (potential theft). Filtering revoked rows out
+// here would make replay indistinguishable from an unknown token and silently
+// disable the reuse-detection security control. Expiry is still filtered so a
+// genuinely expired token reads as unknown.
 func (r *AuthRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*model.RefreshToken, error) {
 	var t model.RefreshToken
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, token_hash, expires_at, created_at, revoked_at
 		FROM refresh_tokens
-		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()
+		WHERE token_hash = $1 AND expires_at > NOW()
 	`, tokenHash).Scan(
 		&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.CreatedAt, &t.RevokedAt,
 	)
@@ -275,7 +292,7 @@ func (r *AuthRepo) RevokeAllUserTokens(ctx context.Context, userID string) error
 func (r *AuthRepo) SetUserPro(ctx context.Context, userID string, isPro bool) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE users SET is_pro = $1, updated_at = NOW()
-		WHERE id = $2
+		WHERE id = $2 AND deleted_at IS NULL
 	`, isPro, userID)
 	if err != nil {
 		return fmt.Errorf("set user pro: %w", err)
@@ -290,7 +307,7 @@ func (r *AuthRepo) SetUserPro(ctx context.Context, userID string, isPro bool) er
 func (r *AuthRepo) SetUserPlan(ctx context.Context, userID, plan string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE users SET plan = $1, is_pro = ($1 <> 'free'), updated_at = NOW()
-		WHERE id = $2
+		WHERE id = $2 AND deleted_at IS NULL
 	`, plan, userID)
 	if err != nil {
 		return fmt.Errorf("set user plan: %w", err)
@@ -335,7 +352,7 @@ func (r *AuthRepo) SetEmailUnsubscribed(ctx context.Context, userID string) erro
 func (r *AuthRepo) IsEmailUnsubscribed(ctx context.Context, userID string) (bool, error) {
 	var ts *time.Time
 	err := r.pool.QueryRow(ctx,
-		`SELECT email_unsubscribed_at FROM users WHERE id = $1`, userID).Scan(&ts)
+		`SELECT email_unsubscribed_at FROM users WHERE id = $1 AND deleted_at IS NULL`, userID).Scan(&ts)
 	if err == pgx.ErrNoRows {
 		return false, nil
 	}

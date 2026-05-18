@@ -43,9 +43,13 @@ type TransferRepository interface {
 // SpendRepository abstracts spend tracking data access.
 type SpendRepository interface {
 	GetMonthlySpend(ctx context.Context, userID, cardID string, month time.Time) (map[string]float64, error)
+	GetSpendSince(ctx context.Context, userID, cardID string, since time.Time) (map[string]float64, error)
 	UpsertMonthlySpend(ctx context.Context, userID, cardID, categoryID string, month time.Time, amount float64) error
 	GetCapGroupForCard(ctx context.Context, cardID, categoryID string) (*model.CapGroup, error)
 	CreateSpendEntry(ctx context.Context, entry model.SpendEntry) (*model.SpendEntry, error)
+	// RecordSpend atomically inserts the entry and (only if newly inserted)
+	// updates monthly aggregate + welcome-bonus tracker in one transaction.
+	RecordSpend(ctx context.Context, entry model.SpendEntry, month time.Time, bonusAmount float64, applyBonus bool) (*model.SpendEntry, error)
 	ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error)
 	GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error)
 }

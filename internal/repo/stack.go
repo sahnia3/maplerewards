@@ -68,7 +68,7 @@ func (r *StackRepo) BestPortalRate(ctx context.Context, merchantSlug string) (*m
 
 func (r *StackRepo) ActiveOffersForMerchant(ctx context.Context, merchantSlug string) ([]model.NetworkOffer, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, network, merchant_slug, title, reward_type, reward_value, min_spend, card_filter, valid_to, source, COALESCE(source_url,'')
+		SELECT id, network, merchant_slug, title, reward_type, reward_value, min_spend, card_filter, valid_to, source, COALESCE(source_url,''), max_credit_cad
 		FROM network_offers
 		WHERE merchant_slug = $1 AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
 		ORDER BY reward_value DESC
@@ -82,7 +82,7 @@ func (r *StackRepo) ActiveOffersForMerchant(ctx context.Context, merchantSlug st
 		var o model.NetworkOffer
 		var validTo *time.Time
 		if err := rows.Scan(&o.ID, &o.Network, &o.Merchant, &o.Title, &o.RewardType,
-			&o.RewardValue, &o.MinSpend, &o.CardFilter, &validTo, &o.Source, &o.SourceURL); err != nil {
+			&o.RewardValue, &o.MinSpend, &o.CardFilter, &validTo, &o.Source, &o.SourceURL, &o.MaxCreditCAD); err != nil {
 			return nil, err
 		}
 		if validTo != nil {

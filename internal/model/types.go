@@ -606,6 +606,12 @@ type SQCProjection struct {
 	SpendToNextTier  float64               `json:"spend_to_next_tier,omitempty"` // CAD spend at user's BEST card rate to clear gap
 	BestCardForGap   string                `json:"best_card_for_gap,omitempty"` // which card minimises spend-to-tier
 	WalletHasNoCards bool                  `json:"wallet_has_no_aeroplan_cards"` // true if no SQC-earning card in wallet
+	// RevenueFloorNote is set when the current or next tier also enforces a
+	// minimum flight-revenue floor (SQCTier.MinRevenueCAD > 0) that this
+	// projection CANNOT verify — Maple tracks card spend, not flight revenue.
+	// Without this disclosure CurrentTier silently implied full qualification
+	// on SQC alone, overstating the user's actual status.
+	RevenueFloorNote string `json:"revenue_floor_note,omitempty"`
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────
@@ -648,6 +654,9 @@ type BuyPromo struct {
 	ValidFrom          time.Time `json:"valid_from"`
 	ValidTo            *time.Time `json:"valid_to,omitempty"`
 	SourceURL          string  `json:"source_url,omitempty"`
+	// MaxPurchasablePerYear is the program's published annual point-purchase
+	// ceiling (per account). NULL → fall back to defaultMaxAnnualPointsPurchase.
+	MaxPurchasablePerYear *int `json:"max_purchasable_per_year,omitempty"`
 }
 
 type BuyPointsRequest struct {
@@ -810,6 +819,10 @@ type NetworkOffer struct {
 	ValidTo     *string `json:"valid_to,omitempty"`
 	Source      string  `json:"source"`
 	SourceURL   string  `json:"source_url,omitempty"`
+	// MaxCreditCAD bounds a percentage/bonus_points offer's projected value
+	// (real offers cap the credit, e.g. "20% back up to $40"). NULL → flat
+	// statement_credit (already bounded) or fall back to defaultMaxOfferCreditCAD.
+	MaxCreditCAD *float64 `json:"max_credit_cad,omitempty"`
 }
 
 type StackRecommendRequest struct {

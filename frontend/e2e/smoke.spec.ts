@@ -13,10 +13,11 @@ import { test, expect } from "@playwright/test";
 
 test("landing page renders with primary CTA", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle(/Maple Rewards/i);
-  // The hero CTA routes into onboarding — its presence proves the page
-  // rendered past the fold without throwing.
-  await expect(page.getByRole("link", { name: /get started/i }).first()).toBeVisible();
+  await expect(page).toHaveTitle(/Maple\s?Rewards/i);
+  // The hero CTA links to the optimizer (post-redesign — previously "Get
+  // started"). Its presence proves the page rendered past the fold without
+  // throwing.
+  await expect(page.locator('a[href="/optimizer"]').first()).toBeVisible();
 });
 
 test("optimizer page loads the form", async ({ page }) => {

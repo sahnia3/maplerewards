@@ -74,10 +74,10 @@ func (h *OptimizerHandler) GetBestCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, service.ErrWalletEmpty) || strings.Contains(err.Error(), "wallet is empty") {
-			jsonErrorCode(w, "WALLET_EMPTY", err.Error(), http.StatusBadRequest)
+			jsonErrorCode(w, "WALLET_EMPTY", "your wallet has no cards to optimize", http.StatusBadRequest)
 			return
 		}
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonMaskedError(w, "optimizer.bestcard", err, "could not compute a recommendation for this request", http.StatusBadRequest)
 		return
 	}
 	jsonOK(w, recs)

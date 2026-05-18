@@ -161,6 +161,42 @@ func TestSQC_SkipsCardsWithZeroSQCRate(t *testing.T) {
 	}
 }
 
+// P6 sibling re-sweep: GetUserSQCContext does not guarantee tier ordering.
+// Feed tiers in a shuffled order and assert the projection is identical to
+// the ascending-ordered case (no impossible "next tier", correct current).
+func TestSQC_UnorderedTiersStillCorrect(t *testing.T) {
+	shuffled := []model.SQCTier{
+		{StatusLevel: "Super Elite", SQCRequired: 125_000, MinRevenueCAD: 20_000},
+		{StatusLevel: "25K", SQCRequired: 25_000},
+		{StatusLevel: "75K", SQCRequired: 75_000, MinRevenueCAD: 9_000},
+		{StatusLevel: "35K", SQCRequired: 35_000},
+		{StatusLevel: "50K", SQCRequired: 50_000},
+	}
+	cards := []model.SQCCardContribution{
+		{CardID: "c1", CardName: "Reserve", DollarsPerSQC: 4, YTDSpend: 100_000, SQCEarned: 28_000},
+	}
+	r, err := newSQCSvc(cards, shuffled).Project(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Same expectations as TestSQC_AtTierThresholdShowsCurrentAndNext.
+	if r.CurrentTier != "25K" {
+		t.Fatalf("unordered tiers: expected CurrentTier 25K, got %q", r.CurrentTier)
+	}
+	if r.NextTier != "35K" {
+		t.Fatalf("unordered tiers: expected NextTier 35K (not a higher tier), got %q", r.NextTier)
+	}
+	if r.SQCToNextTier != 7000 {
+		t.Fatalf("unordered tiers: expected 7K SQC to next, got %d", r.SQCToNextTier)
+	}
+	// out.Tiers must be surfaced ascending after the in-place sort.
+	for i := 1; i < len(r.Tiers); i++ {
+		if r.Tiers[i].SQCRequired < r.Tiers[i-1].SQCRequired {
+			t.Fatalf("out.Tiers not ascending at %d: %+v", i, r.Tiers)
+		}
+	}
+}
+
 func TestSQC_RepoErrorPropagates(t *testing.T) {
 	svc := NewSQCService(&mockMissedWalletRepo{}, &mockSQCRepo{err: errors.New("db down")})
 	_, err := svc.Project(context.Background(), "sess")

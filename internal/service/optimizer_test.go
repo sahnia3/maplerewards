@@ -126,6 +126,14 @@ func (m *mockSpendRepo) GetMonthlySpend(ctx context.Context, userID, cardID stri
 	return make(map[string]float64), nil
 }
 
+func (m *mockSpendRepo) GetSpendSince(ctx context.Context, userID, cardID string, since time.Time) (map[string]float64, error) {
+	key := userID + ":" + cardID + ":" + since.Format("2006-01-02")
+	if spend, ok := m.monthlySpend[key]; ok {
+		return spend, nil
+	}
+	return make(map[string]float64), nil
+}
+
 func (m *mockSpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, categoryID string, month time.Time, amount float64) error {
 	return nil
 }
@@ -139,6 +147,12 @@ func (m *mockSpendRepo) GetCapGroupForCard(ctx context.Context, cardID, category
 }
 
 func (m *mockSpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry) (*model.SpendEntry, error) {
+	entry.ID = "test-entry-id"
+	entry.CreatedAt = "2026-01-01T00:00:00Z"
+	return &entry, nil
+}
+
+func (m *mockSpendRepo) RecordSpend(ctx context.Context, entry model.SpendEntry, month time.Time, bonusAmount float64, applyBonus bool) (*model.SpendEntry, error) {
 	entry.ID = "test-entry-id"
 	entry.CreatedAt = "2026-01-01T00:00:00Z"
 	return &entry, nil

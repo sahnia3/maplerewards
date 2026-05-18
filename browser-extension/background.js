@@ -20,14 +20,53 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 // API call. The worker forwards the request with `credentials: include` so
 // the user's mr_access cookie (set by the web app on the same origin) is
 // attached automatically.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+//
+// SECURITY: this worker is a credentialed fetch proxy. Without the guards
+// below, ANY script that can reach this message channel (a content script
+// runs on 25+ merchant domains; a compromised/XSS'd merchant page relaying
+// via the content script) could drive arbitrary authenticated API calls
+// against the user's account (account deletion, wallet enumeration, billing
+// portal) and read the responses. We therefore:
+//   1. Only accept messages from THIS extension's own contexts.
+//   2. Allow only the exact (method, path) pairs the extension actually
+//      uses — a strict allowlist, not caller-supplied path/method.
+
+// The complete set of API calls this extension legitimately makes.
+// `path` is matched as an anchored regex; nothing else is forwarded.
+const ALLOWED_REQUESTS = [
+  { method: "GET", path: /^\/wallet\/[a-f0-9]{32}$/ }, // popup: read wallet
+  { method: "POST", path: /^\/optimize$/ },             // content: optimize
+];
+
+function isAllowed(method, path) {
+  return ALLOWED_REQUESTS.some(
+    (r) => r.method === method && typeof path === "string" && r.path.test(path)
+  );
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type !== "api_fetch") return false;
+
+  // 1. Reject anything not originating from this extension itself.
+  if (!sender || sender.id !== chrome.runtime.id) {
+    sendResponse({ ok: false, status: 0, body: "forbidden: sender" });
+    return false;
+  }
+
+  // 2. Enforce the method + path allowlist. Caller cannot pick arbitrary
+  //    endpoints; an unknown request is refused without ever being sent.
+  const method = (msg.method || "GET").toUpperCase();
+  if (!isAllowed(method, msg.path)) {
+    sendResponse({ ok: false, status: 0, body: "forbidden: request not allowlisted" });
+    return false;
+  }
+
   (async () => {
     try {
       const { apiBase } = await chrome.storage.local.get("apiBase");
       const base = apiBase || DEFAULT_API_BASE;
       const res = await fetch(base + msg.path, {
-        method: msg.method || "GET",
+        method,
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: msg.body ? JSON.stringify(msg.body) : undefined,
