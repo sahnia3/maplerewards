@@ -124,3 +124,70 @@ func (r *CardOfferRepo) Delete(ctx context.Context, userID, offerID string) erro
 	_, err := r.db.Exec(ctx, `DELETE FROM card_offers WHERE id = $1 AND user_id = $2`, offerID, userID)
 	return err
 }
+
+// CardOfferReminder is one row the expiry sweep emails on. CASL is enforced
+// in the query (recipient must have an email and not be unsubscribed).
+type CardOfferReminder struct {
+	OfferID      string
+	UserID       string
+	Email        string
+	CardName     string
+	Merchant     string
+	Description  string
+	EarnAmount   *float64
+	MinSpend     *float64
+	ExpiresAt    time.Time
+	DaysToExpiry int
+}
+
+// DueForExpiryReminder returns unused, not-yet-reminded offers whose
+// expires_at falls within the next `withinDays` (inclusive of today), joined
+// to a mailable, non-unsubscribed recipient. Drives the worker's pre-expiry
+// email so "track what you clipped" actually alerts (LAUNCH-ISSUES.md P4.2).
+func (r *CardOfferRepo) DueForExpiryReminder(ctx context.Context, withinDays, limit int) ([]CardOfferReminder, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT o.id, o.user_id, u.email, c.name, o.merchant,
+		       COALESCE(o.description, ''), o.earn_amount, o.min_spend, o.expires_at
+		FROM card_offers o
+		JOIN cards c ON c.id = o.card_id
+		JOIN users u ON u.id = o.user_id
+		WHERE o.is_used = false
+		  AND o.expiry_notified_at IS NULL
+		  AND o.expires_at IS NOT NULL
+		  AND o.expires_at >= CURRENT_DATE
+		  AND o.expires_at <= CURRENT_DATE + ($1::int)
+		  AND u.email IS NOT NULL AND u.email <> ''
+		  AND u.email_unsubscribed_at IS NULL
+		  AND u.deleted_at IS NULL
+		ORDER BY o.expires_at
+		LIMIT $2
+	`, withinDays, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CardOfferReminder
+	for rows.Next() {
+		var m CardOfferReminder
+		var exp time.Time
+		if err := rows.Scan(&m.OfferID, &m.UserID, &m.Email, &m.CardName, &m.Merchant,
+			&m.Description, &m.EarnAmount, &m.MinSpend, &exp); err != nil {
+			return nil, err
+		}
+		m.ExpiresAt = exp
+		m.DaysToExpiry = int(time.Until(exp.Add(24*time.Hour)).Hours() / 24)
+		if m.DaysToExpiry < 0 {
+			m.DaysToExpiry = 0
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// MarkExpiryNotified stamps the offer so the reminder is sent exactly once.
+func (r *CardOfferRepo) MarkExpiryNotified(ctx context.Context, offerID string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE card_offers SET expiry_notified_at = NOW(), updated_at = NOW() WHERE id = $1`,
+		offerID)
+	return err
+}

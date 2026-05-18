@@ -120,6 +120,13 @@ func main() {
 	missedRewardsSvc := service.NewMissedRewardsService(walletRepo, spendRepo, optimizerSvc)
 	missedRewardsDigestSvc := service.NewMissedRewardsDigestService(authRepo, missedRewardsSvc, mailer)
 
+	// Pre-expiry reminders for offers the user clipped (card_offers). Runs in
+	// the daily digest slot; exactly-once via expiry_notified_at; CASL footer
+	// + opt-out enforced. Without this the "track what you clipped" tracker is
+	// inert (LAUNCH-ISSUES.md P4.2).
+	cardOfferRepo := repo.NewCardOfferRepo(pool)
+	offerExpirySvc := service.NewOfferExpiryService(cardOfferRepo, mailer)
+
 	// Promo Sentinel — scans Tavily-curated rewards-blog domains every 12h
 	// for active transfer-bonus promotions, extracts (from, to, %, expires)
 	// via Claude, upserts into transfer_bonus_events. No-op when either
@@ -174,6 +181,7 @@ func main() {
 	safely(log, "issuer", func() { runIssuerSweep(ctx, log, issuerWatch, issuerBatchSize) })
 	safely(log, "issuer-digest", func() { digestSvc.RunSweep(ctx, log, time.Now()) })
 	safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
+	safely(log, "offer-expiry", func() { offerExpirySvc.RunSweep(ctx, log, time.Now()) })
 	safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
 	safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
 
@@ -204,6 +212,7 @@ func main() {
 		case <-digestTicker.C:
 			safely(log, "issuer-digest", func() { digestSvc.RunSweep(ctx, log, time.Now()) })
 			safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
+			safely(log, "offer-expiry", func() { offerExpirySvc.RunSweep(ctx, log, time.Now()) })
 			safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
 			// Valuation refresh runs in the same daily slot. The 7-day staleness
 			// threshold is honored by checking the freshness chip in the UI
