@@ -15,6 +15,12 @@ type StackRepository interface {
 	ActiveOffersForMerchant(ctx context.Context, merchantSlug string) ([]model.NetworkOffer, error)
 }
 
+// defaultMaxOfferCreditCAD conservatively bounds a percentage/points network
+// offer that has no modelled max-credit (typical Amex/RBC/Scene+ offers cap
+// the credit, e.g. "20% back up to $40"). Prevents an impossible projected
+// discount on large spend; replaced by per-offer caps in the gated remediation.
+const defaultMaxOfferCreditCAD = 50.0
+
 // StackService computes the [portal × card × network-offer] triple-stack for a
 // given merchant + spend.
 type StackService struct {
@@ -97,7 +103,7 @@ func (s *StackService) Recommend(ctx context.Context, req model.StackRecommendRe
 			var val float64
 			switch o.RewardType {
 			case "statement_credit":
-				val = o.RewardValue
+				val = o.RewardValue // flat $ — already bounded
 			case "merchant_discount":
 				val = req.SpendAmount * o.RewardValue / 100
 			case "bonus_points":
@@ -106,6 +112,19 @@ func (s *StackService) Recommend(ctx context.Context, req model.StackRecommendRe
 			}
 			if val == 0 {
 				continue
+			}
+			// SAFETY GUARDRAIL — same unbounded-projection class as the
+			// optimizer/buy-points caps (docs/OPTIMIZER-CAP-AUDIT.md). Real
+			// network offers ("20% back, up to $40") carry a max-credit cap
+			// we don't model yet, so a %/points offer on large spend would
+			// project an impossible value ($20k off $100k). Until per-offer
+			// caps land, percentage/points offers are bounded by a
+			// conservative default and the truncation is disclosed.
+			if o.RewardType != "statement_credit" && val > defaultMaxOfferCreditCAD {
+				val = defaultMaxOfferCreditCAD
+				rec.Warnings = append(rec.Warnings, fmt.Sprintf(
+					"%s offer value capped at $%.0f (estimate — most network offers cap the credit; verify the offer's max).",
+					o.Title, defaultMaxOfferCreditCAD))
 			}
 			rec.Components = append(rec.Components, model.StackComponent{
 				Layer:     "network_offer",
