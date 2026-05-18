@@ -114,7 +114,7 @@ func (r *SpendRepo) RecordSpend(
 	err = tx.QueryRow(ctx, `
 		INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (user_id, card_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
+		ON CONFLICT (user_id, card_id, category_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
 		RETURNING id, created_at
 	`, entry.UserID, entry.CardID, entry.CategoryID, entry.Amount,
 		entry.PointsEarned, entry.DollarValue, entry.SpentAt, entry.Note,
@@ -125,10 +125,10 @@ func (r *SpendRepo) RecordSpend(
 		newlyInserted = false
 		if fErr := tx.QueryRow(ctx, `
 			SELECT id, created_at FROM spend_entries
-			WHERE user_id = $1 AND card_id = $2 AND spent_at = $3
-			  AND amount = $4 AND COALESCE(note,'') = COALESCE($5,'')
+			WHERE user_id = $1 AND card_id = $2 AND category_id = $3 AND spent_at = $4
+			  AND amount = $5 AND COALESCE(note,'') = COALESCE($6,'')
 			LIMIT 1
-		`, entry.UserID, entry.CardID, entry.SpentAt, entry.Amount, entry.Note,
+		`, entry.UserID, entry.CardID, entry.CategoryID, entry.SpentAt, entry.Amount, entry.Note,
 		).Scan(&entry.ID, &createdAt); fErr != nil {
 			return &entry, fErr
 		}
@@ -214,7 +214,7 @@ func (r *SpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (user_id, card_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
+		ON CONFLICT (user_id, card_id, category_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
 		RETURNING id, created_at
 	`, entry.UserID, entry.CardID, entry.CategoryID, entry.Amount,
 		entry.PointsEarned, entry.DollarValue, entry.SpentAt, entry.Note,
@@ -233,10 +233,10 @@ func (r *SpendRepo) CreateSpendEntry(ctx context.Context, entry model.SpendEntry
 		fetchErr := r.db.QueryRow(ctx, `
 			SELECT id, created_at
 			FROM spend_entries
-			WHERE user_id = $1 AND card_id = $2 AND spent_at = $3
-			  AND amount = $4 AND COALESCE(note,'') = COALESCE($5,'')
+			WHERE user_id = $1 AND card_id = $2 AND category_id = $3 AND spent_at = $4
+			  AND amount = $5 AND COALESCE(note,'') = COALESCE($6,'')
 			LIMIT 1
-		`, entry.UserID, entry.CardID, entry.SpentAt, entry.Amount, entry.Note,
+		`, entry.UserID, entry.CardID, entry.CategoryID, entry.SpentAt, entry.Amount, entry.Note,
 		).Scan(&entry.ID, &createdAt)
 		if fetchErr == nil {
 			entry.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z07:00")
