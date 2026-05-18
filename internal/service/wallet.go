@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"maplerewards/internal/model"
@@ -42,6 +43,9 @@ func (s *WalletService) GetWallet(ctx context.Context, sessionID string) ([]mode
 	if err != nil {
 		return nil, err
 	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
 	cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
 	if err != nil {
 		return nil, err
@@ -62,7 +66,7 @@ func (s *WalletService) AddCard(ctx context.Context, sessionID, cardID string) e
 	if _, err := s.walletRepo.AddCard(ctx, user.ID, cardID); err != nil {
 		return err
 	}
-	go s.cache.InvalidateWallet(context.Background(), sessionID) //nolint:errcheck
+	s.invalidateWallet(ctx, sessionID)
 	return nil
 }
 
@@ -71,22 +75,31 @@ func (s *WalletService) RemoveCard(ctx context.Context, sessionID, cardID string
 	if err != nil {
 		return err
 	}
+	if user == nil {
+		return fmt.Errorf("session not found")
+	}
 	if err := s.walletRepo.RemoveCard(ctx, user.ID, cardID); err != nil {
 		return err
 	}
-	go s.cache.InvalidateWallet(context.Background(), sessionID) //nolint:errcheck
+	s.invalidateWallet(ctx, sessionID)
 	return nil
 }
 
 func (s *WalletService) UpdateBalance(ctx context.Context, sessionID, cardID string, balance int64) error {
+	if balance < 0 {
+		return fmt.Errorf("point balance cannot be negative")
+	}
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
+	if user == nil {
+		return fmt.Errorf("session not found")
+	}
 	if err := s.walletRepo.UpdateBalance(ctx, user.ID, cardID, balance); err != nil {
 		return err
 	}
-	go s.cache.InvalidateWallet(context.Background(), sessionID) //nolint:errcheck
+	s.invalidateWallet(ctx, sessionID)
 	return nil
 }
 
@@ -95,11 +108,26 @@ func (s *WalletService) UpdateCardDetails(ctx context.Context, sessionID, cardID
 	if err != nil {
 		return err
 	}
+	if user == nil {
+		return fmt.Errorf("session not found")
+	}
 	if err := s.walletRepo.UpdateCardDetails(ctx, user.ID, cardID, req); err != nil {
 		return err
 	}
-	go s.cache.InvalidateWallet(context.Background(), sessionID) //nolint:errcheck
+	s.invalidateWallet(ctx, sessionID)
 	return nil
+}
+
+// invalidateWallet clears the wallet cache synchronously on the write path.
+// Async (`go ...`) invalidation raced the client's post-save refetch and
+// re-served the stale pre-edit balance — the P0.2 "shows 0 after refresh"
+// symptom (docs/LAUNCH-ISSUES.md). The DB write already succeeded, so a
+// cache-invalidation failure is logged (degrades to ≤TTL staleness) rather
+// than failing the request.
+func (s *WalletService) invalidateWallet(ctx context.Context, sessionID string) {
+	if err := s.cache.InvalidateWallet(ctx, sessionID); err != nil {
+		slog.Error("wallet cache invalidation failed", "session", sessionID, "err", err)
+	}
 }
 
 // LogSpend records a manual spend entry and updates monthly spend tracking for cap enforcement.
@@ -107,6 +135,9 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
 	}
 
 	// Resolve category
@@ -192,6 +223,9 @@ func (s *WalletService) GetSpendHistory(ctx context.Context, sessionID string, l
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
 	return s.spendRepo.ListSpendEntries(ctx, user.ID, limit, offset)
 }
 
@@ -200,6 +234,9 @@ func (s *WalletService) GetSpendStats(ctx context.Context, sessionID string) (*m
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
 	}
 	return s.spendRepo.GetSpendStats(ctx, user.ID)
 }

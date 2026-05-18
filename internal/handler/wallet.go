@@ -66,14 +66,21 @@ func (h *WalletHandler) RemoveCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WalletHandler) UpdateBalance(w http.ResponseWriter, r *http.Request) {
+	// Pointer so an omitted/empty body ({}) is distinguishable from an
+	// explicit 0 — otherwise a stray PUT silently zeroes the balance, the
+	// P0.2 "shows 0 again" footgun (docs/LAUNCH-ISSUES.md).
 	var body struct {
-		Balance int64 `json:"balance"`
+		Balance *int64 `json:"balance"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, "balance required", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Balance == nil {
+		jsonError(w, "balance is required", http.StatusBadRequest)
 		return
 	}
-	err := h.svc.UpdateBalance(r.Context(), chi.URLParam(r, "sessionID"), chi.URLParam(r, "cardID"), body.Balance)
+	if *body.Balance < 0 {
+		jsonError(w, "balance cannot be negative", http.StatusBadRequest)
+		return
+	}
+	err := h.svc.UpdateBalance(r.Context(), chi.URLParam(r, "sessionID"), chi.URLParam(r, "cardID"), *body.Balance)
 	if err != nil {
 		jsonError(w, "failed to update balance", http.StatusInternalServerError)
 		return
