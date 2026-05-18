@@ -3,8 +3,14 @@
 **Date:** 2026-05-18
 **Trigger:** Founder QA — `/optimizer` projected Scotiabank Gold Amex at a flat 5x
 for $100,000 spend (500,000 pts), ignoring its real ~$50K/yr accelerated cap.
-**Status:** Investigation + audit complete. Remediation is the gated goal
-(post-`/ultraplan`). NO data/code changes made yet.
+**Status:** Investigation + audit complete. **Safety guardrail SHIPPED**
+(commit "safety guardrail kills unbounded/impossible projections"): the
+optimizer can no longer project an unbounded accelerated total, and
+buy-points no longer endorses an impossible quantity — both bounded by
+conservative, clearly-disclosed defaults, with regression tests.
+**Still gated (post-`/ultraplan` + formal goal):** the *verified per-card
+cap values* that replace the conservative defaults, the period-aware
+accumulation code fix, and the exhaustive QA matrix.
 
 ## Root cause (sharpened)
 
