@@ -617,7 +617,7 @@ function TripPlannerInner() {
                   isAuthed={hasWallet}
                   isPro={isPro}
                   onSaveTrip={async () => {
-                    if (!isPro) return;
+                    if (!isPro) return false;
                     try {
                       const sid = await ensureSession();
                       await createAwardWatch(sid, {
@@ -628,8 +628,10 @@ function TripPlannerInner() {
                         cabin,
                         program_slug: f.program,
                       });
+                      return true;
                     } catch (e) {
                       console.warn("save trip failed", e);
+                      return false;
                     }
                   }}
                 />
@@ -703,9 +705,13 @@ function FlightRow({
   index: number;
   isAuthed: boolean;
   isPro: boolean;
-  onSaveTrip: () => void;
+  onSaveTrip: () => Promise<boolean>;
 }) {
-  const [saved, setSaved] = useState(false);
+  // idle → saving → saved | error. We only show "saved" once the watch
+  // actually persisted (the old code flipped to "Saved" optimistically even
+  // when the request failed — a false confirmation).
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const saved = saveState === "saved";
   const isBest = index === 0;
 
   const taxesNode = (() => {
@@ -800,10 +806,17 @@ function FlightRow({
             {isPro ? (
               <button
                 type="button"
-                onClick={() => {
-                  if (saved) return;
-                  setSaved(true);
-                  onSaveTrip();
+                disabled={saveState === "saving" || saved}
+                title={
+                  saved
+                    ? "Maple is watching this route — you'll get an alert if the award price drops."
+                    : "Save this route — Maple watches it and alerts you when the price drops."
+                }
+                onClick={async () => {
+                  if (saved || saveState === "saving") return;
+                  setSaveState("saving");
+                  const ok = await onSaveTrip();
+                  setSaveState(ok ? "saved" : "error");
                 }}
                 className="mono"
                 style={{
@@ -811,14 +824,25 @@ function FlightRow({
                   padding: "3px 9px",
                   borderRadius: 999,
                   background: saved ? "var(--surface-2)" : "transparent",
-                  color: saved ? "var(--ink-3)" : "var(--ink-2)",
-                  border: "1px solid var(--rule)",
+                  color:
+                    saveState === "error"
+                      ? "var(--accent)"
+                      : saved
+                        ? "var(--ink-3)"
+                        : "var(--ink-2)",
+                  border: `1px solid ${saveState === "error" ? "var(--accent)" : "var(--rule)"}`,
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
-                  cursor: saved ? "default" : "pointer",
+                  cursor: saved || saveState === "saving" ? "default" : "pointer",
                 }}
               >
-                {saved ? "Saved" : "Save trip"}
+                {saveState === "saving"
+                  ? "Saving…"
+                  : saveState === "saved"
+                    ? "Watching ✓"
+                    : saveState === "error"
+                      ? "Retry"
+                      : "Save trip"}
               </button>
             ) : (
               <span
