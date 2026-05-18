@@ -5,11 +5,20 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
 	"maplerewards/internal/model"
 )
+
+// defaultUnverifiedAnnualCap bounds an accelerated multiplier that has no
+// modelled cap (incomplete catalog data — docs/OPTIMIZER-CAP-AUDIT.md). It is
+// intentionally conservative: it changes nothing for normal per-category
+// spend (a few $k) but prevents the optimizer from ever projecting an
+// unbounded, impossible accelerated total. Replaced per-card by verified
+// terms once the gated cap-data remediation lands.
+const defaultUnverifiedAnnualCap = 20000.0
 
 type OptimizerService struct {
 	cardRepo      CardRepository
@@ -226,6 +235,30 @@ func (s *OptimizerService) scoreCard(
 			spendAmount, currentSpend, *multiplier.CapAmount, safeStr(multiplier.CapPeriod),
 			multiplier.EarnRate, multiplier.FallbackEarnRate,
 		)
+	default:
+		// SAFETY GUARDRAIL. ~181 bonus multipliers across 72 cards have no
+		// modelled cap (the catalog data is incomplete — see
+		// docs/OPTIMIZER-CAP-AUDIT.md). Almost every real Canadian card caps
+		// accelerated earn; without a cap the optimizer projected absurd,
+		// credibility-destroying numbers (e.g. Scotiabank Gold = 500,000 pts
+		// on $100k). Until verified per-card caps land, an *accelerated* rate
+		// (bonus above its own fallback) with no modelled cap is bounded by a
+		// conservative default annual cap so a projection can never be
+		// unbounded. Deliberately errs LOW (under-promise, not over-promise)
+		// and the note discloses it's an unverified estimate. Cards that earn
+		// a flat rate (EarnRate == FallbackEarnRate, e.g. true unlimited
+		// ultra-premium) are unaffected.
+		if multiplier.EarnRate > multiplier.FallbackEarnRate && multiplier.EarnRate > 1 {
+			effectiveRate, isCapHit, note = calculateBlendedRate(
+				spendAmount, 0, defaultUnverifiedAnnualCap, "annual",
+				multiplier.EarnRate, multiplier.FallbackEarnRate,
+			)
+			if isCapHit {
+				note = "Estimate — accelerated earn assumed capped at $" +
+					strconv.Itoa(int(defaultUnverifiedAnnualCap)) +
+					"/yr pending verified card terms. " + note
+			}
+		}
 	}
 
 	// ── Cashback cards (Rogers Platinum, Tangerine, etc.) ────────────────

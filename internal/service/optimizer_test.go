@@ -958,3 +958,47 @@ func TestGetBestCard_PerPurchaseIgnoresMonthlySpend(t *testing.T) {
 		t.Errorf("per-purchase return: got %.2f%%, want 5.00%% — monthly spend state leaked into the replay (H3)", recs[0].EffectiveReturn)
 	}
 }
+
+// TestGetBestCard_UnmodeledCapGuardrail proves the safety guardrail: an
+// accelerated multiplier (rate > fallback) with NO cap_amount and NO
+// cap_group must NOT project unbounded. This is the Scotiabank-Gold class
+// ($100k → 500k pts). With the $20,000/yr default cap: $100k at 5x/1x
+// blends to (20000*5 + 80000*1)/100000 = 1.8x → at 1.0¢ CPP that is a
+// 1.8% effective return / 180,000 pts, never the absurd 500,000.
+func TestGetBestCard_UnmodeledCapGuardrail(t *testing.T) {
+	ts := newTestOptimizer()
+	ts.cardRepo.categories["groceries"] = &model.Category{ID: "cat-g", Slug: "groceries"}
+	ts.walletRepo.users["sess-1"] = &model.User{ID: "u1"}
+	ts.walletRepo.cards["u1"] = []model.UserCard{
+		{
+			ID: "uc-1", UserID: "u1", CardID: "c1",
+			Card: &model.Card{
+				ID: "c1", Name: "Uncapped Bonus Card", LoyaltyProgramID: "lp-1",
+				LoyaltyProgram: &model.LoyaltyProgram{ID: "lp-1", Slug: "prog", BaseCPP: 1.0},
+			},
+		},
+	}
+	// 5x grocery, fallback 1x, NO CapAmount, NO cap_group → hits the default.
+	ts.cardRepo.multipliers["c1:cat-g"] = &model.CardMultiplier{
+		EarnRate: 5.0, EarnType: "points", FallbackEarnRate: 1.0,
+	}
+	ts.valuationRepo.cpps["prog:base"] = 1.0
+
+	recs, err := ts.svc.GetBestCard(context.Background(), model.OptimizeRequest{
+		SessionID: "sess-1", CategorySlug: "groceries", SpendAmount: 100000,
+	})
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("unexpected: err=%v recs=%d", err, len(recs))
+	}
+	r := recs[0]
+	// Must be the bounded blended return, NOT the unbounded 5.0%.
+	if !almostEqual(r.EffectiveReturn, 1.8, 0.01) {
+		t.Errorf("guardrail not applied: effective return %.2f%%, want 1.80%% (unbounded bug = 5.00%%)", r.EffectiveReturn)
+	}
+	if r.PointsEarned >= 500000 {
+		t.Errorf("projected %.0f pts on $100k — unbounded projection not bounded by guardrail", r.PointsEarned)
+	}
+	if !r.IsCapHit {
+		t.Error("expected IsCapHit=true for $100k over the $20k default guardrail cap")
+	}
+}

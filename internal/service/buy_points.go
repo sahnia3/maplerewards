@@ -7,6 +7,12 @@ import (
 	"maplerewards/internal/model"
 )
 
+// defaultMaxAnnualPointsPurchase is a conservative guardrail until per-program
+// purchase ceilings are modelled (docs/OPTIMIZER-CAP-AUDIT.md). Most Canadian-
+// relevant programs cap bought points well under this; anything above is
+// flagged as likely un-purchasable in a single year rather than endorsed.
+const defaultMaxAnnualPointsPurchase = 200000
+
 type BuyPromoRepository interface {
 	CurrentPromos(ctx context.Context) ([]model.BuyPromo, error)
 }
@@ -85,6 +91,20 @@ func (s *BuyPointsService) Evaluate(ctx context.Context, req model.BuyPointsRequ
 		verdict.Rationale = fmt.Sprintf(
 			"Buying these points (%.2f¢/pt) costs more than the cash alternative (%.2f¢/pt break-even). Pay cash.",
 			promo.PromoCentsPerPoint, verdict.BreakEvenCentsPerPoint,
+		)
+	}
+
+	// SAFETY GUARDRAIL (same class as the optimizer cap bug — see
+	// docs/OPTIMIZER-CAP-AUDIT.md). Every loyalty program caps how many
+	// points you can BUY per year; we don't model per-program ceilings yet,
+	// so a request for an impossible quantity (e.g. 2,000,000 pts) would
+	// otherwise return a confident "buy". Flag anything over a conservative
+	// default so the tool never silently endorses an un-purchasable amount.
+	if req.PointsNeeded > defaultMaxAnnualPointsPurchase && verdict.Verdict == "buy" {
+		verdict.Verdict = "earn"
+		verdict.Rationale = fmt.Sprintf(
+			"%d points likely exceeds %s's annual point-purchase limit (most programs cap well under %d/yr) — the full amount may not be purchasable in one year. Verify the program's purchase cap; earn the balance organically or split across years. (If it IS purchasable: %s)",
+			req.PointsNeeded, promo.PromoLabel, defaultMaxAnnualPointsPurchase, verdict.Rationale,
 		)
 	}
 	return verdict, nil
