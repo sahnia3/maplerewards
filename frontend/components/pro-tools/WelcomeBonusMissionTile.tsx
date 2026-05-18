@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Target } from "lucide-react";
-import { getWelcomeBonusMission, type MissionReport, type MissionItem } from "@/lib/api";
+import {
+  getWelcomeBonusMission,
+  getWallet,
+  activateBonus,
+  type MissionReport,
+  type MissionItem,
+} from "@/lib/api";
+import type { UserCard } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { sectionStyle } from "./_shared";
@@ -21,18 +28,44 @@ export function WelcomeBonusMissionTile({ sessionId, isReady }: Props) {
   const [report, setReport] = useState<MissionReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // In-place activation (P2.5): the empty state used to dead-end at /wallet.
+  const [cards, setCards] = useState<UserCard[]>([]);
+  const [pickedCard, setPickedCard] = useState("");
+  const [activating, setActivating] = useState(false);
+  const [activateErr, setActivateErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!isReady || !sessionId) return;
     setLoading(true);
     setErr(null);
-    getWelcomeBonusMission(sessionId)
-      .then(setReport)
+    Promise.all([
+      getWelcomeBonusMission(sessionId),
+      getWallet(sessionId).catch(() => [] as UserCard[]),
+    ])
+      .then(([rep, held]) => {
+        setReport(rep);
+        setCards(held);
+      })
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not load mission report"))
       .finally(() => setLoading(false));
   }, [sessionId, isReady]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleActivate() {
+    if (!sessionId || !pickedCard) return;
+    setActivating(true);
+    setActivateErr(null);
+    try {
+      await activateBonus(sessionId, pickedCard);
+      setPickedCard("");
+      load(); // re-pull mission — the new tracker now appears as an item
+    } catch (e) {
+      setActivateErr(e instanceof Error ? e.message : "Could not activate bonus tracker");
+    } finally {
+      setActivating(false);
+    }
+  }
 
   return (
     <section style={sectionStyle}>
@@ -88,26 +121,58 @@ export function WelcomeBonusMissionTile({ sessionId, isReady }: Props) {
               Activate a welcome-bonus tracker on one of your cards and Mission
               Control will project whether you'll hit the minimum spend in time.
             </p>
-            <a
-              href="/wallet"
-              className="mono"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "10px 18px",
-                borderRadius: 8,
-                background: "var(--accent)",
-                color: "#fff",
-                textDecoration: "none",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-              }}
-            >
-              Activate from wallet →
-            </a>
+            {cards.length === 0 ? (
+              <a
+                href="/wallet"
+                className="mono"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "10px 18px", borderRadius: 8, background: "var(--accent)",
+                  color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 600,
+                  letterSpacing: "0.14em", textTransform: "uppercase",
+                }}
+              >
+                Add a card first →
+              </a>
+            ) : (
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                <select
+                  value={pickedCard}
+                  onChange={(e) => setPickedCard(e.target.value)}
+                  className="mono"
+                  style={{
+                    padding: "9px 12px", borderRadius: 8, border: "1px solid var(--rule)",
+                    background: "var(--surface)", color: "var(--ink)", fontSize: 12,
+                  }}
+                >
+                  <option value="">Pick a card…</option>
+                  {cards.map((uc) => (
+                    <option key={uc.card_id} value={uc.card_id}>
+                      {uc.nickname || uc.card?.name || uc.card_id}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleActivate}
+                  disabled={!pickedCard || activating}
+                  className="mono"
+                  style={{
+                    padding: "10px 18px", borderRadius: 8,
+                    background: !pickedCard || activating ? "var(--surface-2)" : "var(--accent)",
+                    color: !pickedCard || activating ? "var(--ink-3)" : "#fff",
+                    border: "none", fontSize: 11, fontWeight: 600,
+                    letterSpacing: "0.14em", textTransform: "uppercase",
+                    cursor: !pickedCard || activating ? "default" : "pointer",
+                  }}
+                >
+                  {activating ? "Activating…" : "Activate tracker"}
+                </button>
+              </div>
+            )}
+            {activateErr && (
+              <p style={{ color: "var(--accent)", fontSize: 12, marginTop: 10 }}>{activateErr}</p>
+            )}
           </div>
         )}
 
