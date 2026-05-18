@@ -8,7 +8,9 @@ import {
   recordApplication,
   deleteApplication,
   listCards,
+  getCardEligibility,
   type CardApplication,
+  type CardEligibility,
 } from "@/lib/api";
 import type { Card } from "@/lib/types";
 import { PageMasthead } from "@/components/editorial/page-masthead";
@@ -32,6 +34,23 @@ export default function ApplicationsPage() {
   const [appliedAt, setAppliedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState<"pending" | "approved" | "declined">("pending");
   const [notes, setNotes] = useState("");
+
+  // "Safe to apply?" advisor — fetched whenever a card is picked, BEFORE the
+  // user logs/applies (founder decision: make this page an eligibility
+  // advisor, not a dumb log). Driven by the issuer-cooldown rules backend.
+  const [elig, setElig] = useState<CardEligibility | null>(null);
+  const [eligLoading, setEligLoading] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId || !pickedCard) { setElig(null); return; }
+    let cancelled = false;
+    setEligLoading(true);
+    getCardEligibility(sessionId, pickedCard)
+      .then((r) => { if (!cancelled) setElig(r); })
+      .catch(() => { if (!cancelled) setElig(null); })
+      .finally(() => { if (!cancelled) setEligLoading(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, pickedCard]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -132,6 +151,67 @@ export default function ApplicationsPage() {
                 style={inputStyle}
               />
             </label>
+            {pickedCard && (
+              <div
+                style={{
+                  gridColumn: "1 / -1",
+                  border: "1px solid var(--rule)",
+                  borderLeft: `3px solid ${
+                    elig?.severity === "ok"
+                      ? "var(--gain)"
+                      : elig?.severity === "warn"
+                        ? "var(--accent)"
+                        : "var(--ink-4, var(--ink-3))"
+                  }`,
+                  background: "var(--surface)",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                }}
+              >
+                <div className="eyebrow" style={{ marginBottom: 6 }}>
+                  Safe to apply?
+                </div>
+                {eligLoading ? (
+                  <p style={{ margin: 0, color: "var(--ink-3)", fontStyle: "italic", fontSize: 14 }}>
+                    Checking issuer cooldown…
+                  </p>
+                ) : elig ? (
+                  <>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontWeight: 600,
+                        fontSize: 14,
+                        color:
+                          elig.severity === "ok"
+                            ? "var(--gain)"
+                            : elig.severity === "warn"
+                              ? "var(--accent)"
+                              : "var(--ink-2)",
+                      }}
+                    >
+                      {elig.severity === "ok"
+                        ? "✓ Clear to apply"
+                        : elig.severity === "warn"
+                          ? "⚠ Within cooldown — wait"
+                          : "Proceed with caution"}
+                    </p>
+                    <p style={{ margin: "4px 0 0", color: "var(--ink-2)", fontSize: 13.5, lineHeight: 1.5 }}>
+                      {elig.reason}
+                    </p>
+                    {elig.issuer_rule && (
+                      <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>
+                        Rule: {elig.issuer_rule}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ margin: 0, color: "var(--ink-3)", fontSize: 13.5 }}>
+                    Couldn’t check eligibility right now — you can still log this application.
+                  </p>
+                )}
+              </div>
+            )}
             <button type="submit" disabled={adding || !pickedCard} style={submitStyle}>
               {adding ? "Saving…" : "Record application"}
             </button>

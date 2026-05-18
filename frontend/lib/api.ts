@@ -1058,6 +1058,23 @@ export async function listApplications(sessionId: string): Promise<CardApplicati
   return res.applications ?? [];
 }
 
+/** Per-card "safe to apply?" verdict from the issuer-cooldown advisor
+ *  (backend ApplicationService.CheckEligibility). severity ∈
+ *  ok | warn | unknown. */
+export interface CardEligibility {
+  card_id: string;
+  severity: string;
+  reason: string;
+  issuer_rule?: string;
+}
+
+export async function getCardEligibility(
+  sessionId: string,
+  cardId: string,
+): Promise<CardEligibility> {
+  return request<CardEligibility>(`/wallet/${sessionId}/cards/${cardId}/eligibility`);
+}
+
 export async function recordApplication(
   sessionId: string,
   cardId: string,
