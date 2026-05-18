@@ -78,7 +78,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/cards",         label: "Cards",        icon: CreditCard      },
       { href: "/loyalty",       label: "Loyalty",      icon: Trophy          },
       { href: "/trip-planner",  label: "Trip Planner", icon: Plane           },
-      { href: "/chat",          label: "AI Assistant", icon: MessageCircle   },
+      { href: "/chat",          label: "Maple",        icon: MessageCircle   },
     ],
   },
   {

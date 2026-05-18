@@ -39,7 +39,7 @@ const MORE_ITEMS = [
   { href: "/insights",      label: "Insights",     icon: BarChart2       },
   { href: "/portfolio",     label: "Portfolio",    icon: PieChart        },
   { href: "/feed",          label: "Feed",         icon: Rss             },
-  { href: "/chat",          label: "AI Assistant", icon: MessageCircle   },
+  { href: "/chat",          label: "Maple",        icon: MessageCircle   },
   { href: "/profile",       label: "Profile",      icon: User            },
   { href: "/settings",      label: "Settings",     icon: Settings        },
 ];

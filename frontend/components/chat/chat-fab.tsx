@@ -79,7 +79,7 @@ export function ChatFab() {
             <span className="text-[12px]">🍁</span>
           </div>
           <div>
-            <div className="text-[13px] font-semibold text-white">AI Assistant</div>
+            <div className="text-[13px] font-semibold text-white">Maple</div>
             <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
               {loading ? "Thinking…" : "Your rewards advisor"}
             </div>

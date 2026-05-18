@@ -898,3 +898,51 @@ html[data-reduce-motion="true"] *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
+
+/* ── Maple chat markdown (P0.6-adjacent / LAUNCH-ISSUES.md): the AI replies
+   in GFM markdown. Without these the table the model emits rendered as a
+   wall of pipes and long content overflowed the message column. remark-gfm
+   now parses tables; this makes them readable and horizontally scrollable
+   instead of breaking the layout. */
+.chat-message > * { max-width: 100%; }
+.chat-message p { margin: 0 0 0.7em; }
+.chat-message ul,
+.chat-message ol { margin: 0 0 0.7em; padding-left: 1.4em; }
+.chat-message li { margin: 0.2em 0; }
+.chat-message h1,
+.chat-message h2,
+.chat-message h3 { margin: 1em 0 0.45em; line-height: 1.3; }
+.chat-message a { color: var(--accent); text-decoration: underline; overflow-wrap: anywhere; }
+.chat-message table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.6em 0 0.9em;
+  font-size: 14px;
+}
+.chat-message th,
+.chat-message td {
+  border: 1px solid var(--rule, #2a2a2a);
+  padding: 7px 11px;
+  text-align: left;
+  vertical-align: top;
+}
+.chat-message th { background: var(--surface, rgba(255,255,255,0.04)); font-weight: 600; }
+.chat-message pre {
+  overflow-x: auto;
+  background: var(--surface, rgba(255,255,255,0.05));
+  border: 1px solid var(--rule, #2a2a2a);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0.6em 0 0.9em;
+  font-size: 13px;
+}
+.chat-message :not(pre) > code {
+  background: var(--surface, rgba(255,255,255,0.07));
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}

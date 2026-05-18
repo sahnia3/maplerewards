@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
 import { chatStream } from "@/lib/api";
@@ -133,7 +134,7 @@ export default function ChatPage() {
     <div className="reveal" style={{ paddingTop: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 160px" }}>
         <PageMasthead
-          eyebrow="Concierge"
+          eyebrow="Maple"
           eyebrowEnd="Claude Sonnet 4.6"
           title={
             <>
@@ -240,8 +241,11 @@ export default function ChatPage() {
                   }}
                 >
                   {m.role === "assistant" ? (
-                    <div className="sans chat-message" style={{ fontSize: 15, lineHeight: 1.65 }}>
-                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                    <div
+                      className="sans chat-message"
+                      style={{ fontSize: 15, lineHeight: 1.65, maxWidth: "100%", overflowX: "auto" }}
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>
                   ) : (
                     <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: "#fff" }}>{m.content}</p>
