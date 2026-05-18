@@ -1,6 +1,37 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getSpendStats } from "@/lib/api";
+
+/* P4.1 — recommend a stack from the user's real logged spend. Transparent
+ * heuristic over GetSpendStats category shares (no fabricated data; if there's
+ * no logged spend we recommend nothing). Returns [templateId, reason]. */
+function recommendStack(
+  byCategory: { category_name: string; total_spend: number }[],
+): [string, string] | null {
+  const total = byCategory.reduce((s, c) => s + (c.total_spend || 0), 0);
+  if (total <= 0) return null;
+  const share = (re: RegExp) =>
+    byCategory.filter((c) => re.test(c.category_name?.toLowerCase() || ""))
+      .reduce((s, c) => s + (c.total_spend || 0), 0) / total;
+  const travel = share(/travel|air|hotel|flight/);
+  const grocery = share(/grocer|grocery/);
+  const dining = share(/dining|restaurant|food/);
+  const pct = (x: number) => Math.round(x * 100);
+  if (travel >= 0.25) {
+    return total >= 50000
+      ? ["premium-traveler", `${pct(travel)}% of your logged spend is travel — a premium-travel stack pays back its fees on that volume.`]
+      : ["aeroplan-collector", `${pct(travel)}% travel + ${pct(dining)}% dining in your spend — this stack funnels it into transferable Aeroplan/MR points.`];
+  }
+  if (grocery + dining >= 0.4) {
+    return ["everyday-canadian", `${pct(grocery + dining)}% of your spend is groceries + dining — the everyday stack maxes the categories you actually use.`];
+  }
+  if (total < 15000) {
+    return ["no-fee-rookie", `Your logged spend is modest — a no-fee stack avoids paying annual fees you wouldn't earn back yet.`];
+  }
+  return ["everyday-canadian", `Your spend is spread across everyday categories — the everyday Canadian stack is the safest high-coverage default.`];
+}
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * StackTemplates — curated card-combination recipes for common Canadian
@@ -92,7 +123,18 @@ const TEMPLATES: StackTemplate[] = [
   },
 ];
 
-export function StackTemplates() {
+export function StackTemplates({ sessionId }: { sessionId?: string | null } = {}) {
+  const [reco, setReco] = useState<[string, string] | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    getSpendStats(sessionId)
+      .then((s) => { if (!cancelled) setReco(recommendStack(s.by_category ?? [])); })
+      .catch(() => { if (!cancelled) setReco(null); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   return (
     <section style={{ marginBottom: 22 }}>
       <header style={{ marginBottom: 18, display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -125,21 +167,43 @@ export function StackTemplates() {
           gap: 16,
         }}
       >
-        {TEMPLATES.map((t) => {
+        {[...TEMPLATES]
+          .sort((a, b) => (reco?.[0] === a.id ? -1 : reco?.[0] === b.id ? 1 : 0))
+          .map((t) => {
           const totalFee = t.cards.reduce((s, c) => s + c.feeCAD, 0);
+          const isReco = reco?.[0] === t.id;
           return (
             <article
               key={t.id}
               style={{
-                border: "1px solid var(--rule)",
+                border: isReco ? "1.5px solid var(--accent)" : "1px solid var(--rule)",
                 borderRadius: 14,
                 background: "var(--card-fill-strong)",
                 padding: "22px 24px",
-                boxShadow: "var(--shadow-1)",
+                boxShadow: isReco ? "var(--shadow-2)" : "var(--shadow-1)",
                 position: "relative",
                 overflow: "hidden",
               }}
             >
+              {isReco && (
+                <div
+                  style={{
+                    position: "relative",
+                    marginBottom: 12,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    background: "var(--accent-soft)",
+                    border: "1px solid var(--accent)",
+                  }}
+                >
+                  <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 3 }}>
+                    ★ Recommended for your spend
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.45 }}>
+                    {reco?.[1]}
+                  </p>
+                </div>
+              )}
               <div
                 aria-hidden
                 style={{

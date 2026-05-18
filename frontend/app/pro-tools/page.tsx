@@ -199,7 +199,7 @@ export default function ProToolsPage() {
 
         {active === "stacking" && (
           <>
-            <StackTemplates />
+            <StackTemplates sessionId={sessionId} />
             <LeafDivider />
             <StackTile sessionId={sessionId} ensureSession={ensureSession} />
             <LeafDivider />
