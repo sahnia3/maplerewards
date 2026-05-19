@@ -229,11 +229,11 @@ function SignupForm() {
             }}
           >
             By creating an account you agree to our{" "}
-            <Link href="/legal/terms" style={{ color: "inherit", textDecoration: "underline" }}>
+            <Link href="/terms" style={{ color: "inherit", textDecoration: "underline" }}>
               terms
             </Link>{" "}
             and{" "}
-            <Link href="/legal/privacy" style={{ color: "inherit", textDecoration: "underline" }}>
+            <Link href="/privacy" style={{ color: "inherit", textDecoration: "underline" }}>
               privacy policy
             </Link>
             .
