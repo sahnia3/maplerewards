@@ -128,3 +128,39 @@ Algorithm-confusion defense (rejects non-HMAC, blocks `alg=none`/RS-HS) · prod 
 7. P2 batch, then P3 hardening sweep.
 
 *Full per-domain detail retained in the 8 reviewer transcripts; this is the deduplicated, cross-validated consolidation.*
+
+---
+
+## 2026-05-19 — P0-4 / P0-5 CLOSURE (stress-test session)
+
+**P0-5 — now COMPLETE (was PARTIAL).** Audit of actual coverage (handoff was stale; the
+cloud bundle had already added most of it). Verified present + passing `-race`:
+CSRF (8), `RequireSessionOwner` IDOR (6), `requireBodySessionOwner` IDOR (7),
+`RequireAdmin`/ADMIN_EMAILS (7), `RequirePro` (3), `UserRateLimiter` (6),
+`verifyStripeSignature` HMAC/tamper/skew/replay/future/malformed (7), Stripe
+webhook dedup/replay/double-delivery (18). **Closed the one real gap:** added
+`auth_refresh_reuse_test.go` — 6 tests for `AuthService.RefreshToken` proving
+replay-outside-grace ⇒ whole-family revocation, replay-inside-grace ⇒ reject
+only, valid ⇒ rotate, lost-race/unknown/empty ⇒ reject without family nuke.
+Full perimeter suite green `-race`; **74 security-relevant tests**; `go vet` clean.
+
+**P0-4 — code-side VERIFIED; live-key rotation remains owner action.**
+- Git hygiene: `.env` is gitignored and **never appears in history** (literal
+  `.env` has zero commits; only `.env.example` is tracked). No secret material
+  (`sk_*`, `whsec_`, `apify_`, private keys) in any tracked file.
+- Prod boot guard confirmed: `cmd/api/main.go:132-138` `os.Exit(1)` when
+  `APP_ENV=production` and `JWT_SECRET` is empty / equals the dev fallback /
+  shorter than the minimum.
+- **Real Stripe test-mode payment run (proven, not asserted):** a genuinely
+  HMAC-SHA256-signed `checkout.session.completed` (real `STRIPE_WEBHOOK_SECRET`,
+  `t=<ts>,v1=<hmac>` format) POSTed to the live `/api/v1/billing/webhook`:
+  delivery #1 → `200 {"received":true}` and DB flipped
+  `is_pro=false plan=free` → `is_pro=true plan=pro stripe_customer=cus_test_x`;
+  replay #2 → `200 {"received":true,"duplicate":true}` with **1** `stripe_events`
+  row (single grant); unsigned #3 → `401`; tampered-body → `401`. Test
+  user/events cleaned up afterward.
+- **Still owner-only (cannot be done from code):** rotate the live
+  `ANTHROPIC_API_KEY` + `APIFY_TOKEN` at their provider consoles and move
+  production secrets into a managed secret store (not a plaintext `.env` on the
+  box). `SEATSAERO_API_KEY` was supplied this session; also delete the duplicate
+  empty `SEATSAERO_API_KEY=` line so a first-wins loader can't blank it.
