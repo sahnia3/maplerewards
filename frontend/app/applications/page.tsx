@@ -41,6 +41,11 @@ export default function ApplicationsPage() {
   const [elig, setElig] = useState<CardEligibility | null>(null);
   const [eligLoading, setEligLoading] = useState(false);
 
+  // Post-record consequence: recording silently fed the cooldown engine, so
+  // the user couldn't see the point. After logging we re-check eligibility and
+  // surface exactly what the recorded application now does.
+  const [recordedMsg, setRecordedMsg] = useState<{ tone: "warn" | "ok"; text: string } | null>(null);
+
   useEffect(() => {
     if (!sessionId || !pickedCard) { setElig(null); return; }
     let cancelled = false;
@@ -70,9 +75,40 @@ export default function ApplicationsPage() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!sessionId || !pickedCard || !appliedAt) return;
+    const card = cards.find((c) => c.id === pickedCard);
+    const justRecorded = pickedCard;
     setAdding(true);
     try {
       await recordApplication(sessionId, pickedCard, appliedAt, status, notes);
+      // Re-check eligibility for the SAME card: it now reflects the
+      // application we just logged. This is the visible payoff that was
+      // missing — recording silently fed the cooldown engine before.
+      let msg: { tone: "warn" | "ok"; text: string };
+      try {
+        const after = await getCardEligibility(sessionId, justRecorded);
+        const issuer = card?.issuer ?? "this issuer";
+        if (after.severity === "warn") {
+          const until = after.eligible_at
+            ? new Date(after.eligible_at).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })
+            : null;
+          msg = {
+            tone: "warn",
+            text: `Logged. You're now inside ${issuer}'s cooldown — Maple will flag new ${issuer} cards as “wait”${until ? ` until ${until}` : ""}. That's the point of tracking this.`,
+          };
+        } else {
+          msg = {
+            tone: "ok",
+            text: `Logged. ${issuer} has no documented cooldown rule, so this is kept for your history and churn timeline.`,
+          };
+        }
+      } catch {
+        msg = { tone: "ok", text: "Logged to your application history." };
+      }
+      setRecordedMsg(msg);
       setPickedCard("");
       setNotes("");
       setStatus("pending");
@@ -107,7 +143,7 @@ export default function ApplicationsPage() {
               <div className="eyebrow" style={{ marginBottom: 6 }}>Card</div>
               <select
                 value={pickedCard}
-                onChange={(e) => setPickedCard(e.target.value)}
+                onChange={(e) => { setPickedCard(e.target.value); setRecordedMsg(null); }}
                 required
                 style={inputStyle}
               >
@@ -216,6 +252,46 @@ export default function ApplicationsPage() {
               {adding ? "Saving…" : "Record application"}
             </button>
           </form>
+
+          {recordedMsg && (
+            <div
+              role="status"
+              style={{
+                marginTop: 16,
+                padding: "14px 16px",
+                borderRadius: 10,
+                border: `1px solid ${recordedMsg.tone === "warn" ? "var(--accent)" : "var(--gain)"}`,
+                background:
+                  recordedMsg.tone === "warn"
+                    ? "color-mix(in srgb, var(--accent) 9%, transparent)"
+                    : "color-mix(in srgb, var(--gain) 9%, transparent)",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 15, lineHeight: 1.4, color: "var(--ink)", flex: 1 }}>
+                {recordedMsg.tone === "warn" ? "⚠ " : "✓ "}
+                {recordedMsg.text}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRecordedMsg(null)}
+                aria-label="Dismiss"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--ink-3)",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  padding: 2,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
         </section>
 
         <LeafDivider />

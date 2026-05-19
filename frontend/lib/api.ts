@@ -1079,6 +1079,10 @@ export interface CardEligibility {
   card_id: string;
   severity: string;
   reason: string;
+  /** When the issuer cooldown clears (set when severity === "warn"). */
+  eligible_at?: string;
+  /** Most recent recorded application to this issuer, if any. */
+  last_applied_at?: string;
   issuer_rule?: string;
 }
 
