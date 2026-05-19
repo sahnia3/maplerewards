@@ -11,7 +11,6 @@ import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import type { WalletSummary, CardScore, Card, PortfolioAnalysis, CardCreditStatus, SQCProjection, CardValueSummary } from "@/lib/types";
 import { Check, Plus, TrendingUp, Zap, ChevronRight, Loader2, AlertTriangle, Target, DollarSign, Gift, CalendarClock, Plane, Award } from "lucide-react";
 import { PageMasthead } from "@/components/editorial/page-masthead";
-import { Sparkline } from "@/components/editorial/sparkline";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { AnimatedCounter } from "@/components/motion/counter";
 import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
@@ -107,9 +106,13 @@ export default function PortfolioPage() {
     }
   };
 
-  const maxValueHigh = summary
-    ? Math.max(...summary.cards.map(c => c.value_high), 1)
-    : 1;
+  // Net annual value (earning power on logged/typical spend + modelled perks
+  // − fee) is a DIFFERENT thing from the redemption value of points you hold.
+  // The page now shows both, labelled, instead of passing off held-points
+  // value as "annual value".
+  const cvById = new Map(cardValues.map(cv => [cv.card_id, cv]));
+  const totalNetEV = cardValues.reduce((s, cv) => s + cv.net_ev_cad, 0);
+  const haveCardValues = cardValues.length > 0;
 
   const hasWallet = wallet.length > 0;
 
@@ -177,45 +180,65 @@ export default function PortfolioPage() {
               <InfoTooltip term="net-annual-value" />
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
-              <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--ink)", fontStyle: "italic" }}>
-                <AnimatedCounter value={Math.round(summary.value_range_low)} prefix="$" duration={1} />
-              </span>
-              <span className="display" style={{ fontSize: 32, color: "var(--ink-3)", lineHeight: 0.95 }}>—</span>
-              <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--accent)", fontStyle: "italic" }}>
-                <AnimatedCounter value={Math.round(summary.value_range_high)} prefix="$" duration={1.2} />
-              </span>
+              {haveCardValues ? (
+                <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--accent)", fontStyle: "italic" }}>
+                  <AnimatedCounter value={Math.round(totalNetEV)} prefix="$" duration={1.2} />
+                </span>
+              ) : (
+                <>
+                  <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--ink)", fontStyle: "italic" }}>
+                    <AnimatedCounter value={Math.round(summary.value_range_low)} prefix="$" duration={1} />
+                  </span>
+                  <span className="display" style={{ fontSize: 32, color: "var(--ink-3)", lineHeight: 0.95 }}>—</span>
+                  <span className="display" style={{ fontSize: "clamp(46px, 6vw, 72px)", lineHeight: 0.95, color: "var(--accent)", fontStyle: "italic" }}>
+                    <AnimatedCounter value={Math.round(summary.value_range_high)} prefix="$" duration={1.2} />
+                  </span>
+                </>
+              )}
             </div>
             <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 16, marginTop: 8, marginBottom: 0, lineHeight: 1.45 }}>
-              CAD across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""} — your point balances at base redemption rising to the best transfer-partner rate.
+              {haveCardValues ? (
+                <>
+                  Net annual value across {summary.cards.length} card{summary.cards.length !== 1 ? "s" : ""} — category earning on your logged/typical spend plus modelled perks, <strong>after annual fees</strong>. Separately, the points you currently hold are worth{" "}
+                  <span className="mono" style={{ fontStyle: "normal", color: "var(--ink)" }}>
+                    ${Math.round(summary.value_range_low).toLocaleString()}–${Math.round(summary.value_range_high).toLocaleString()}
+                  </span>{" "}
+                  at redemption (not added in — that's value you already have).
+                </>
+              ) : (
+                <>CAD — redemption value of the points you currently hold, base rate rising to the best transfer-partner rate. (Per-card annual value loading…)</>
+              )}
             </p>
           </div>
 
-          {/* Per-card ruled ledger — display name + value-trend sparkline + range */}
+          {/* Per-card ledger — two DISTINCT, labelled figures: the card's
+              net annual value (earn + perks − fee) and, separately, the
+              redemption value of points held on it. Never conflated. */}
           <div style={{ marginBottom: 32 }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) 170px 150px",
+                gap: 16,
+                marginBottom: 12,
+              }}
+            >
               <span className="eyebrow">Per-card breakdown</span>
-              <span className="eyebrow">Range (CAD)</span>
+              <span className="eyebrow" style={{ textAlign: "right" }}>Net annual value</span>
+              <span className="eyebrow" style={{ textAlign: "right" }}>Held points</span>
             </div>
             <div style={{ borderTop: "1px solid var(--ink)" }}>
               {summary.cards.map(c => {
-                const barPct = (c.value_high / maxValueHigh) * 100;
-                /* Synthesize a 12-point trend from the value range with a deterministic
-                 * pseudo-jitter seeded by card_id, so the sparkline shape is stable across
-                 * renders without needing the backend to emit history. Real history can
-                 * replace this when /portfolio/value-trend ships. */
-                const seed = (c.card_id || c.card_name || "").length;
-                const trend = Array.from({ length: 12 }, (_, i) => {
-                  const t = i / 11;
-                  const base = c.value_low + (c.value_high - c.value_low) * t;
-                  const jitter = Math.sin((i + seed) * 1.3) * (c.value_high - c.value_low) * 0.06;
-                  return Math.max(0, base + jitter);
-                });
+                const cv = cvById.get(c.card_id);
+                const net = cv?.net_ev_cad;
+                const netColor =
+                  net == null ? "var(--ink-3)" : net >= 0 ? "var(--gain)" : "var(--loss)";
                 return (
                   <div
                     key={c.card_id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) 130px 120px 130px",
+                      gridTemplateColumns: "minmax(0, 1fr) 170px 150px",
                       gap: 16,
                       alignItems: "center",
                       padding: "14px 4px",
@@ -225,22 +248,23 @@ export default function PortfolioPage() {
                     <div className="display" style={{ fontSize: 18, color: "var(--ink)", lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {c.card_name}
                     </div>
-                    <div style={{ display: "flex", justifyContent: "center" }}>
-                      <Sparkline data={trend} width={120} height={28} filled />
+                    <div style={{ textAlign: "right" }}>
+                      <div className="mono" style={{ fontSize: 15, color: netColor, letterSpacing: "0.02em" }}>
+                        {net == null
+                          ? "—"
+                          : `${net < 0 ? "−" : ""}$${Math.abs(Math.round(net)).toLocaleString()}/yr`}
+                      </div>
+                      <div className="serif" style={{ fontSize: 10, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                        {cv ? "earn + perks − fee" : "loading…"}
+                      </div>
                     </div>
-                    <div style={{ height: 4, background: "var(--rule)", overflow: "hidden", position: "relative" }}>
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          width: `${barPct}%`,
-                          background: "var(--accent)",
-                          transition: "width 700ms cubic-bezier(0.16,1,0.3,1)",
-                        }}
-                      />
-                    </div>
-                    <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right", letterSpacing: "0.02em" }}>
-                      ${Math.round(c.value_low).toLocaleString()}–${Math.round(c.value_high).toLocaleString()}
+                    <div style={{ textAlign: "right" }}>
+                      <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.02em" }}>
+                        ${Math.round(c.value_low).toLocaleString()}–${Math.round(c.value_high).toLocaleString()}
+                      </div>
+                      <div className="serif" style={{ fontSize: 10, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                        points held, at redemption
+                      </div>
                     </div>
                   </div>
                 );
