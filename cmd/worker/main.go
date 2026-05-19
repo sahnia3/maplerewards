@@ -17,7 +17,7 @@
 //   APIFY_TOKEN                 — required for live probes; empty disables
 //   SEATSAERO_API_KEY           — optional secondary source
 //   SERPAPI_KEY                 — optional cash-price enrichment
-//   AWARD_WATCH_TICK_HOURS      — default 4 hours between sweeps
+//   AWARD_WATCH_TICK_HOURS      — default 24 hours between sweeps
 //   AWARD_WATCH_BATCH_SIZE      — default 50 watches per sweep
 //   AWARD_WATCH_GAP_THRESHOLD   — default 5000; alert when last_min_points
 //                                 drops by at least this many points.
@@ -149,7 +149,10 @@ func main() {
 		log.Warn("no live award data source configured — award-watch sweeps disabled (set APIFY_TOKEN or SEATSAERO_API_KEY to enable)")
 	}
 
-	awardTickHours := getEnvInt("AWARD_WATCH_TICK_HOURS", 4)
+	// Default raised 4h → 24h: every sweep re-runs paid Apify scrapes for
+	// saved trips. Daily re-probe is plenty for award-availability alerts
+	// and cuts this fixed background cost ~6x. Override via env if needed.
+	awardTickHours := getEnvInt("AWARD_WATCH_TICK_HOURS", 24)
 	awardBatchSize := getEnvInt("AWARD_WATCH_BATCH_SIZE", 50)
 	gapThreshold := getEnvInt("AWARD_WATCH_GAP_THRESHOLD", 5000)
 	issuerTickHours := getEnvInt("ISSUER_WATCH_TICK_HOURS", 24)
@@ -183,6 +186,7 @@ func main() {
 	safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
 	safely(log, "offer-expiry", func() { offerExpirySvc.RunSweep(ctx, log, time.Now()) })
 	safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
+	safely(log, "promo-source-recheck", func() { promoSvc.RecheckSources(ctx, log) })
 	safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
 
 	awardTicker := time.NewTicker(time.Duration(awardTickHours) * time.Hour)
@@ -221,6 +225,7 @@ func main() {
 			safely(log, "valuation-refresh", func() { valuationRefreshSvc.RunSweep(ctx, log) })
 		case <-promoTicker.C:
 			safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
+			safely(log, "promo-source-recheck", func() { promoSvc.RecheckSources(ctx, log) })
 		}
 	}
 }

@@ -77,6 +77,7 @@ func (r *TransferBonusRepo) ListActive(ctx context.Context, limit int) ([]Transf
 			       COALESCE(summary,'') AS summary, ai_confidence, detected_at
 			FROM transfer_bonus_events
 			WHERE expires_at >= CURRENT_DATE
+			  AND source_dead_at IS NULL
 			ORDER BY from_program, to_program, bonus_percent, detected_at DESC
 		) d
 		ORDER BY d.detected_at DESC
@@ -99,6 +100,59 @@ func (r *TransferBonusRepo) ListActive(ctx context.Context, limit int) ([]Transf
 	return out, rows.Err()
 }
 
+// SourceRef is the minimal pair the source-health re-check needs.
+type SourceRef struct {
+	ID        string
+	SourceURL string
+}
+
+// ListSourcesForRecheck returns every still-current promo (id, source_url)
+// regardless of its current dead flag, so the worker can both mark newly-dead
+// citations AND revive ones that came back (e.g. transient Cloudflare).
+func (r *TransferBonusRepo) ListSourcesForRecheck(ctx context.Context) ([]SourceRef, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, source_url
+		FROM transfer_bonus_events
+		WHERE expires_at >= CURRENT_DATE
+		  AND source_url ~ '^https?://'
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list sources for recheck: %w", err)
+	}
+	defer rows.Close()
+	var out []SourceRef
+	for rows.Next() {
+		var s SourceRef
+		if err := rows.Scan(&s.ID, &s.SourceURL); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// MarkSourceDead flags a promo whose citation no longer resolves so ListActive
+// stops surfacing it. Idempotent — only stamps the first time.
+func (r *TransferBonusRepo) MarkSourceDead(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE transfer_bonus_events
+		SET source_dead_at = now()
+		WHERE id = $1 AND source_dead_at IS NULL
+	`, id)
+	return err
+}
+
+// MarkSourceLive clears the dead flag when a previously-dead citation resolves
+// again (transient block lifted), so the promo can return to the feed.
+func (r *TransferBonusRepo) MarkSourceLive(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE transfer_bonus_events
+		SET source_dead_at = NULL
+		WHERE id = $1 AND source_dead_at IS NOT NULL
+	`, id)
+	return err
+}
+
 // ListForFromProgram returns active promos with a specific source program —
 // the worker uses this to fan out user-specific alerts ("you hold MR; this
 // MR → Aeroplan 30% bonus is worth $X to you").
@@ -110,6 +164,7 @@ func (r *TransferBonusRepo) ListForFromProgram(ctx context.Context, fromSlug str
 		FROM transfer_bonus_events
 		WHERE from_program = $1
 		  AND expires_at >= CURRENT_DATE
+		  AND source_dead_at IS NULL
 		ORDER BY detected_at DESC
 	`, fromSlug)
 	if err != nil {

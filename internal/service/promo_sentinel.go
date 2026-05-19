@@ -155,6 +155,39 @@ func (s *PromoSentinelService) RunSweep(ctx context.Context, log *slog.Logger) P
 	return res
 }
 
+// RecheckSources re-verifies the citation of every still-current promo. A
+// source link checked once at scrape time rots (deleted article, expired
+// page, or newly Cloudflare-walled), so without this a paying user clicks
+// "Source →" and hits a 404/challenge. Dead → flagged out of ListActive;
+// recovered → un-flagged so it returns. Uses the same sourceURLLive standard
+// as ingest, so behaviour is consistent end to end.
+func (s *PromoSentinelService) RecheckSources(ctx context.Context, log *slog.Logger) {
+	refs, err := s.repo.ListSourcesForRecheck(ctx)
+	if err != nil {
+		log.Warn("promo source recheck: list failed", "err", err)
+		return
+	}
+	var dead, revived int
+	for _, ref := range refs {
+		if sourceURLLive(ctx, s.httpClient, ref.SourceURL) {
+			if err := s.repo.MarkSourceLive(ctx, ref.ID); err != nil {
+				log.Warn("promo source recheck: mark live failed", "id", ref.ID, "err", err)
+			} else {
+				revived++
+			}
+			continue
+		}
+		if err := s.repo.MarkSourceDead(ctx, ref.ID); err != nil {
+			log.Warn("promo source recheck: mark dead failed", "id", ref.ID, "err", err)
+		} else {
+			dead++
+			log.Info("promo source recheck: citation no longer resolves, hidden",
+				"id", ref.ID, "url", ref.SourceURL)
+		}
+	}
+	log.Info("promo source recheck done", "checked", len(refs), "newlyDead", dead, "revived", revived)
+}
+
 // extractedPromo is the JSON contract Claude returns. Field names match the
 // extraction prompt below — change them in lockstep.
 type extractedPromo struct {
