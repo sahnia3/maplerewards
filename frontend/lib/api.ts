@@ -553,11 +553,13 @@ export interface AwardSearchResult {
   points_cost: number;
   taxes_cash: number | null;
   taxes_included: boolean;
-  cash_price_cad: number;             // cash baseline matching `cabin`
+  cash_price_cad: number;             // ROUTE/cabin cash benchmark — NOT this flight's price
+  cash_is_estimate: boolean;          // true → cash_price_cad is a zone-fallback guess, not a real fare
   economy_cash_cad?: number;          // economy cash for the same route — populated when cabin != "economy"
-  cpp: number;                        // cents per point against cash_price_cad
+  cpp: number;                        // cents per point — 0 when !rated
   realistic_cpp?: number;             // cents per point against economy_cash_cad — the "would I actually pay this?" figure
-  value_rating: "excellent" | "good" | "poor";
+  rated: boolean;                     // true ONLY when points live AND cash real; false → hide cpp/value_rating
+  value_rating: "excellent" | "good" | "poor" | "";
   seats_available: number;
   source: "live" | "estimated" | "live_search";
   source_label?: string;     // "Google Flights" | "Apify" | "Seats.aero" | "estimate"

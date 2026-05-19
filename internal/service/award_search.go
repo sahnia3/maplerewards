@@ -22,10 +22,12 @@ type AwardCache interface {
 	SetAwardSearch(ctx context.Context, key string, payload []byte, ttl time.Duration) error
 }
 
-// awardCacheTTL is the freshness window for award-search responses. Set to
-// 45 minutes — long enough to absorb burst traffic on a popular route, short
-// enough that an Aeroplan availability flip won't go stale for an hour.
-const awardCacheTTL = 45 * time.Minute
+// awardCacheTTL is the freshness window for award-search responses. Raised
+// to 6h: award availability does not move minute-to-minute, and the cache
+// is the primary shield against re-burning the paid Apify/Seats.aero quota
+// on popular routes. 6h trades a small staleness risk for a large cut in
+// upstream scrape volume — the dominant cost lever.
+const awardCacheTTL = 6 * time.Hour
 
 // Source labels exposed to the frontend so the user sees provenance. Keep
 // these strings stable — the SPA pattern-matches on them.
@@ -220,6 +222,13 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 			slog.Info("[award-search] apify not available (no APIFY_TOKEN)")
 			return
 		}
+		// Pro-gate: the live Apify scrape is the expensive, premium data
+		// path. Free users still get Seats.aero + SerpAPI (goroutines 2 &
+		// 3). Single biggest Apify cost lever for a free-heavy user base.
+		if !req.IsPro {
+			slog.Info("[award-search] apify skipped for non-Pro user")
+			return
+		}
 		apifyItems, apifyErr = s.apifySvc.SearchAwards(
 			ctx,
 			strings.ToUpper(req.Origin),
@@ -396,14 +405,18 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 			if r.SourceLabel == "" {
 				r.SourceLabel = sourceLabelSeatsAero
 			}
-			// A live award row whose CashPriceCAD comes from the zone
-			// fallback is half-real, half-guess. Marking source="estimated"
-			// here is conservative — the CPP is necessarily approximate
-			// and the SPA should chip it accordingly.
-			if !cashFromGoogle {
-				r.Source = "estimated"
-			}
-			if economyCashCAD > 0 && r.PointsCost > 0 {
+			r.CashIsEstimate = !cashFromGoogle
+			// The award space is genuinely live. But a value rating is only
+			// trustworthy when the CASH side is a real fare too. With a
+			// zone-fallback cash guess we keep the real points + a clearly
+			// labelled route benchmark, but suppress CPP/rating entirely —
+			// no rating computed off a fabricated number (user-confirmed).
+			r.Rated = cashFromGoogle
+			if !r.Rated {
+				r.CPP = 0
+				r.RealisticCPP = 0
+				r.ValueRating = ""
+			} else if economyCashCAD > 0 && r.PointsCost > 0 {
 				r.EconomyCashCAD = economyCashCAD
 				r.RealisticCPP = computeCPP(economyCashCAD, r.PointsCost)
 			}
@@ -433,19 +446,29 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		if r != nil {
 			r.FetchedAt = fetchedAt
 			r.SourceLabel = sourceLabelEstimate
-			if economyCashCAD > 0 && r.PointsCost > 0 {
-				r.EconomyCashCAD = economyCashCAD
-				r.RealisticCPP = computeCPP(economyCashCAD, r.PointsCost)
-			}
+			r.CashIsEstimate = !cashFromGoogle
+			// Points here are an award-chart estimate, not live award
+			// space — so this row is never "rated" regardless of cash.
+			r.Rated = false
+			r.CPP = 0
+			r.RealisticCPP = 0
+			r.ValueRating = ""
 			results = append(results, *r)
 			fallbackCount++
 		}
 	}
 	slog.Info("[award-search] YAML fallback results added", "count", fallbackCount)
 
-	// ── Sort by CPP descending ────────────────────────────────────────────
+	// ── Sort: rated rows first (best ¢/pt), then unrated by cheapest award ─
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].CPP > results[j].CPP
+		ri, rj := results[i], results[j]
+		if ri.Rated != rj.Rated {
+			return ri.Rated // trustworthy-rated rows on top
+		}
+		if ri.Rated {
+			return ri.CPP > rj.CPP
+		}
+		return ri.PointsCost < rj.PointsCost // unrated: fewest points = best award
 	})
 
 	// ── Cache write ───────────────────────────────────────────────────────
@@ -816,7 +839,24 @@ func rateValue(cpp float64, cabin string) string {
 
 // ── Booking URL builder ───────────────────────────────────────────────────────
 
-// awardBookingURL generates the booking URL for each issuer.
+// googleFlightsDated returns a Google Flights URL scoped to the exact route
+// AND date. Used for programs that have no usable dated award-search deep
+// link — a routed, dated "all flights that day" view is genuinely actionable,
+// unlike a bare airline homepage. Date is optional but normally present.
+func googleFlightsDated(origin, dest, date string) string {
+	if date != "" {
+		return fmt.Sprintf(
+			"https://www.google.com/travel/flights?q=flights%%20from%%20%s%%20to%%20%s%%20on%%20%s",
+			origin, dest, date)
+	}
+	return fmt.Sprintf(
+		"https://www.google.com/travel/flights?q=flights%%20from%%20%s%%20to%%20%s",
+		origin, dest)
+}
+
+// awardBookingURL generates the booking URL for each issuer. Programs with a
+// real dated award-search deep link use it; everything else falls through to
+// googleFlightsDated so the link always lands on the searched route+date.
 func awardBookingURL(issuer, origin, dest, date, cabin string, passengers int) string {
 	origin = strings.ToUpper(origin)
 	dest = strings.ToUpper(dest)
@@ -833,8 +873,10 @@ func awardBookingURL(issuer, origin, dest, date, cabin string, passengers int) s
 		return url
 
 	case "flyingblue":
-		// No deep link — send to the Air France award search page
-		return "https://wwws.airfrance.us/search/advanced"
+		// Air France/KLM award booking is a JS flow with no stable dated
+		// deep link. A dated Google Flights view for the exact route is far
+		// more actionable than their bare US advanced-search page.
+		return googleFlightsDated(origin, dest, date)
 
 	case "eurobonus":
 		url := fmt.Sprintf(
@@ -889,12 +931,10 @@ func awardBookingURL(issuer, origin, dest, date, cabin string, passengers int) s
 		return url
 
 	case "lufthansa":
-		return fmt.Sprintf(
-			"https://www.miles-and-more.com/us/en/earn-miles/flights/flights.html?from=%s&to=%s",
-			origin, dest)
+		return googleFlightsDated(origin, dest, date)
 
 	case "singapore":
-		return "https://www.singaporeair.com/en_UK/ppsclub-krisflyer/use-miles/redeem-flights/"
+		return googleFlightsDated(origin, dest, date)
 
 	case "avios":
 		// British Airways Avios
@@ -914,26 +954,12 @@ func awardBookingURL(issuer, origin, dest, date, cabin string, passengers int) s
 		}
 		return url
 
-	case "virginatlantic":
-		return "https://www.virginatlantic.com/flight-search#book-with-miles"
-
-	case "emirates":
-		return fmt.Sprintf("https://www.emirates.com/us/english/book/?from=%s&to=%s", origin, dest)
-
-	case "turkish":
-		return "https://www.turkishairlines.com/en-us/flights/award-ticket/"
-
-	case "qatar":
-		return "https://www.qatarairways.com/en/Privilege-Club/use-qmiles/book-awards.html"
-
-	case "etihad":
-		return "https://www.etihad.com/en-us/manage/book-with-miles"
+	case "virginatlantic", "emirates", "turkish", "qatar", "etihad":
+		return googleFlightsDated(origin, dest, date)
 	}
 
-	// Generic fallback — Google Flights
-	return fmt.Sprintf(
-		"https://www.google.com/travel/flights?q=flights+from+%s+to+%s+on+%s",
-		origin, dest, date)
+	// Generic fallback — dated Google Flights for the exact route.
+	return googleFlightsDated(origin, dest, date)
 }
 
 // ── Knowledge base helpers ────────────────────────────────────────────────────

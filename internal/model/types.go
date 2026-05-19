@@ -403,6 +403,10 @@ type AwardSearchRequest struct {
 	Cabin       string `json:"cabin"`     // economy|business|first
 	Passengers  int    `json:"passengers"` // default 1
 	Refresh     bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
+	// IsPro is set server-side from the auth context (json:"-" so a client
+	// cannot forge it). Live Apify award scraping is the premium data path
+	// and is gated to Pro; free users still get Seats.aero + SerpAPI.
+	IsPro bool `json:"-"`
 }
 
 // AwardSearchResult is one redemption option from the award search endpoint.
@@ -420,11 +424,13 @@ type AwardSearchResult struct {
 	PointsCost      int                `json:"points_cost"`
 	TaxesCash       *float64           `json:"taxes_cash,omitempty"`
 	TaxesIncluded   bool               `json:"taxes_included"`
-	CashPriceCAD    float64            `json:"cash_price_cad"`     // cash baseline matching `cabin`
+	CashPriceCAD    float64            `json:"cash_price_cad"`     // ROUTE/cabin cash benchmark — NOT a per-flight price (award seats have none). One number per search.
+	CashIsEstimate  bool               `json:"cash_is_estimate"`   // true when CashPriceCAD is a zone-fallback guess (SerpAPI returned nothing), not a real fare
 	EconomyCashCAD  float64            `json:"economy_cash_cad,omitempty"` // economy cash for the same route — populated when cabin != "economy"
-	CPP             float64            `json:"cpp"`               // cents per point against CashPriceCAD
+	CPP             float64            `json:"cpp"`               // cents per point against CashPriceCAD — 0 when !Rated
 	RealisticCPP    float64            `json:"realistic_cpp,omitempty"` // cents per point against economy cash — the "would I actually pay this?" figure
-	ValueRating     string             `json:"value_rating"`      // "excellent"|"good"|"poor"
+	Rated           bool               `json:"rated"`             // true ONLY when points are live AND cash is a real fare; false → frontend hides CPP/ValueRating
+	ValueRating     string             `json:"value_rating"`      // "excellent"|"good"|"poor" — empty when !Rated
 	SeatsAvailable  int                `json:"seats_available"`
 	Source          string             `json:"source"`            // "live" | "estimated"
 	SourceLabel     string             `json:"source_label"`      // "Google Flights" | "Seats.aero" | "Apify" | "estimate"
@@ -459,6 +465,10 @@ type TripRequest struct {
 	CheckoutDate string `json:"checkout_date"` // hotels only
 	Passengers   int    `json:"passengers"`    // default 1
 	Nights       int    `json:"nights"`        // hotels only (computed server-side)
+	// IsPro is set server-side from the auth context (json:"-"). The live
+	// Apify flight probe only fires for Pro; free users get the KB/zone
+	// estimate + Tavily fallback.
+	IsPro bool `json:"-"`
 }
 
 type RedemptionOption struct {

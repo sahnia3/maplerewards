@@ -793,6 +793,7 @@ function FlightRow({
               source={flight.source}
               label={flight.source_label}
               fetchedAt={flight.fetched_at}
+              cashIsEstimate={flight.cash_is_estimate}
             />
           </div>
           <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -869,9 +870,14 @@ function FlightRow({
           <div style={{ fontSize: 10, marginTop: 2 }}>{taxesNode}</div>
         </div>
         <div className="mono" style={{ fontSize: 13, color: "var(--ink-3)", textAlign: "right" }}>
-          ${flight.cash_price_cad.toFixed(0)} cash
+          ~${flight.cash_price_cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           <div
             className="serif"
+            title={
+              flight.cash_is_estimate
+                ? "No live fare found for this route — this is a zone-estimated typical cash price, NOT this flight's price. Award seats have no cash price; this is only a comparison benchmark."
+                : "Typical one-way cash fare for this route/cabin (Google Flights). A comparison benchmark — not this specific award flight's price."
+            }
             style={{
               fontSize: 9,
               color: "var(--ink-3)",
@@ -880,30 +886,48 @@ function FlightRow({
               opacity: 0.7,
             }}
           >
-            vs {flight.cabin ?? "cabin"} cash
+            {flight.cabin ?? "cabin"} cash · route benchmark{flight.cash_is_estimate ? " (est.)" : ""}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="display" style={{ fontSize: 22, color: "var(--ink)", fontStyle: "italic" }}>
-            {flight.cpp.toFixed(2)}¢
-          </div>
-          <div
-            className="mono"
-            style={{
-              fontSize: 9,
-              color:
-                flight.value_rating === "excellent"
-                  ? "var(--gain)"
-                  : flight.value_rating === "good"
-                    ? "var(--ink-2)"
-                    : "var(--accent)",
-              letterSpacing: "0.10em",
-              textTransform: "uppercase",
-              marginTop: 2,
-            }}
-          >
-            {flight.value_rating || "value"}
-          </div>
+          {flight.rated ? (
+            <>
+              <div className="display" style={{ fontSize: 22, color: "var(--ink)", fontStyle: "italic" }}>
+                {flight.cpp.toFixed(2)}¢
+              </div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 9,
+                  color:
+                    flight.value_rating === "excellent"
+                      ? "var(--gain)"
+                      : flight.value_rating === "good"
+                        ? "var(--ink-2)"
+                        : "var(--accent)",
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  marginTop: 2,
+                }}
+              >
+                {flight.value_rating || "value"}
+              </div>
+            </>
+          ) : (
+            <div
+              className="mono"
+              title="No live cash fare for this route, so we won't show a ¢/pt value computed off a guessed number. The points cost is real — confirm the cash price yourself before judging value."
+              style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.03em", lineHeight: 1.25 }}
+            >
+              <div className="display" style={{ fontSize: 22, color: "var(--ink-3)", fontStyle: "italic" }}>
+                —
+              </div>
+              <div style={{ textTransform: "uppercase", letterSpacing: "0.10em", fontSize: 9, marginTop: 2 }}>
+                rating n/a
+              </div>
+              <div style={{ fontSize: 8.5, opacity: 0.7, marginTop: 2 }}>no live fare</div>
+            </div>
+          )}
           {/* Secondary CPP vs economy cash — the "would I actually pay this in cash?"
               figure. Surfaces only on biz/first searches where the cabin baseline
               inflates the headline CPP. Helps the user see past the 9¢ "excellent"

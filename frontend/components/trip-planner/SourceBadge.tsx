@@ -18,6 +18,7 @@ interface SourceBadgeProps {
   source: SourceKind;
   label?: string;
   fetchedAt?: string; // RFC3339
+  cashIsEstimate?: boolean; // cash side is a zone-fallback guess, not a real fare
 }
 
 function minutesAgo(rfc3339?: string): number | null {
@@ -27,7 +28,7 @@ function minutesAgo(rfc3339?: string): number | null {
   return Math.max(0, Math.floor((Date.now() - t) / 60_000));
 }
 
-export function SourceBadge({ source, label, fetchedAt }: SourceBadgeProps) {
+export function SourceBadge({ source, label, fetchedAt, cashIsEstimate }: SourceBadgeProps) {
   // Re-render every 60s so "5 min ago" stays current without polling state.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -40,10 +41,14 @@ export function SourceBadge({ source, label, fetchedAt }: SourceBadgeProps) {
     const freshness =
       mins == null ? "just now" : mins === 0 ? "just now" : `${mins} min ago`;
     const via = label ? ` via ${label}` : "";
+    // The scraper (Apify/Seats.aero) gives live AWARD SPACE + points — NOT
+    // cash. Saying "Priced via Apify" implied the dollar figure was live too,
+    // which it never is. State exactly what's live; the row labels the cash.
+    const cashNote = cashIsEstimate ? " · cash estimated" : "";
     return (
       <span
         className="mono"
-        title={`Live pricing${via} · fetched ${freshness}`}
+        title={`Live award space${via} · fetched ${freshness}${cashIsEstimate ? " · cash figure is an estimated route benchmark, not a live fare" : ""}`}
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -66,8 +71,8 @@ export function SourceBadge({ source, label, fetchedAt }: SourceBadgeProps) {
           }}
         />
         <span>
-          Priced {freshness}
-          {via}
+          Live award space{via} · {freshness}
+          {cashNote}
         </span>
       </span>
     );
