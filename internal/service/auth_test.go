@@ -14,13 +14,25 @@ import (
 
 type mockAuthRepo struct {
 	byEmail map[string]*model.User
+	// Optional hooks for refresh-token reuse-detection tests. Nil → the
+	// original fixed behaviour, so existing tests are unaffected.
+	getRefreshFn     func(hash string) (*model.RefreshToken, error)
+	revokeRefreshFn  func(hash string) (bool, error)
+	revokeAllFn      func(userID string) error
+	getUserByIDFn    func(id string) (*model.User, error)
+	revokeAllCalls   []string // userIDs passed to RevokeAllUserTokens
 }
 
 func (m *mockAuthRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	return m.byEmail[email], nil // nil when absent — exactly the prod contract
 }
 func (m *mockAuthRepo) GetUserByGoogleID(context.Context, string) (*model.User, error) { return nil, nil }
-func (m *mockAuthRepo) GetUserByID(context.Context, string) (*model.User, error)       { return nil, nil }
+func (m *mockAuthRepo) GetUserByID(_ context.Context, id string) (*model.User, error) {
+	if m.getUserByIDFn != nil {
+		return m.getUserByIDFn(id)
+	}
+	return nil, nil
+}
 func (m *mockAuthRepo) CreateAuthUser(context.Context, string, string, string, string) (*model.User, error) {
 	return &model.User{ID: "new"}, nil
 }
@@ -37,13 +49,25 @@ func (m *mockAuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonU
 func (m *mockAuthRepo) StoreRefreshToken(context.Context, string, string, interface{}) error {
 	return nil
 }
-func (m *mockAuthRepo) GetRefreshToken(context.Context, string) (*model.RefreshToken, error) {
+func (m *mockAuthRepo) GetRefreshToken(_ context.Context, hash string) (*model.RefreshToken, error) {
+	if m.getRefreshFn != nil {
+		return m.getRefreshFn(hash)
+	}
 	return nil, nil
 }
-func (m *mockAuthRepo) RevokeRefreshToken(context.Context, string) (bool, error) {
+func (m *mockAuthRepo) RevokeRefreshToken(_ context.Context, hash string) (bool, error) {
+	if m.revokeRefreshFn != nil {
+		return m.revokeRefreshFn(hash)
+	}
 	return true, nil
 }
-func (m *mockAuthRepo) RevokeAllUserTokens(context.Context, string) error { return nil }
+func (m *mockAuthRepo) RevokeAllUserTokens(_ context.Context, userID string) error {
+	m.revokeAllCalls = append(m.revokeAllCalls, userID)
+	if m.revokeAllFn != nil {
+		return m.revokeAllFn(userID)
+	}
+	return nil
+}
 func (m *mockAuthRepo) DeleteUser(context.Context, string) error          { return nil }
 
 type mockAuthWalletRepo struct {
