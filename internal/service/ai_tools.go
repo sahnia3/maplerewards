@@ -127,6 +127,16 @@ type toolRegistry struct {
 
 func newToolRegistry() *toolRegistry { return &toolRegistry{tools: map[string]toolDef{}} }
 
+// mustJSON marshals a tool result, falling back to a JSON error object so a
+// handler can never return malformed bytes to the model.
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return json.RawMessage(`{"error":"failed to encode tool result"}`)
+	}
+	return b
+}
+
 func (r *toolRegistry) register(t toolDef) { r.tools[t.Name] = t }
 
 // schemas returns the Anthropic-formatted tool array for this tier. Approach
@@ -371,6 +381,7 @@ func (s *AIService) registerTools() {
 				FlexDays:    args.FlexDays,
 				Cabin:       args.Cabin,
 				Passengers:  args.Passengers,
+				IsPro:       proFromCtx(ctx),
 			})
 			if err != nil {
 				return errResultJSON("search_failed", err.Error()), nil
@@ -757,40 +768,75 @@ func (s *AIService) registerTools() {
 		},
 	})
 
-	// 9. project_sqc — Aeroplan 2026 Status Qualifying Credits.
-	// Hotel search stub — Phase 3 of the original AI roadmap. Not wired to a real
-	// inventory source yet; return a deterministic "not yet available" payload so
-	// the LLM stops re-trying the call and synthesizes a useful response (cash
-	// booking via Hotels.com / direct hotel chain points). Without this stub the
-	// LLM kept guessing tool names like search_hotel, find_hotel, hotels — each
-	// guess was an expensive round-trip ending in `unknown_tool`.
+	// 9. search_hotels — REAL cash hotel availability via SerpAPI Google Hotels.
+	// Seats.aero's partner API has no hotel endpoint (verified 404), so there is
+	// no points-hotel inventory on that key; this returns live CASH nightly
+	// rates. The LLM is told to label them as cash and pair with the user's
+	// hotel-program currencies for a points alternative.
 	s.tools.register(toolDef{
 		Name: "search_hotels",
-		Description: "Search hotel availability for the user's destination. NOTE: this tool " +
-			"is currently in beta — it will return a stub response acknowledging the limitation. " +
-			"When you receive the stub, do NOT retry; proceed to recommend cash booking via " +
-			"Hotels.com / Marriott Bonvoy / Hyatt direct, with rough point cost estimates if the " +
-			"user has those programs in their wallet.",
+		Description: "Search REAL hotel availability + nightly cash rates (CAD) for a city via " +
+			"Google Hotels. Returns hotel names, per-night price, total, rating, and a booking link. " +
+			"These are CASH prices — say so. If the user holds a hotel currency (Marriott Bonvoy / " +
+			"World of Hyatt / Hilton Honors), add a rough points-vs-cash note. Always include the " +
+			"booking link for the options you recommend.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"city":          map[string]any{"type": "string", "description": "Destination city (e.g. 'Toronto')."},
-				"checkin_date":  map[string]any{"type": "string", "description": "YYYY-MM-DD."},
-				"checkout_date": map[string]any{"type": "string", "description": "YYYY-MM-DD."},
-				"star_rating":   map[string]any{"type": "integer", "description": "Minimum star rating (e.g. 3 or 4)."},
+				"checkin_date":  map[string]any{"type": "string", "description": "YYYY-MM-DD. Defaults to ~30 days out if omitted."},
+				"checkout_date": map[string]any{"type": "string", "description": "YYYY-MM-DD. Defaults to checkin + 3 nights."},
+				"adults":        map[string]any{"type": "integer", "description": "Guests (default 1)."},
 			},
 			"required": []string{"city"},
 		},
-		Handler: func(_ context.Context, _ string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
-			return json.RawMessage(`{
-  "status": "beta_stub",
-  "message": "Hotel search is in beta and not yet wired to a live inventory source. Recommend cash booking via Hotels.com or direct chain (Marriott Bonvoy / World of Hyatt / Hilton Honors) with point estimates from the user's wallet programs.",
-  "next_steps": [
-    "Mention this limitation briefly to the user",
-    "If they hold a hotel-program currency, give a rough redemption estimate from program-CPP context",
-    "Otherwise suggest Hotels.com Rewards (10%+ back) or direct booking with elite credits"
-  ]
-}`), nil
+		Handler: func(ctx context.Context, _ string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
+			var args struct {
+				City     string `json:"city"`
+				CheckIn  string `json:"checkin_date"`
+				CheckOut string `json:"checkout_date"`
+				Adults   int    `json:"adults"`
+			}
+			_ = json.Unmarshal(raw, &args)
+			if strings.TrimSpace(args.City) == "" {
+				return mustJSON(map[string]any{"error": "city is required"}), nil
+			}
+			// Sensible date defaults so a bare "hotels in Tokyo" still works.
+			if args.CheckIn == "" {
+				args.CheckIn = time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+			}
+			if args.CheckOut == "" {
+				if t, err := time.Parse("2006-01-02", args.CheckIn); err == nil {
+					args.CheckOut = t.AddDate(0, 0, 3).Format("2006-01-02")
+				}
+			}
+			if s.serpSvc == nil || !s.serpSvc.IsAvailable() {
+				return mustJSON(map[string]any{
+					"status":  "unavailable",
+					"message": "Live hotel search isn't configured right now. Suggest the user book direct with their hotel program (Marriott Bonvoy / World of Hyatt / Hilton Honors) or via a cashback portal.",
+				}), nil
+			}
+			hotels, err := s.serpSvc.SearchHotels(ctx, args.City, args.CheckIn, args.CheckOut, args.Adults)
+			if err != nil {
+				slog.Warn("[search_hotels] failed", "err", err, "city", args.City)
+				return mustJSON(map[string]any{
+					"status":  "error",
+					"message": "Hotel lookup failed for " + args.City + ". Tell the user briefly and suggest booking direct or via a cashback portal.",
+				}), nil
+			}
+			if len(hotels) > 8 {
+				hotels = hotels[:8]
+			}
+			return mustJSON(map[string]any{
+				"status":         "ok",
+				"city":           args.City,
+				"checkin":        args.CheckIn,
+				"checkout":       args.CheckOut,
+				"currency":       "CAD",
+				"price_type":     "cash_per_night",
+				"note":           "These are live CASH nightly rates from Google Hotels. Quote prices + the booking link verbatim. Not points redemptions.",
+				"hotels":         hotels,
+			}), nil
 		},
 	})
 
@@ -1217,6 +1263,12 @@ WHEN TO CALL WHICH TOOL
 - Multiple programs to check → fan out parallel tool calls in one turn
 - The user's wallet (cards, balances) is in your context already — never call a tool to read it.
 
+STATED BALANCES OVERRIDE THE REGISTERED WALLET (IMPORTANT)
+- The registered wallet is a convenience default, NOT a constraint. If the user states a balance in their message ("I have 120,000 Amex MR", "assume 80k Aeroplan", "suppose I had 200k points"), TREAT THAT NUMBER AS AUTHORITATIVE for affordability and recommendations in this query. Run the search and rank options against the stated amount.
+- NEVER refuse, reject, or correct the user's premise on the grounds that "your account only shows X". They may not have logged it yet, or are planning a transfer. Answer the question they actually asked.
+- You MAY add one short, non-blocking nudge if the stated amount differs materially from the wallet ("FYI your wallet shows 1,000 MR — add it under Wallet to track this for real"), but only AFTER fully answering.
+- Still quote real award/transfer/cpp numbers from tools verbatim — only the user's POINT BALANCE is taken from their message; prices are never invented.
+
 RECOMMENDATION FORMAT
 For award queries, structure your final answer as:
 1. Best path (program + points + taxes + CPP)
@@ -1277,6 +1329,57 @@ type EmitFn func(event string, data map[string]any)
 
 // ChatWithTools is the non-streaming wrapper. Calls the streaming variant with
 // nil emit and returns the synthesized reply at the end.
+// proCtxKey carries the caller's Pro status down through call paths where
+// per-request state can't be a parameter (tools registered once at startup;
+// deep helper chains). Used to Pro-gate the expensive live Apify scrape in
+// both the chat award tool and the trip flight probe.
+type proCtxKey struct{}
+
+func withProCtx(ctx context.Context, isPro bool) context.Context {
+	return context.WithValue(ctx, proCtxKey{}, isPro)
+}
+
+func proFromCtx(ctx context.Context) bool {
+	v, _ := ctx.Value(proCtxKey{}).(bool)
+	return v
+}
+
+// complexChatSignals are substrings that indicate a turn needs the strong
+// model: anything involving award/points/flight/trip planning, transfers, or
+// multi-step reasoning. Lowercased match. Deliberately broad — quality where
+// money decisions are made, cheap Haiku for everything else (definitions,
+// "best card for groceries", general Q&A, which is the bulk of traffic).
+var complexChatSignals = []string{
+	"award", "miles", "aeroplan", "avios", "points to", "transfer", "transferring",
+	"flight", "fly ", "flying", "airport", "business class", "first class",
+	"trip", "itinerary", "route", "routing", "stopover", "layover", "redeem",
+	"redemption", "book ", "booking", "hotel", "how many points", "how much will it cost",
+	"cheapest", "best way to get", "sweet spot", "valuation", "cpp",
+}
+
+// selectChatModel routes the turn to the cheap (Haiku) or strong (Sonnet)
+// model. Defaults to cheap; escalates to strong on any complexity signal:
+// research mode, a long ask, or award/trip/points keywords. This is the
+// primary chat-cost lever — most turns are simple and run on Haiku.
+func (s *AIService) selectChatModel(req ChatRequest) string {
+	if s.fastModelID == "" || s.fastModelID == s.modelID {
+		return s.modelID // routing disabled
+	}
+	if req.ResearchMode {
+		return s.modelID
+	}
+	msg := strings.ToLower(req.Message)
+	if len(req.Message) > 280 {
+		return s.modelID
+	}
+	for _, sig := range complexChatSignals {
+		if strings.Contains(msg, sig) {
+			return s.modelID
+		}
+	}
+	return s.fastModelID
+}
+
 func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bool) (*ChatResponse, error) {
 	return s.ChatWithToolsStream(ctx, req, isPro, nil)
 }
@@ -1292,6 +1395,10 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	if s.tools == nil {
 		return nil, fmt.Errorf("tool registry not initialized")
 	}
+
+	// Carry Pro status to tool execution so search_award_space can Pro-gate
+	// the expensive live Apify scrape.
+	ctx = withProCtx(ctx, isPro)
 
 	// Build static system layers.
 	walletCtx := s.buildWalletContext(ctx, req.SessionID)
@@ -1320,6 +1427,9 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		Content: []claudeBlock{{Type: "text", Text: req.Message}},
 	})
 
+	// Pick the model once for the whole turn (consistent across tool rounds).
+	turnModel := s.selectChatModel(req)
+
 	// 5-round budget. Each round = one LLM call. After round 5, we force a final
 	// synthesis with no tools available so the model must answer.
 	const maxRounds = 5
@@ -1340,7 +1450,7 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		if isPro {
 			maxTokens = 4096
 		}
-		resp, err := s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens)
+		resp, err := s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens, turnModel)
 		if err != nil {
 			return nil, fmt.Errorf("claude round %d: %w", round+1, err)
 		}
@@ -1489,12 +1599,16 @@ func (s *AIService) callClaudeWithTools(
 	tools []map[string]any,
 	messages []claudeBlockMessage,
 	maxTokens int,
+	modelID string,
 ) (*claudeToolUseResponse, error) {
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
+	if modelID == "" {
+		modelID = s.modelID
+	}
 	reqBody := claudeToolUseRequest{
-		Model:     s.modelID,
+		Model:     modelID,
 		MaxTokens: maxTokens,
 		System:    system,
 		Tools:     tools,

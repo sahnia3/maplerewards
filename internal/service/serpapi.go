@@ -281,3 +281,118 @@ func serpCabinClass(cabin string) string {
 		return "1"
 	}
 }
+
+// ── SerpAPI Google Hotels ───────────────────────────────────────────────────
+//
+// Seats.aero's partner API is flights-only — there is no hotel/award-lodging
+// endpoint on that key (verified: /partnerapi/hotels → 404). Hotel search is
+// therefore backed by the SerpAPI Google Hotels engine, which returns REAL
+// cash nightly rates the app already has a key + quota for. These are cash
+// prices, not points redemptions (no keyed points-hotel inventory exists);
+// the AI layer is told to label them honestly.
+
+type HotelResult struct {
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`         // "hotel" | "vacation rental"
+	PricePerNt  float64 `json:"price_per_night_cad"`
+	TotalCAD    float64 `json:"total_cad"`
+	Rating      float64 `json:"rating"`       // overall_rating, 0 if absent
+	HotelClass  string  `json:"hotel_class"`  // e.g. "4-star hotel"
+	Link        string  `json:"link"`
+}
+
+type serpHotelsResponse struct {
+	Properties []struct {
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		RatePerNt   struct {
+			ExtractedLowest float64 `json:"extracted_lowest"`
+		} `json:"rate_per_night"`
+		TotalRate struct {
+			ExtractedLowest float64 `json:"extracted_lowest"`
+		} `json:"total_rate"`
+		OverallRating float64 `json:"overall_rating"`
+		HotelClass    string  `json:"hotel_class"`
+		Link          string  `json:"link"`
+	} `json:"properties"`
+	Error string `json:"error"`
+}
+
+// SearchHotels queries SerpAPI Google Hotels for real cash availability in a
+// city over a date range. Debits the shared monthly quota first (same counter
+// as flights) so we never silently rack up overage.
+func (s *SerpAPIService) SearchHotels(
+	ctx context.Context,
+	city, checkIn, checkOut string,
+	adults int,
+) ([]HotelResult, error) {
+	if !s.IsAvailable() {
+		return nil, fmt.Errorf("SERPAPI_KEY not configured")
+	}
+	if adults < 1 {
+		adults = 1
+	}
+	if s.quota != nil {
+		remaining, exhausted, err := s.quota.Spend(ctx, "serpapi")
+		if err != nil {
+			slog.Warn("[serpapi-hotels] quota check failed; allowing request", "err", err)
+		} else if exhausted {
+			slog.Warn("[serpapi-hotels] monthly quota exhausted; skipping HTTP call", "remaining", remaining)
+			return nil, ErrQuotaExhausted
+		}
+	}
+
+	start := time.Now()
+	params := url.Values{
+		"engine":         {"google_hotels"},
+		"q":              {city},
+		"check_in_date":  {checkIn},
+		"check_out_date": {checkOut},
+		"adults":         {fmt.Sprintf("%d", adults)},
+		"currency":       {"CAD"},
+		"gl":             {"ca"},
+		"hl":             {"en"},
+		"api_key":        {s.apiKey},
+	}
+	searchURL := "https://serpapi.com/search.json?" + params.Encode()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	resp, err := s.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("serpapi hotels call: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("serpapi hotels HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 300))
+	}
+	var hr serpHotelsResponse
+	if err := json.Unmarshal(body, &hr); err != nil {
+		return nil, fmt.Errorf("decode serpapi hotels response: %w", err)
+	}
+	if hr.Error != "" {
+		return nil, fmt.Errorf("serpapi hotels error: %s", hr.Error)
+	}
+
+	out := make([]HotelResult, 0, len(hr.Properties))
+	for _, p := range hr.Properties {
+		// Skip noise: keep entries with a usable nightly price.
+		if p.RatePerNt.ExtractedLowest <= 0 {
+			continue
+		}
+		out = append(out, HotelResult{
+			Name:       p.Name,
+			Type:       p.Type,
+			PricePerNt: p.RatePerNt.ExtractedLowest,
+			TotalCAD:   p.TotalRate.ExtractedLowest,
+			Rating:     p.OverallRating,
+			HotelClass: p.HotelClass,
+			Link:       p.Link,
+		})
+	}
+	slog.Info("[serpapi-hotels] response received",
+		"city", city, "checkin", checkIn, "results", len(out), "elapsed", time.Since(start))
+	return out, nil
+}
