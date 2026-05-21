@@ -43,6 +43,11 @@ type BillingRepository interface {
 	// flow: we INSERT the dedup row BEFORE doing work; if work fails we
 	// DELETE so Stripe's retry can re-attempt.
 	DeleteStripeEvent(ctx context.Context, eventID string) error
+	// MarkStripeEventCompleted stamps completed_at after successful processing.
+	MarkStripeEventCompleted(ctx context.Context, eventID string) error
+	// ReclaimStaleStripeEvent frees a reserved-but-never-completed row orphaned
+	// by a crash mid-processing (>15min old). Returns true if reclaimed.
+	ReclaimStaleStripeEvent(ctx context.Context, eventID string) (bool, error)
 }
 
 // BillingService handles Stripe billing logic.
@@ -551,4 +556,17 @@ func (s *BillingService) IsEventProcessed(ctx context.Context, eventID string) (
 // already gone (treats DELETE as idempotent).
 func (s *BillingService) DeleteEvent(ctx context.Context, eventID string) error {
 	return s.repo.DeleteStripeEvent(ctx, eventID)
+}
+
+// MarkEventCompleted stamps the dedup row as successfully processed. Call ONLY
+// after HandleWebhookEvent returns nil — this is what makes a future duplicate
+// short-circuit safely.
+func (s *BillingService) MarkEventCompleted(ctx context.Context, eventID string) error {
+	return s.repo.MarkStripeEventCompleted(ctx, eventID)
+}
+
+// ReclaimStaleEvent frees a reserved-but-never-completed row orphaned by a
+// crash mid-processing. Returns true if a stale reserve was reclaimed.
+func (s *BillingService) ReclaimStaleEvent(ctx context.Context, eventID string) (bool, error) {
+	return s.repo.ReclaimStaleStripeEvent(ctx, eventID)
 }

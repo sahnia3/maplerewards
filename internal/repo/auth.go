@@ -397,13 +397,45 @@ func (r *AuthRepo) RecordStripeEvent(ctx context.Context, eventID, eventType str
 // the event handler.
 func (r *AuthRepo) IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error) {
 	var exists bool
+	// COMPLETED only — a merely-reserved (in-flight or rolled-back) row must
+	// NOT count as processed, or a concurrent duplicate would 200 and let
+	// Stripe stop retrying an event we never finished.
 	err := r.pool.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM stripe_events WHERE event_id = $1)
+		SELECT EXISTS(SELECT 1 FROM stripe_events WHERE event_id = $1 AND completed_at IS NOT NULL)
 	`, eventID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check stripe event: %w", err)
 	}
 	return exists, nil
+}
+
+// MarkStripeEventCompleted stamps an event as successfully processed. Called
+// by the webhook handler ONLY after HandleWebhookEvent returns nil.
+func (r *AuthRepo) MarkStripeEventCompleted(ctx context.Context, eventID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE stripe_events SET completed_at = NOW() WHERE event_id = $1
+	`, eventID)
+	if err != nil {
+		return fmt.Errorf("mark stripe event completed: %w", err)
+	}
+	return nil
+}
+
+// ReclaimStaleStripeEvent deletes a reserved-but-never-completed row older than
+// 15 minutes — a reserve orphaned by a crash/redeploy mid-processing. Returns
+// true if it reclaimed one, letting the handler reprocess instead of looping on
+// a poison "still in-flight" 409 forever.
+func (r *AuthRepo) ReclaimStaleStripeEvent(ctx context.Context, eventID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM stripe_events
+		WHERE event_id = $1
+		  AND completed_at IS NULL
+		  AND processed_at < NOW() - INTERVAL '15 minutes'
+	`, eventID)
+	if err != nil {
+		return false, fmt.Errorf("reclaim stale stripe event: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // DeleteStripeEvent removes a previously-recorded event row. Used by the

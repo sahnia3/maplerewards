@@ -134,36 +134,26 @@ func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Idempotency check — does this event ID already have a "successfully
-	// processed" marker? If yes, skip and 200 so Stripe stops retrying.
-	// Critically: we DO NOT record the marker here. Recording happens AFTER
-	// HandleWebhookEvent returns nil — otherwise a transient processing
-	// failure would record the dedup row, Stripe would retry the same event
-	// to a healthy server, and we'd silently skip a real Pro grant.
+	// Idempotency. The dedup row has two states: RESERVED (in-flight) and
+	// COMPLETED (completed_at set after success). Only a COMPLETED event is a
+	// true duplicate we can 200-and-forget. A merely-reserved row means another
+	// delivery is mid-flight (or crashed) — we must NOT 200, or Stripe stops
+	// retrying an event we never finished (concurrent-loss bug, code review).
 	if event.ID != "" {
-		alreadyDone, err := h.svc.IsEventProcessed(r.Context(), event.ID)
+		completed, err := h.svc.IsEventProcessed(r.Context(), event.ID)
 		if err != nil {
-			// Don't fail the webhook on a lookup error — better to risk a
-			// duplicate side-effect than return 5xx and trigger Stripe's
-			// retry storm. Most handlers (SetUserPro) are idempotent at the
-			// DB layer anyway.
 			slog.Error("stripe event idempotency lookup failed", "err", err, "event_id", event.ID, "type", event.Type)
-		} else if alreadyDone {
-			slog.Info("duplicate stripe event ignored", "event_id", event.ID, "type", event.Type)
+		} else if completed {
+			slog.Info("duplicate stripe event ignored (already completed)", "event_id", event.ID, "type", event.Type)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"received":true,"duplicate":true}`)) //nolint:errcheck
 			return
 		}
-	}
 
-	// Reserve-then-work pattern for true idempotency. INSERT the dedup row
-	// FIRST with ON CONFLICT DO NOTHING semantics. RowsAffected==0 means the
-	// event is already-seen (a Stripe retry) — short-circuit OK without
-	// re-processing. Otherwise we own the row and do the work; if the work
-	// fails, DELETE the row so Stripe's next retry can re-attempt. The
-	// previous "process-then-record" order let work succeed while the record
-	// failed, allowing a future non-idempotent handler to grant Pro twice.
-	if event.ID != "" {
+		// Reserve. ON CONFLICT DO NOTHING → isNew=false means a row already
+		// exists but is NOT completed (the check above passed): either a
+		// concurrent delivery is processing it now, or a prior attempt crashed
+		// mid-flight leaving an orphaned reserve.
 		isNew, err := h.svc.RecordEvent(r.Context(), event.ID, event.Type)
 		if err != nil {
 			slog.Error("stripe event reserve failed", "err", err, "event_id", event.ID, "type", event.Type)
@@ -171,29 +161,45 @@ func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !isNew {
-			// Already-processed duplicate. Acknowledge so Stripe stops retrying.
-			slog.Info("stripe event duplicate, skipping", "event_id", event.ID, "type", event.Type)
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"received":true,"duplicate":true}`)) //nolint:errcheck
-			return
+			// Try to reclaim a stale orphan (>15min, never completed); if we
+			// reclaim it, re-reserve and proceed. Otherwise it's genuinely
+			// in-flight — ask Stripe to retry later (409, NOT 200).
+			reclaimed, rcErr := h.svc.ReclaimStaleEvent(r.Context(), event.ID)
+			if rcErr != nil {
+				slog.Error("stripe stale-reclaim failed", "err", rcErr, "event_id", event.ID)
+			}
+			if !reclaimed {
+				slog.Info("stripe event in-flight elsewhere — asking Stripe to retry", "event_id", event.ID, "type", event.Type)
+				jsonError(w, "event processing in progress, retry later", http.StatusConflict)
+				return
+			}
+			if isNew, err = h.svc.RecordEvent(r.Context(), event.ID, event.Type); err != nil || !isNew {
+				slog.Info("stripe event re-reserve lost race after reclaim — retry later", "event_id", event.ID)
+				jsonError(w, "event processing in progress, retry later", http.StatusConflict)
+				return
+			}
 		}
 	}
 
-	// Process the event. On failure, delete the dedup row so Stripe's retry
-	// can re-attempt with the same event.id.
+	// Process. On failure, delete the reserve so Stripe's retry re-attempts.
 	if err := h.svc.HandleWebhookEvent(r.Context(), event.Type, event.Data.Object); err != nil {
 		slog.Error("webhook event processing failed", "err", err, "type", event.Type, "event_id", event.ID)
 		if event.ID != "" {
 			if delErr := h.svc.DeleteEvent(r.Context(), event.ID); delErr != nil {
-				// If we can't roll back, log loudly. Stripe will see the
-				// existing row on retry and skip processing — manual cleanup
-				// from the DB needed.
 				slog.Error("stripe event rollback failed — manual cleanup required",
 					"err", delErr, "event_id", event.ID)
 			}
 		}
 		jsonError(w, "event processing failed", http.StatusInternalServerError)
 		return
+	}
+
+	// Stamp COMPLETED so future duplicates short-circuit safely. A failure
+	// here only risks one extra (idempotent) reprocess on Stripe's next retry.
+	if event.ID != "" {
+		if err := h.svc.MarkEventCompleted(r.Context(), event.ID); err != nil {
+			slog.Error("stripe event mark-completed failed (non-fatal)", "err", err, "event_id", event.ID)
+		}
 	}
 
 	// Acknowledge receipt

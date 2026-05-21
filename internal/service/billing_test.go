@@ -16,7 +16,8 @@ type mockBillingRepo struct {
 	customerToUser  map[string]string      // stripe customer ID → user ID
 	proStatus       map[string]bool        // user ID → is_pro
 	planStatus      map[string]string      // user ID → plan tier
-	processedEvents map[string]bool        // stripe event ID → processed flag
+	processedEvents map[string]bool        // stripe event ID → RESERVED flag
+	completedEvents map[string]bool        // stripe event ID → COMPLETED flag
 	unsubscribed    map[string]bool        // user ID → opted out of email
 	tokensRevoked   map[string]bool        // user ID → RevokeAllUserTokens called
 	failSetPro      bool
@@ -29,6 +30,7 @@ func newMockBillingRepo() *mockBillingRepo {
 		proStatus:       map[string]bool{},
 		planStatus:      map[string]string{},
 		processedEvents: map[string]bool{},
+		completedEvents: map[string]bool{},
 		unsubscribed:    map[string]bool{},
 		tokensRevoked:   map[string]bool{},
 	}
@@ -90,12 +92,22 @@ func (m *mockBillingRepo) RecordStripeEvent(ctx context.Context, eventID, eventT
 }
 
 func (m *mockBillingRepo) IsStripeEventProcessed(ctx context.Context, eventID string) (bool, error) {
-	return m.processedEvents[eventID], nil
+	return m.completedEvents[eventID], nil // COMPLETED, not merely reserved
 }
 
 func (m *mockBillingRepo) DeleteStripeEvent(ctx context.Context, eventID string) error {
 	delete(m.processedEvents, eventID)
+	delete(m.completedEvents, eventID)
 	return nil
+}
+
+func (m *mockBillingRepo) MarkStripeEventCompleted(ctx context.Context, eventID string) error {
+	m.completedEvents[eventID] = true
+	return nil
+}
+
+func (m *mockBillingRepo) ReclaimStaleStripeEvent(ctx context.Context, eventID string) (bool, error) {
+	return false, nil // no staleness concept in the mock
 }
 
 func newBillingSvc(repo *mockBillingRepo) *BillingService {
@@ -335,6 +347,29 @@ func TestBillingWebhook_RecordEvent_DuplicateReturnsFalse(t *testing.T) {
 	}
 	if second {
 		t.Fatal("duplicate event must return false so the handler short-circuits with 200")
+	}
+}
+
+// A merely-RESERVED event must NOT report as processed/completed — otherwise a
+// concurrent duplicate delivery would 200 and let Stripe stop retrying an event
+// that the first delivery never finished (the concurrent-loss bug). Only after
+// MarkEventCompleted does IsEventProcessed return true.
+func TestBillingWebhook_ReservedNotCompletedUntilMarked(t *testing.T) {
+	repo := newMockBillingRepo()
+	svc := newBillingSvc(repo)
+	ctx := context.Background()
+
+	if ok, _ := svc.RecordEvent(ctx, "evt_inflight", "checkout.session.completed"); !ok {
+		t.Fatal("reserve should succeed")
+	}
+	if done, _ := svc.IsEventProcessed(ctx, "evt_inflight"); done {
+		t.Fatal("a reserved-but-not-completed event must NOT report as processed")
+	}
+	if err := svc.MarkEventCompleted(ctx, "evt_inflight"); err != nil {
+		t.Fatalf("MarkEventCompleted: %v", err)
+	}
+	if done, _ := svc.IsEventProcessed(ctx, "evt_inflight"); !done {
+		t.Fatal("after completion the event must report processed so duplicates dedup")
 	}
 }
 
