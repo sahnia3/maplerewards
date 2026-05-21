@@ -210,7 +210,7 @@ func main() {
 	emailVerifySvc := service.NewEmailVerifyService(emailVerifyRepo, mailer)
 
 	// Flight data services: Apify (live awards), SerpAPI (cash prices), Seats.aero (awards, optional)
-	apifySvc := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""))
+	apifySvc := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), quotaClient)
 	serpSvc := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), quotaClient)
 	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
 
@@ -231,13 +231,15 @@ func main() {
 		},
 	)
 
-	// Apify smoke-test goroutine. Fires every 6 hours against a known query
+	// Apify smoke-test goroutine. Fires every 24h against a known query
 	// (YYZ→LHR business) and warns if the Apify schema drifts again. Catches
-	// the next totalDuration-style breakage before users do.
+	// the next totalDuration-style breakage before users do. Cadence was 6h
+	// (~120 paid scrapes/mo just for monitoring); 24h still catches drift
+	// well within a day while cutting that fixed cost ~75%.
 	// Uses Background() — the goroutine runs for the full process lifetime and
 	// is killed cleanly when the OS terminates the process on shutdown.
 	if apifySvc.IsAvailable() {
-		smoke := health.NewApifySmokeChecker(awardSearchSvc, 6*time.Hour)
+		smoke := health.NewApifySmokeChecker(awardSearchSvc, 24*time.Hour)
 		// Admin alert path: when a smoke run fails, email ADMIN_EMAIL (24h
 		// throttle) and ERROR-log so Sentry picks it up. No-op when either
 		// is unset — the slog.Error path still runs.

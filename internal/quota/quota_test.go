@@ -73,20 +73,46 @@ func TestRemaining_FreshKeyReturnsLimit(t *testing.T) {
 	}
 }
 
-func TestSpend_UnlimitedProvider(t *testing.T) {
+// Apify is now hard-capped (was unlimited). Spend must count down and
+// exhaust once the monthly cap is exceeded — the kill-switch contract.
+func TestSpend_ApifyHardCapped(t *testing.T) {
 	c := newTestClient(t)
 	ctx := context.Background()
 
-	// Apify is unlimited (limit=0) — Spend should always return rem=-1, no exhaust.
+	orig := FreeTierLimits["apify"]
+	FreeTierLimits["apify"] = 2 // small cap to exercise exhaustion cheaply
+	defer func() { FreeTierLimits["apify"] = orig }()
+
+	if _, exh, err := c.Spend(ctx, "apify"); err != nil || exh {
+		t.Fatalf("1st apify spend: exhausted=%v err=%v (want not-exhausted)", exh, err)
+	}
+	if _, exh, err := c.Spend(ctx, "apify"); err != nil || exh {
+		t.Fatalf("2nd apify spend: exhausted=%v err=%v (want not-exhausted at cap)", exh, err)
+	}
+	if _, exh, err := c.Spend(ctx, "apify"); err != nil || !exh {
+		t.Fatalf("3rd apify spend: exhausted=%v err=%v (want EXHAUSTED past cap)", exh, err)
+	}
+}
+
+// The limit==0 "unlimited" sentinel path must still work for any provider
+// configured that way (rem=-1, never exhausts).
+func TestSpend_UnlimitedSentinelStillWorks(t *testing.T) {
+	c := newTestClient(t)
+	ctx := context.Background()
+
+	orig := FreeTierLimits["apify"]
+	FreeTierLimits["apify"] = 0
+	defer func() { FreeTierLimits["apify"] = orig }()
+
 	rem, exh, err := c.Spend(ctx, "apify")
 	if err != nil {
-		t.Fatalf("apify spend: %v", err)
+		t.Fatalf("spend: %v", err)
 	}
 	if exh {
-		t.Fatalf("apify should never exhaust")
+		t.Fatalf("limit=0 provider should never exhaust")
 	}
 	if rem != -1 {
-		t.Fatalf("apify remaining = %d, want -1 (sentinel for unlimited)", rem)
+		t.Fatalf("remaining = %d, want -1 (unlimited sentinel)", rem)
 	}
 }
 

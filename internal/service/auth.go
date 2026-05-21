@@ -320,8 +320,10 @@ func (s *AuthService) DeleteAccount(ctx context.Context, userID string) error {
 	return s.repo.DeleteUser(ctx, userID)
 }
 
-// ValidateAccessToken parses and validates a JWT access token.
-func (s *AuthService) ValidateAccessToken(tokenString string) (string, bool, error) {
+// ValidateAccessToken parses and validates a JWT access token. Returns the
+// user ID, the is_pro flag, and the plan string ("" for legacy tokens
+// minted before the plan claim — callers fall back to is_pro).
+func (s *AuthService) ValidateAccessToken(tokenString string) (string, bool, string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -340,17 +342,17 @@ func (s *AuthService) ValidateAccessToken(tokenString string) (string, bool, err
 		jwt.WithIssuer(jwtIssuer),
 	)
 	if err != nil {
-		return "", false, err
+		return "", false, "", err
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
-		return "", false, fmt.Errorf("invalid token claims")
+		return "", false, "", fmt.Errorf("invalid token claims")
 	}
 
 	userID, ok := claims["sub"].(string)
 	if !ok || userID == "" {
-		return "", false, fmt.Errorf("missing user ID in token")
+		return "", false, "", fmt.Errorf("missing user ID in token")
 	}
 
 	isPro := false
@@ -358,7 +360,12 @@ func (s *AuthService) ValidateAccessToken(tokenString string) (string, bool, err
 		isPro = v
 	}
 
-	return userID, isPro, nil
+	plan := ""
+	if v, ok := claims["plan"].(string); ok {
+		plan = v
+	}
+
+	return userID, isPro, plan, nil
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────────
@@ -372,6 +379,7 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (
 		"sub":      user.ID,
 		"email":    user.Email,
 		"is_pro":   user.IsPro,
+		"plan":     user.Plan, // drives per-tier AI token budget
 		"provider": user.AuthProvider,
 		"iss":      jwtIssuer,
 		"iat":      now.Unix(),

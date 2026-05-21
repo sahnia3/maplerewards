@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Swipe — MapleRewards</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#080709; --ink:#F4EFE6; --ink-2:#B9B0A1; --ink-3:#7C7466;
+    --maple:#D84353; --maple-bright:#F05366; --gold:#D8B26A;
+    --line:rgba(244,239,230,.12); --line-2:rgba(244,239,230,.22);
+    --ease:cubic-bezier(.16,1,.3,1);
+    --d:'Instrument Serif',Georgia,serif;
+    --s:'Inter Tight',system-ui,sans-serif;
+    --m:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:auto}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--s);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .scrim{position:fixed;inset:0;z-index:10;pointer-events:none;
+    background:linear-gradient(100deg,rgba(6,5,7,.86) 0%,rgba(6,5,7,.5) 34%,
+      rgba(6,5,7,.08) 56%,rgba(6,5,7,0) 70%)}
+  .hud.fade{opacity:0;transition:opacity .6s var(--ease)}
+  .rail.fade,.scrollcue.fade{opacity:0;transition:opacity .5s var(--ease)}
+  body{font-weight:450;font-feature-settings:"ss01","cv11"}
+  canvas#gl{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:block}
+  .grain{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.06;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>")}
+  .vig{position:fixed;inset:0;z-index:55;pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 42%,transparent 38%,rgba(0,0,0,.55) 100%)}
+
+  .mono{font-family:var(--m)}
+  .eyebrow{font-family:var(--m);font-size:10px;font-weight:600;letter-spacing:.26em;
+    text-transform:uppercase;color:var(--ink-3)}
+  .display{font-family:var(--d);font-weight:400;line-height:.94;letter-spacing:-.012em}
+  .accent{color:var(--maple)}
+
+  /* loader */
+  #loader{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:26px;
+    transition:opacity 1s var(--ease),visibility 1s}
+  #loader.gone{opacity:0;visibility:hidden}
+  #loader .lk{font-family:var(--m);font-size:10px;letter-spacing:.4em;text-transform:uppercase;color:var(--ink-3)}
+  #loader .lb{width:200px;height:1px;background:var(--line);position:relative;overflow:hidden}
+  #loader .lb i{position:absolute;inset:0;width:0%;background:linear-gradient(90deg,var(--maple),var(--gold));
+    transition:width .25s linear}
+  #loader .lt{font-family:var(--d);font-size:42px}
+  #loader .lt em{font-style:italic;color:var(--maple)}
+
+  /* fixed HUD overlay */
+  .hud{position:fixed;inset:0;z-index:20;pointer-events:none}
+  .wrap{max-width:1480px;height:100%;margin:0 auto;
+    padding:clamp(26px,5vw,72px) clamp(22px,5vw,80px);position:relative}
+
+  .topbar{position:absolute;top:clamp(26px,5vw,52px);left:clamp(22px,5vw,80px);
+    right:clamp(22px,5vw,80px);display:flex;justify-content:space-between;align-items:center}
+  .brand{display:flex;align-items:center;gap:11px}
+  .brand svg{width:20px;height:20px;color:var(--maple);
+    filter:drop-shadow(0 0 10px rgba(216,67,83,.6))}
+  .brand b{font-family:var(--d);font-size:21px;font-weight:400;letter-spacing:-.01em}
+  .topbar .meta{font-family:var(--m);font-size:10px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ink-3)}
+
+  /* sliding screens */
+  .screen{position:absolute;inset:0;display:flex;align-items:center;
+    padding:clamp(26px,5vw,72px) clamp(22px,5vw,80px);
+    opacity:0;transition:opacity .55s var(--ease);max-width:1480px;margin:0 auto;left:0;right:0}
+  .screen.on{opacity:1}
+
+  /* hero screen */
+  .hero{flex-direction:column;justify-content:center;align-items:flex-start;
+    text-align:left;max-width:min(50%,640px)}
+  .hero h1{font-size:clamp(42px,5.4vw,94px);max-width:9ch;margin:20px 0 26px;
+    text-shadow:0 8px 50px rgba(0,0,0,.6)}
+  .hero h1 em{font-style:italic}
+  .hero .lede{font-family:var(--d);font-style:italic;color:var(--ink-2);
+    font-size:clamp(17px,1.6vw,22px);max-width:42ch;line-height:1.45}
+
+  /* verdict screen */
+  .verdict{justify-content:flex-start}
+  .vinner{max-width:560px}
+  .kick{display:flex;align-items:center;gap:13px;margin-bottom:22px}
+  .kick .bar{height:1px;width:50px;background:var(--line-2)}
+  .cat{font-size:clamp(46px,7vw,118px);line-height:.9;
+    text-shadow:0 6px 44px rgba(0,0,0,.55)}
+  .merchant{font-family:var(--d);font-style:italic;color:var(--ink-2);
+    font-size:clamp(16px,1.5vw,21px);margin:18px 0 30px}
+  .vrow{display:flex;align-items:baseline;gap:22px;flex-wrap:wrap;
+    padding-top:24px;border-top:1px solid var(--line)}
+  .mult{font-family:var(--d);font-size:clamp(60px,9vw,132px);line-height:.85;color:var(--maple);
+    text-shadow:0 0 38px rgba(216,67,83,.45)}
+  .mult small{display:block;font-family:var(--m);font-size:.16em;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-3);margin-top:.7em}
+  .cardname{font-family:var(--d);font-style:italic;font-size:clamp(19px,1.9vw,27px)}
+  .tally{font-family:var(--m);font-size:12.5px;letter-spacing:.03em;color:var(--ink-2);margin-top:7px}
+  .tally b{color:var(--ink);font-weight:600}
+
+  /* outro screen */
+  .outro{flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:22px}
+  .outro h2{font-size:clamp(40px,6.6vw,108px);max-width:15ch}
+  .outro h2 em{font-style:italic}
+  .outro p{font-family:var(--d);font-style:italic;color:var(--ink-2);
+    font-size:clamp(17px,1.6vw,22px);max-width:46ch;line-height:1.5}
+  .cta{pointer-events:auto;margin-top:8px;display:inline-flex;align-items:center;gap:11px;
+    background:var(--maple);color:#0c0709;font-family:var(--m);font-size:12px;font-weight:600;
+    letter-spacing:.16em;text-transform:uppercase;padding:17px 30px;border:none;border-radius:999px;
+    cursor:pointer;transition:transform .25s var(--ease),box-shadow .25s var(--ease),background .25s var(--ease)}
+  .cta:hover{background:var(--maple-bright);transform:translateY(-2px);
+    box-shadow:0 14px 44px rgba(216,67,83,.5)}
+  .cta:active{transform:scale(.97)}
+
+  /* progress rail */
+  .rail{position:fixed;right:clamp(22px,4vw,54px);top:50%;transform:translateY(-50%);
+    z-index:25;display:flex;flex-direction:column;gap:16px;pointer-events:auto;
+    opacity:0;transition:opacity .55s var(--ease)}
+  .rail.show{opacity:1}
+  .rail.show.fade{opacity:0}
+  .rail button{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;
+    justify-content:flex-end;font-family:var(--m);font-size:9px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-3);opacity:.45;
+    transition:opacity .4s var(--ease),color .4s var(--ease)}
+  .rail button .dot{width:6px;height:6px;border-radius:50%;background:var(--line-2);
+    transition:all .45s var(--ease)}
+  .rail button.on{opacity:1;color:var(--ink)}
+  .rail button.on .dot{background:var(--maple);transform:scale(1.5);
+    box-shadow:0 0 0 4px rgba(216,67,83,.22),0 0 14px rgba(216,67,83,.7)}
+
+  .scrollcue{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:25;
+    display:flex;flex-direction:column;align-items:center;gap:9px;
+    transition:opacity .5s var(--ease)}
+  .scrollcue span{font-family:var(--m);font-size:9px;letter-spacing:.28em;
+    text-transform:uppercase;color:var(--ink-3)}
+  .scrollcue i{width:1px;height:42px;background:linear-gradient(var(--maple),transparent);
+    animation:drip 2.1s var(--ease) infinite}
+  @keyframes drip{0%{transform:scaleY(0);transform-origin:top}45%{transform:scaleY(1);transform-origin:top}
+    55%{transform:scaleY(1);transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+
+  /* integration note (appended after scroll spacer) */
+  .noteband{position:relative;z-index:30;background:linear-gradient(180deg,transparent,#060507 18%);
+    padding:8vh clamp(22px,5vw,80px) 12vh;display:flex;justify-content:center}
+  .note{max-width:680px;width:100%;border:1px solid var(--line);
+    background:rgba(18,15,18,.7);backdrop-filter:blur(14px);border-radius:18px;
+    padding:30px 34px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .note h3{font-family:var(--m);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--maple);margin-bottom:16px}
+  .note ul{list-style:none;display:flex;flex-direction:column;gap:12px}
+  .note li{font-size:14px;color:var(--ink-2);padding-left:18px;position:relative;line-height:1.55}
+  .note li::before{content:"→";position:absolute;left:0;color:var(--maple)}
+  .note code{font-family:var(--m);font-size:12px;color:var(--ink);
+    background:rgba(216,67,83,.14);padding:2px 7px;border-radius:5px}
+  .spacer{height:520vh;position:relative;z-index:1}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<div class="scrim" id="scrim"></div>
+<div class="vig"></div>
+<div class="grain"></div>
+
+<div id="loader">
+  <div class="lt display">The <em>Swipe</em></div>
+  <div class="lb"><i id="lbar"></i></div>
+  <div class="lk">Compiling WebGL · MapleRewards</div>
+</div>
+
+<!-- fixed HUD -->
+<div class="hud">
+  <div class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c.5 2.4 1.7 3.6 3.6 4-1 .8-1.3 1.9-1 3.3 1.6-.7 3-.6 4.4.4-.8 1-1 2-.5 3.2 1.8-.2 3 .4 3.5 1.6-2.2.7-3.9 1-5.4.6.4 1.3.2 2.5-.7 3.6-1.3-1-2.2-2.2-2.6-3.8-.4 2.3-.4 4.4.5 7.3h-3c.9-2.9.9-5 .5-7.3-.4 1.6-1.3 2.8-2.6 3.8-.9-1.1-1.1-2.3-.7-3.6-1.5.4-3.2.1-5.4-.6.5-1.2 1.7-1.8 3.5-1.6.5-1.2.3-2.2-.5-3.2 1.4-1 2.8-1.1 4.4-.4-.3-1.4 0-2.5 1-3.3C10.3 5.6 11.5 4.4 12 2Z"/></svg>
+      <b>MapleRewards</b>
+    </div>
+    <div class="meta">The Swipe · Canada-first · CAD</div>
+  </div>
+
+  <div class="wrap">
+    <!-- HERO -->
+    <section class="screen hero on" data-s="hero">
+      <p class="eyebrow">Real-time wallet optimizer</p>
+      <h1 class="display">Best card for the <em class="accent">next&nbsp;swipe.</em></h1>
+      <p class="lede">A living deck. Scroll, and the metal turns — every purchase routed to the one card that pays the most.</p>
+    </section>
+
+    <!-- VERDICT -->
+    <section class="screen verdict" data-s="verdict">
+      <div class="vinner">
+        <div class="kick"><span class="bar"></span><span class="eyebrow" id="vEye">The optimizer · live</span></div>
+        <h2 class="cat display" id="vCat">Groceries</h2>
+        <p class="merchant" id="vMerch">Loblaws · weekly haul</p>
+        <div class="vrow">
+          <div class="mult" id="vMult">6×<small id="vUnit">Scene+ pts</small></div>
+          <div>
+            <div class="cardname" id="vName">Scotiabank Gold American Express</div>
+            <div class="tally">Earns <b id="vEarn">$0.00</b> on a <b>$100</b> swipe · <b id="vCpp">1.4¢</b>/pt</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OUTRO -->
+    <section class="screen outro" data-s="outro">
+      <p class="eyebrow">End of deal</p>
+      <h2 class="display">Stop leaving <em class="accent">points</em> on the table.</h2>
+      <p>102 cards. 27 loyalty programs. One answer, before you tap.</p>
+      <button class="cta">Open the optimizer →</button>
+    </section>
+  </div>
+
+  <nav class="rail" id="rail"></nav>
+  <div class="scrollcue" id="cue"><span>Scroll to deal</span><i></i></div>
+</div>
+
+<div class="spacer"></div>
+
+<div class="noteband">
+  <div class="note">
+    <h3>◆ Integration note — for Aditya</h3>
+    <ul>
+      <li>Real WebGL (Three.js): true 3D metal card mesh — PBR + clearcoat + environment reflections — over a live GLSL domain-warp shader, UnrealBloom glow. Standalone in <code>testing/the-swipe.html</code>. Touches nothing in the codebase.</li>
+      <li><b>Best home:</b> landing hero (<code>frontend/app/page.tsx</code>) — replace the <code>toronto-dolly</code> video block. Mount as a dynamic, SSR-disabled client component.</li>
+      <li><b>Port path:</b> <code>npm i three</code>, move this scene into <code>components/SwipeCanvas.tsx</code>, feed the 5 cards from a live <code>/api/v1/optimizer</code> sample, gate WebGL on <code>prefers-reduced-motion</code> + a static fallback.</li>
+      <li>No paid video spent — interactive WebGL beats a fixed clip. ~8 Higgsfield credits used earlier for the matte-card art now living in <code>testing/assets/</code> (swappable).</li>
+    </ul>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ───────────────── DATA ───────────────── */
+const CARDS = [
+  { key:"hero",  cat:"The deal",      eye:"Real-time wallet optimizer",
+    name:"MapleRewards", merchant:"", mult:"", unit:"", cpp:"", earn:0,
+    a:"#3a0c12", b:"#0c0406", c:"#7a1822", face:"#15080b", motif:"leaf" },
+  { key:"groc",  cat:"Groceries",     eye:"Category 01 · live",
+    name:"Scotiabank Gold American Express", merchant:"Loblaws · weekly haul",
+    mult:"6×", unit:"Scene+ pts", cpp:"1.4¢", earn:8.40,
+    a:"#5a0f17", b:"#160407", c:"#b0263a", face:"#1a070b", motif:"wave" },
+  { key:"dine",  cat:"Dining",        eye:"Category 02 · live",
+    name:"American Express Cobalt", merchant:"Late dinner · downtown",
+    mult:"5×", unit:"MR pts", cpp:"2.0¢", earn:10.00,
+    a:"#3a1546", b:"#0b0612", c:"#7e3b8f", face:"#140a1c", motif:"wave" },
+  { key:"trav",  cat:"Travel",        eye:"Category 03 · live",
+    name:"TD Aeroplan Visa Infinite", merchant:"YYZ → LHR · return",
+    mult:"3×", unit:"Aeroplan pts", cpp:"2.1¢", earn:6.30,
+    a:"#0e3a35", b:"#04130f", c:"#1f8f7e", face:"#08201c", motif:"aero" },
+  { key:"gas",   cat:"Gas & transit", eye:"Category 04 · live",
+    name:"CIBC Dividend Visa Infinite", merchant:"Petro-Canada · fill-up",
+    mult:"4%", unit:"cash back", cpp:"1.0¢", earn:4.00,
+    a:"#5a3f10", b:"#171003", c:"#c79a2a", face:"#1c1407", motif:"leaf" },
+  { key:"bill",  cat:"Recurring bills", eye:"Category 05 · live",
+    name:"Rogers World Elite Mastercard", merchant:"Subscriptions · monthly",
+    mult:"3%", unit:"cash back", cpp:"1.0¢", earn:3.00,
+    a:"#26282e", b:"#070809", c:"#586072", face:"#101216", motif:"topo" },
+  { key:"outro", cat:"",             eye:"End of deal",
+    name:"MapleRewards", merchant:"", mult:"", unit:"", cpp:"", earn:0,
+    a:"#3a0c12", b:"#0c0406", c:"#9a1f2d", face:"#15080b", motif:"leaf" },
+];
+const N = CARDS.length;            // 7 states (hero..outro)
+const VERDICT_LO = 1, VERDICT_HI = 5;
+
+/* ───────────────── CARD FACE (canvas texture) ───────────────── */
+const FW = 2048, FH = 1290;        // 1.587 credit-card ratio
+const fcv = document.createElement('canvas'); fcv.width=FW; fcv.height=FH;
+const fx = fcv.getContext('2d');
+const LEAF = new Path2D("M12 2c.5 2.4 1.7 3.6 3.6 4-1 .8-1.3 1.9-1 3.3 1.6-.7 3-.6 4.4.4-.8 1-1 2-.5 3.2 1.8-.2 3 .4 3.5 1.6-2.2.7-3.9 1-5.4.6.4 1.3.2 2.5-.7 3.6-1.3-1-2.2-2.2-2.6-3.8-.4 2.3-.4 4.4.5 7.3h-3c.9-2.9.9-5 .5-7.3-.4 1.6-1.3 2.8-2.6 3.8-.9-1.1-1.1-2.3-.7-3.6-1.5.4-3.2.1-5.4-.6.5-1.2 1.7-1.8 3.5-1.6.5-1.2.3-2.2-.5-3.2 1.4-1 2.8-1.1 4.4-.4-.3-1.4 0-2.5 1-3.3C10.3 5.6 11.5 4.4 12 2Z");
+
+function rr(x,y,w,h,r){fx.beginPath();fx.moveTo(x+r,y);fx.arcTo(x+w,y,x+w,y+h,r);
+  fx.arcTo(x+w,y+h,x,y+h,r);fx.arcTo(x,y+h,x,y,r);fx.arcTo(x,y,x+w,y,r);fx.closePath();}
+
+function drawMotif(c){
+  fx.save(); fx.strokeStyle="rgba(255,255,255,.07)"; fx.lineWidth=3;
+  if(c.motif==="aero"){ for(let r=70;r<=620;r+=78){ fx.beginPath();
+      fx.arc(FW-360,360,r,0,Math.PI*2); fx.stroke(); } }
+  else if(c.motif==="wave"){ for(let o=-40;o<=FH;o+=92){ fx.beginPath();
+      fx.moveTo(-40,o); for(let x=-40;x<=FW+40;x+=24)
+        fx.lineTo(x,o+Math.sin(x/240)*70); fx.stroke(); } }
+  else if(c.motif==="topo"){ for(let i=0;i<9;i++){ fx.beginPath();
+      fx.moveTo(-40,120+i*140); for(let x=-40;x<=FW+40;x+=26)
+        fx.lineTo(x,120+i*140+Math.sin(x/300+i)*60); fx.stroke(); } }
+  else { fx.translate(FW-470,250); const s=20; fx.lineWidth=2.4;
+      const g=fx.createLinearGradient(0,0,24*s,24*s);
+      g.addColorStop(0,"rgba(216,178,106,.16)");g.addColorStop(1,"rgba(216,178,106,.05)");
+      fx.strokeStyle=g; fx.scale(s,s); fx.stroke(LEAF); }
+  fx.restore();
+}
+
+function drawFace(c){
+  // base gradient
+  const g=fx.createLinearGradient(0,0,FW,FH);
+  g.addColorStop(0,c.face); g.addColorStop(.55,c.b); g.addColorStop(1,c.a);
+  fx.fillStyle=g; fx.fillRect(0,0,FW,FH);
+  // soft top sheen
+  const s=fx.createLinearGradient(0,0,0,FH*0.6);
+  s.addColorStop(0,"rgba(255,255,255,.05)"); s.addColorStop(1,"rgba(255,255,255,0)");
+  fx.fillStyle=s; fx.fillRect(0,0,FW,FH);
+  drawMotif(c);
+  // gold maple emblem — subtle watermark, fully on-card
+  fx.save(); fx.translate(FW-620,FH/2-330); const ms=28;
+  fx.globalAlpha=0.7; fx.scale(ms,ms);
+  const lg=fx.createLinearGradient(0,0,24,24);
+  lg.addColorStop(0,"#F0D79A"); lg.addColorStop(.5,"#D8B26A"); lg.addColorStop(1,"#A9803C");
+  fx.fillStyle=lg; fx.shadowColor="rgba(0,0,0,.45)"; fx.shadowBlur=0.5;
+  fx.shadowOffsetY=0.4; fx.fill(LEAF); fx.restore();
+  // chip
+  fx.save(); fx.translate(150,150);
+  const cg=fx.createLinearGradient(0,0,210,150);
+  cg.addColorStop(0,"#EBD9A6"); cg.addColorStop(1,"#A07E2C");
+  fx.fillStyle=cg; rr(0,0,210,150,22); fx.fill();
+  fx.strokeStyle="rgba(0,0,0,.28)"; fx.lineWidth=4;
+  fx.beginPath(); fx.moveTo(0,75); fx.lineTo(210,75); fx.moveTo(105,0); fx.lineTo(105,150); fx.stroke();
+  fx.restore();
+  // network
+  fx.fillStyle="rgba(244,239,230,.82)"; fx.font="600 56px 'JetBrains Mono',monospace";
+  fx.textAlign="right"; fx.fillText((c.net||(c.name.includes("Visa")?"VISA":c.name.includes("Mastercard")?"MASTERCARD":"AMEX")),FW-150,200);
+  // wordmark
+  fx.textAlign="left"; fx.fillStyle="rgba(244,239,230,.5)";
+  fx.font="600 44px 'JetBrains Mono',monospace";
+  fx.fillText("M A P L E R E W A R D S",150,FH-330);
+  // card name
+  fx.fillStyle="#F7F2E9"; fx.font="italic 130px 'Instrument Serif',serif";
+  let nm=c.name; fx.fillText(nm,150,FH-180,FW-300);
+  // number row
+  fx.fillStyle="rgba(244,239,230,.74)"; fx.font="500 60px 'JetBrains Mono',monospace";
+  fx.fillText("••••  ••••  ••••  "+(1042+c.cat.length*7),150,FH-70);
+  // multiplier badge
+  if(c.mult){
+    fx.save(); fx.font="600 60px 'JetBrains Mono',monospace";
+    const tw=fx.measureText(c.mult+"  "+c.unit.toUpperCase()).width;
+    fx.fillStyle="rgba(216,67,83,.92)"; rr(FW-tw-260,120,tw+150,110,55); fx.fill();
+    fx.fillStyle="#0c0709"; fx.textAlign="left";
+    fx.fillText(c.mult+"  "+c.unit.toUpperCase(),FW-tw-185,196); fx.restore();
+  }
+}
+
+const faceTex = new THREE.CanvasTexture(fcv);
+faceTex.colorSpace = THREE.SRGBColorSpace;
+
+/* ───────────────── THREE SETUP ───────────────── */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0,0,7.4);
+
+// environment reflections
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.035).texture;
+
+/* shader-gradient backdrop (own original GLSL) */
+const bgUniforms = {
+  uTime:{value:0},
+  uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  uA:{value:new THREE.Color(CARDS[0].a)},
+  uB:{value:new THREE.Color(CARDS[0].b)},
+  uC:{value:new THREE.Color(CARDS[0].c)},
+};
+const bg = new THREE.Mesh(
+  new THREE.PlaneGeometry(2,2),
+  new THREE.ShaderMaterial({
+    depthTest:false, depthWrite:false, uniforms:bgUniforms,
+    vertexShader:`void main(){ gl_Position=vec4(position.xy,0.999,1.0); }`,
+    fragmentShader:`
+      precision highp float;
+      uniform float uTime; uniform vec2 uRes;
+      uniform vec3 uA,uB,uC;
+      float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p),f=fract(p);
+        f=f*f*(3.0-2.0*f);
+        float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+        return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+      float fbm(vec2 p){ float v=0.0,m=0.55; mat2 r=mat2(0.8,0.6,-0.6,0.8);
+        for(int i=0;i<5;i++){ v+=m*noise(p); p=r*p*2.02; m*=0.5; } return v; }
+      void main(){
+        vec2 uv=gl_FragCoord.xy/uRes.xy;
+        vec2 p=uv*1.7; p.x*=uRes.x/uRes.y;
+        float t=uTime*0.045;
+        // domain warp
+        vec2 q=vec2(fbm(p+vec2(0.0,t)), fbm(p+vec2(5.2,-t)));
+        vec2 r=vec2(fbm(p+3.0*q+vec2(1.7,9.2)+t*1.3),
+                    fbm(p+3.0*q+vec2(8.3,2.8)-t*1.1));
+        float f=fbm(p+2.4*r);
+        vec3 col=mix(uB,uA,clamp(f*1.5,0.0,1.0));
+        col=mix(col,uC,clamp(length(r)*0.78,0.0,1.0));
+        col=mix(col,uB,clamp(q.y*q.y*1.2,0.0,1.0));
+        col+=uC*0.10*pow(clamp(1.0-length(uv-vec2(0.62,0.55)),0.0,1.0),2.2); // soft glow
+        col*=0.74+0.4*f;                                                     // contrast
+        float vig=smoothstep(1.25,0.25,length(uv-0.5));
+        col*=mix(0.55,1.05,vig);
+        float g=(hash(uv*uRes.xy+uTime)-0.5)*0.045;                          // grain
+        gl_FragColor=vec4(col+g,1.0);
+      }`
+  })
+);
+bg.frustumCulled=false; scene.add(bg);
+
+/* the metal card — metal body + cleanly inlaid printed front */
+const edgeMat = new THREE.MeshPhysicalMaterial({
+  color:0x0b0709, metalness:1.0, roughness:0.26, clearcoat:1.0,
+  clearcoatRoughness:0.2, envMapIntensity:1.5 });
+const faceMat = new THREE.MeshPhysicalMaterial({
+  map:faceTex, emissive:0xffffff, emissiveMap:faceTex, emissiveIntensity:0.26,
+  metalness:0.5, roughness:0.42, clearcoat:1.0,
+  clearcoatRoughness:0.18, envMapIntensity:0.85 });
+const backMat = new THREE.MeshPhysicalMaterial({
+  color:0x070406, metalness:1.0, roughness:0.34, clearcoat:1.0,
+  clearcoatRoughness:0.3, envMapIntensity:1.2 });
+
+const cardGroup = new THREE.Group(); scene.add(cardGroup);
+const body = new THREE.Mesh(new RoundedBoxGeometry(3.40,2.14,0.05,8,0.115), edgeMat);
+cardGroup.add(body);
+const front = new THREE.Mesh(new THREE.PlaneGeometry(3.30,2.04), faceMat);
+front.position.z=0.0262; cardGroup.add(front);
+const back = new THREE.Mesh(new THREE.PlaneGeometry(3.30,2.04), backMat);
+back.position.z=-0.0262; back.rotation.y=Math.PI; cardGroup.add(back);
+
+// lights
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+const key=new THREE.SpotLight(0xffffff,20,40,0.6,0.5,1.4);
+key.position.set(-6,7,9); scene.add(key);
+const mapleRim=new THREE.PointLight(0xff5a6b,15,30,2); mapleRim.position.set(7,-3,3); scene.add(mapleRim);
+const goldRim=new THREE.PointLight(0xffd99a,10,28,2); goldRim.position.set(-5,-4,4); scene.add(goldRim);
+
+// post: bloom
+const ec=new EffectComposer(renderer);
+ec.addPass(new RenderPass(scene,camera));
+const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.34,0.55,0.9);
+ec.addPass(bloom);
+ec.addPass(new OutputPass());
+
+function resize(){
+  const w=innerWidth,h=innerHeight;
+  renderer.setSize(w,h); ec.setSize(w,h);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  bgUniforms.uRes.value.set(w,h);
+}
+addEventListener('resize',resize); resize();
+
+/* ───────────────── STATE / SCROLL ───────────────── */
+const elV={ eye:'vEye',cat:'vCat',merch:'vMerch',mult:'vMult',unit:'vUnit',
+  name:'vName',earn:'vEarn',cpp:'vCpp' };
+for(const k in elV) elV[k]=document.getElementById(elV[k]);
+const screens={ hero:document.querySelector('[data-s=hero]'),
+  verdict:document.querySelector('[data-s=verdict]'),
+  outro:document.querySelector('[data-s=outro]') };
+const rail=document.getElementById('rail');
+const cue=document.getElementById('cue');
+
+CARDS.slice(VERDICT_LO,VERDICT_HI+1).forEach((c,i)=>{
+  const b=document.createElement('button');
+  b.innerHTML=`${c.cat}<span class="dot"></span>`;
+  b.onclick=()=>{ const seg=1/(N-1); const center=(VERDICT_LO+i)*seg;
+    scrollTo({top:center*(document.querySelector('.spacer').offsetHeight-innerHeight),behavior:'smooth'}); };
+  rail.appendChild(b);
+});
+const railBtns=[...rail.children];
+
+let target=0, smooth=0, rendered=-1;
+const colA=new THREE.Color(), colB=new THREE.Color(), colC=new THREE.Color();
+const easeOut=t=>1-Math.pow(1-t,3);
+
+function applyState(i){
+  const c=CARDS[i];
+  // backdrop palette targets
+  colA.set(c.a); colB.set(c.b); colC.set(c.c);
+  // face
+  drawFace(c); faceTex.needsUpdate=true;
+  // HUD screen routing
+  const mode = i<=0 ? 'hero' : i>=N-1 ? 'outro' : 'verdict';
+  for(const k in screens) screens[k].classList.toggle('on',k===mode);
+  cue.style.opacity = mode==='verdict' ? '0' : (i===0?'1':'0');
+  rail.classList.toggle('show', mode==='verdict');
+  if(mode==='verdict'){
+    elV.eye.textContent=c.eye; elV.cat.textContent=c.cat;
+    elV.merch.textContent=c.merchant; elV.unit.textContent=c.unit;
+    elV.name.textContent=c.name; elV.cpp.textContent=c.cpp;
+    elV.mult.firstChild.textContent=c.mult;
+    countUp(elV.earn,c.earn);
+  }
+  railBtns.forEach((b,bi)=>b.classList.toggle('on', bi===i-VERDICT_LO));
+}
+function countUp(node,to){
+  cancelAnimationFrame(node._r); const from=parseFloat(node.dataset.v||0),s=performance.now();
+  (function st(n){ const t=Math.min(1,(n-s)/620), v=from+(to-from)*easeOut(t);
+    node.textContent='$'+v.toFixed(2); if(t<1) node._r=requestAnimationFrame(st); else node.dataset.v=to;
+  })(s);
+}
+
+const spacer=document.querySelector('.spacer');
+const hud=document.querySelector('.hud'), scrim=document.getElementById('scrim'),
+      noteband=document.querySelector('.noteband');
+function onScroll(){
+  const max=spacer.offsetHeight-innerHeight;
+  target=Math.max(0,Math.min(1,scrollY/max))*(N-1);
+  // hand off from the 3D outro to the static note cleanly
+  const handing = noteband.getBoundingClientRect().top < innerHeight*0.78;
+  hud.classList.toggle('fade',handing);
+  scrim.style.opacity = handing ? '0' : '1';
+  rail.classList.toggle('fade',handing);
+  cue.classList.toggle('fade',handing);
+}
+addEventListener('scroll',onScroll,{passive:true});
+
+/* pointer parallax */
+const ptr={x:0,y:0,tx:0,ty:0};
+addEventListener('pointermove',e=>{ ptr.tx=(e.clientX/innerWidth-.5);
+  ptr.ty=(e.clientY/innerHeight-.5); });
+
+/* ───────────────── RENDER LOOP ───────────────── */
+const clock=new THREE.Clock();
+function frame(){
+  requestAnimationFrame(frame);
+  const dt=clock.getDelta(), tEl=clock.elapsedTime;
+
+  smooth += (target-smooth)*Math.min(1,dt*5.5);
+  const idx=Math.round(smooth);
+  if(idx!==rendered){ rendered=idx; applyState(idx); }
+
+  // backdrop colour easing toward current state
+  bgUniforms.uA.value.lerp(colA, Math.min(1,dt*2.2));
+  bgUniforms.uB.value.lerp(colB, Math.min(1,dt*2.2));
+  bgUniforms.uC.value.lerp(colC, Math.min(1,dt*2.2));
+  bgUniforms.uTime.value=tEl;
+
+  // card choreography driven by continuous scroll progress
+  const p=smooth/(N-1);                       // 0..1
+  ptr.x+=(ptr.tx-ptr.x)*Math.min(1,dt*4);
+  ptr.y+=(ptr.ty-ptr.y)*Math.min(1,dt*4);
+
+  // one full turn PER category → always lands face-front on each state,
+  // with a cinematic spin through the scroll transition, plus idle + pointer
+  cardGroup.rotation.y = smooth*Math.PI*2.0 + Math.sin(tEl*0.35)*0.13 + ptr.x*0.6;
+  cardGroup.rotation.x = -0.12 + Math.sin(tEl*0.5)*0.045 + ptr.y*-0.4;
+  cardGroup.rotation.z = Math.sin(tEl*0.27)*0.035 + ptr.x*0.1;
+
+  // place the card on the RIGHT so the editorial type on the left never collides;
+  // hero sits closer/centered-right, verdicts hold right, outro recedes back.
+  let tX,tY,tZ,tS;
+  if(idx<=0){ tX=2.5; tY=-0.05; tZ=-0.4; tS=0.88; }
+  else if(idx>=N-1){ tX=2.7; tY=-0.30; tZ=-1.7; tS=0.74; }
+  else { tX=2.05; tY=0; tZ=0; tS=1.04; }
+  const k=Math.min(1,dt*3);
+  cardGroup.position.x += (tX-cardGroup.position.x)*k;
+  cardGroup.position.z += (tZ-cardGroup.position.z)*k;
+  cardGroup.position.y += ((tY+Math.sin(tEl*0.6)*0.055)-cardGroup.position.y)*Math.min(1,dt*4);
+  const sc=cardGroup.scale.x+(tS-cardGroup.scale.x)*k; cardGroup.scale.setScalar(sc);
+
+  camera.position.set(0,0,7.4 - 0.7*Math.sin(p*Math.PI));
+  camera.lookAt(0,0,0);
+
+  // light follows card for live specular travel
+  mapleRim.position.x = Math.cos(tEl*0.6)*6;
+  mapleRim.position.y = -3+Math.sin(tEl*0.6)*2;
+
+  ec.render();
+}
+
+/* ───────────────── BOOT ───────────────── */
+const lbar=document.getElementById('lbar');
+let prog=0;
+const warm=setInterval(()=>{ prog=Math.min(100,prog+8+Math.random()*12);
+  lbar.style.width=prog+'%';
+  if(prog>=100){ clearInterval(warm);
+    setTimeout(()=>document.getElementById('loader').classList.add('gone'),350); }
+},90);
+
+if('scrollRestoration' in history) history.scrollRestoration='manual';
+scrollTo(0,0);
+drawFace(CARDS[0]); faceTex.needsUpdate=true;
+applyState(0); onScroll(); frame();
+addEventListener('load',()=>scrollTo(0,0));
+</script>
+</body>
+</html>

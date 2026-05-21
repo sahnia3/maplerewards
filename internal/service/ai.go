@@ -31,8 +31,13 @@ type ProServices struct {
 
 // AIService provides AI-powered credit card rewards advice using Claude.
 type AIService struct {
-	apiKey         string
-	modelID        string
+	apiKey  string
+	modelID string // strong model (Sonnet) — complex / tool-heavy turns
+	// fastModelID is the cheap model (Haiku) used for simple turns that
+	// don't need multi-step award/trip/points reasoning. Routing between
+	// the two is the single biggest chat-cost lever — Haiku is ~3-5x
+	// cheaper and handles the bulk of "which card for X" style questions.
+	fastModelID    string
 	httpClient     *http.Client
 	walletRepo     WalletRepository
 	cardRepo       CardRepository
@@ -67,9 +72,17 @@ func NewAIService(
 	if modelID == "" {
 		modelID = "claude-sonnet-4-6"
 	}
+	// Cheap model for simple turns. Env-overridable so the routing can be
+	// disabled (set ANTHROPIC_FAST_MODEL == ANTHROPIC_MODEL) or retargeted
+	// without a redeploy.
+	fastModelID := os.Getenv("ANTHROPIC_FAST_MODEL")
+	if fastModelID == "" {
+		fastModelID = "claude-haiku-4-5-20251001"
+	}
 	s := &AIService{
-		apiKey:  apiKey,
-		modelID: modelID,
+		apiKey:      apiKey,
+		modelID:     modelID,
+		fastModelID: fastModelID,
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second, // longer than callClaude legacy default — tool-use rounds need headroom
 		},

@@ -21,13 +21,20 @@ import (
 // under that ceiling; the cap exists for runaway-loop protection, not for
 // "use less."
 const (
-	// Daily per-user token budgets, by tier. Tightened from 50K free →
-	// 25K after the review flagged the AI as "extremely uncapped": at
-	// ~$3/M input + $15/M output, 25K/day caps a single abusive free
-	// account at roughly a dime of our spend per day, not twenty cents+.
-	FreeDailyTokenBudget    = 25_000
-	ProDailyTokenBudget     = 300_000
-	ProPlusDailyTokenBudget = 750_000
+	// Daily per-user token budgets, by tier. Tightened 50K → 25K → 15K:
+	// free chat is now a hard 2-messages/month funnel (see
+	// freeChatMonthlyCap), so the daily token budget is just a per-request
+	// abuse ceiling, not a usage allowance. 15K is comfortably enough for
+	// one or two Haiku-routed answers while capping a single abusive free
+	// request well under a cent of spend.
+	// Sized to the economics, not just abuse: a maxed Sonnet-heavy day costs
+	// roughly $0.10–0.15 per 100K tokens, so these ceilings bound the
+	// worst-case monthly cost per user well below catastrophic. Real usage
+	// is expected to be a tiny fraction (a complex query every few days).
+	FreeDailyTokenBudget     = 15_000  // 2 msgs/mo cap anyway — this is just a per-request abuse ceiling
+	ProDailyTokenBudget      = 100_000 // $39.99/yr
+	ProPlusDailyTokenBudget  = 200_000 // $69.99/yr — a real step up over Pro
+	LifetimeDailyTokenBudget = 150_000 // $199 one-time, NO recurring revenue → tightest paid ceiling
 
 	// MaxTokensPerRequest is the hard per-request ceiling. Even with daily
 	// budget remaining, a single request estimated above this is rejected
@@ -52,6 +59,7 @@ const (
 	TierFree Tier = iota
 	TierPro
 	TierProPlus
+	TierLifetime
 )
 
 // limitForTier returns the daily ceiling for an explicit tier.
@@ -59,10 +67,33 @@ func limitForTier(t Tier) int {
 	switch t {
 	case TierProPlus:
 		return ProPlusDailyTokenBudget
+	case TierLifetime:
+		return LifetimeDailyTokenBudget
 	case TierPro:
 		return ProDailyTokenBudget
 	default:
 		return FreeDailyTokenBudget
+	}
+}
+
+// tierForPlan maps the persisted plan string onto a budget tier. isPro is a
+// fallback for legacy access tokens minted before the `plan` claim existed:
+// a token with is_pro=true but no plan is treated as Pro (never up-leveled
+// to Pro Plus without explicit plan evidence). Unknown/empty + not-pro =
+// Free.
+func tierForPlan(plan string, isPro bool) Tier {
+	switch plan {
+	case "pro_plus":
+		return TierProPlus
+	case "lifetime":
+		return TierLifetime
+	case "pro":
+		return TierPro
+	default:
+		if isPro {
+			return TierPro
+		}
+		return TierFree
 	}
 }
 
@@ -81,14 +112,10 @@ func dailyKey(userID string) string {
 	return fmt.Sprintf("aibudget:%s:%s", userID, time.Now().UTC().Format("2006-01-02"))
 }
 
-// limitFor is the bool-keyed shim retained for existing callers. Maps the
-// is_pro claim onto the tier ladder; Pro Plus is reached via limitForTier
-// once billing distinguishes it.
-func limitFor(isPro bool) int {
-	if isPro {
-		return limitForTier(TierPro)
-	}
-	return limitForTier(TierFree)
+// limitForPlan resolves the daily token ceiling from the user's plan
+// (falling back to the is_pro bool for legacy tokens without a plan claim).
+func limitForPlan(plan string, isPro bool) int {
+	return limitForTier(tierForPlan(plan, isPro))
 }
 
 // RequestTooLarge reports whether a single request's estimated token count
@@ -113,14 +140,14 @@ func SecondsUntilUTCMidnight() int {
 //
 // An anonymous user (empty userID) is treated as "free tier, shared bucket"
 // to prevent unauthenticated abuse. The shared key is `aibudget:anon:{day}`.
-func (b *AIBudget) CheckBudget(ctx context.Context, userID string, isPro bool) (used int, remaining int, exhausted bool, err error) {
+func (b *AIBudget) CheckBudget(ctx context.Context, userID, plan string, isPro bool) (used int, remaining int, exhausted bool, err error) {
 	if b == nil || b.rdb == nil {
 		// Budget service not configured — fail open. Operators get the
 		// warning at startup and can wire Redis to enforce.
-		return 0, limitFor(isPro), false, nil
+		return 0, limitForPlan(plan, isPro), false, nil
 	}
 	key := dailyKey(coalesceUserID(userID))
-	limit := limitFor(isPro)
+	limit := limitForPlan(plan, isPro)
 
 	usedI64, err := b.rdb.Get(ctx, key).Int64()
 	if err == redis.Nil {
@@ -143,12 +170,12 @@ func (b *AIBudget) CheckBudget(ctx context.Context, userID string, isPro bool) (
 //
 // Best-effort: a Redis error here is logged by the caller but does not
 // abort the chat response — we'd rather under-bill than fail the request.
-func (b *AIBudget) Consume(ctx context.Context, userID string, isPro bool, tokens int) (used int, remaining int, err error) {
+func (b *AIBudget) Consume(ctx context.Context, userID, plan string, isPro bool, tokens int) (used int, remaining int, err error) {
 	if b == nil || b.rdb == nil || tokens <= 0 {
-		return 0, limitFor(isPro), nil
+		return 0, limitForPlan(plan, isPro), nil
 	}
 	key := dailyKey(coalesceUserID(userID))
-	limit := limitFor(isPro)
+	limit := limitForPlan(plan, isPro)
 
 	n, err := b.rdb.IncrBy(ctx, key, int64(tokens)).Result()
 	if err != nil {

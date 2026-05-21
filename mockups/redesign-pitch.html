@@ -1,0 +1,1442 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MapleRewards — Visual Revamp v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   MapleRewards — Redesign pitch v2
+   WebGL noise-flow shader bg + glass surfaces + bold motion.
+   Dark-first with light toggle. Isolated mockup, no app code.
+   ============================================================ */
+
+:root{
+  --serif:"Instrument Serif",Georgia,serif;
+  --sans:"Inter Tight",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --ease-q:cubic-bezier(0.22,1,0.36,1);
+  --rail:256px; --max:1280px;
+}
+
+/* ---------- DARK (primary) ---------- */
+html[data-theme="dark"]{
+  --bg:        oklch(15.5% 0.014 56);
+  --bg-2:      oklch(13% 0.012 56);
+  --glass:     oklch(24% 0.016 56 / 0.46);
+  --glass-2:   oklch(28% 0.018 56 / 0.55);
+  --glass-hi:  oklch(34% 0.02 58 / 0.6);
+  --hair:      oklch(96% 0.01 84 / 0.09);
+  --hair-2:    oklch(96% 0.01 84 / 0.16);
+  --ink:       oklch(95% 0.012 84);
+  --ink-2:     oklch(78% 0.014 76);
+  --ink-3:     oklch(60% 0.014 70);
+  --ink-4:     oklch(46% 0.014 64);
+  --maple:     oklch(64% 0.19 26);
+  --maple-2:   oklch(56% 0.18 25);
+  --maple-w:   oklch(64% 0.19 26 / 0.16);
+  --maple-glow:oklch(64% 0.19 26 / 0.42);
+  --forest:    oklch(70% 0.13 162);
+  --forest-w:  oklch(70% 0.13 162 / 0.16);
+  --gold:      oklch(80% 0.12 84);
+  --gold-w:    oklch(80% 0.12 84 / 0.16);
+  --teal:      oklch(72% 0.11 195);
+  --sh-a: 0.92,0.19,0.32;   /* maple / crimson */
+  --sh-b: 0.06,0.46,0.42;   /* deep teal       */
+  --sh-c: 0.95,0.66,0.26;   /* amber gold      */
+  --sh-d: 0.46,0.20,0.70;   /* indigo / violet */
+  --sh-bg:0.055,0.042,0.058;
+  --grain:0.085;
+  color-scheme:dark;
+}
+/* ---------- LIGHT ---------- */
+html[data-theme="light"]{
+  --bg:        oklch(97.4% 0.014 79);
+  --bg-2:      oklch(95% 0.018 76);
+  --glass:     oklch(99% 0.008 84 / 0.62);
+  --glass-2:   oklch(99% 0.008 84 / 0.78);
+  --glass-hi:  oklch(100% 0 0 / 0.85);
+  --hair:      oklch(24% 0.02 56 / 0.12);
+  --hair-2:    oklch(24% 0.02 56 / 0.24);
+  --ink:       oklch(24% 0.022 56);
+  --ink-2:     oklch(40% 0.018 55);
+  --ink-3:     oklch(54% 0.014 56);
+  --ink-4:     oklch(68% 0.012 60);
+  --maple:     oklch(48% 0.165 24);
+  --maple-2:   oklch(42% 0.155 24);
+  --maple-w:   oklch(48% 0.165 24 / 0.10);
+  --maple-glow:oklch(48% 0.165 24 / 0.22);
+  --forest:    oklch(43% 0.072 168);
+  --forest-w:  oklch(43% 0.072 168 / 0.12);
+  --gold:      oklch(58% 0.10 78);
+  --gold-w:    oklch(68% 0.105 82 / 0.16);
+  --teal:      oklch(54% 0.085 192);
+  --sh-a: 0.96,0.64,0.60;
+  --sh-b: 0.64,0.82,0.66;
+  --sh-c: 0.95,0.84,0.55;
+  --sh-d: 0.80,0.70,0.93;
+  --sh-bg:0.985,0.965,0.91;
+  --grain:0.05;
+  color-scheme:light;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  font-family:var(--sans);background:var(--bg);color:var(--ink);
+  line-height:1.5;letter-spacing:-0.006em;min-height:100vh;
+  transition:background .6s var(--ease),color .4s var(--ease);
+}
+::selection{background:var(--maple-w);color:var(--maple)}
+a{color:inherit;text-decoration:none}
+
+/* WebGL shader canvas behind everything */
+#shader{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0;transition:opacity 1.4s var(--ease)}
+#shader.ready{opacity:1}
+.vignette{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 0%, transparent 40%, var(--bg) 100%)}
+/* never-broken fallback: animated CSS mesh if WebGL unavailable */
+body.no-webgl #shader{opacity:1;background:
+  radial-gradient(60% 70% at 18% 12%, var(--maple-glow), transparent 60%),
+  radial-gradient(55% 65% at 84% 22%, var(--forest-w), transparent 62%),
+  radial-gradient(70% 60% at 50% 88%, var(--gold-w), transparent 65%), var(--bg-2);
+  filter:blur(50px) saturate(1.2);animation:drift 24s var(--ease) infinite alternate}
+@keyframes drift{50%{transform:scale(1.25) translate(2%,-3%) rotate(4deg)}}
+/* cursor spotlight — adds depth over the shader (Godly/dark.design) */
+.spotlight{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .6s var(--ease);
+  background:radial-gradient(380px 380px at var(--mx,50%) var(--my,40%), oklch(96% 0.01 84 / 0.05), transparent 70%)}
+.spotlight.on{opacity:1}
+
+/* ---------- type primitives ---------- */
+.eyebrow{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:11px}
+.eyebrow::after{content:"";height:1px;flex:1;background:var(--hair)}
+.eyebrow.tight::after{display:none}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-0.03em}
+
+/* clip reveal for big type */
+.clip{overflow:hidden;display:block}
+.clip>span{display:block;transform:translateY(108%);transition:transform 1s var(--ease)}
+.in .clip>span{transform:none}
+.in .clip:nth-child(2)>span{transition-delay:.08s}
+.in .clip:nth-child(3)>span{transition-delay:.16s}
+
+.rv{opacity:0;transform:translateY(22px);transition:opacity .9s var(--ease),transform .9s var(--ease)}
+.rv.in{opacity:1;transform:none}
+
+/* ============================================================ SHELL */
+.shell{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100vh;position:relative;z-index:1}
+
+.rail{
+  border-right:1px solid var(--hair);
+  background:linear-gradient(180deg,var(--glass),transparent);
+  backdrop-filter:blur(20px) saturate(1.4);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{display:flex;align-items:center;gap:12px;padding:26px 24px 22px;border-bottom:1px solid var(--hair)}
+.brand .leaf{width:32px;height:32px;flex:none;display:grid;place-items:center;
+  background:var(--maple);border-radius:10px;color:oklch(98% 0.01 84);font-size:18px;
+  box-shadow:0 0 0 1px var(--hair-2),0 6px 22px -4px var(--maple-glow)}
+.brand .wm{font-family:var(--serif);font-size:23px;letter-spacing:-0.02em}
+.brand .wm b{color:var(--maple);font-weight:400;font-style:italic}
+
+.rail-ledger{margin:18px 16px 6px;padding:18px;border-radius:16px;
+  background:var(--glass-2);border:1px solid var(--hair);position:relative;overflow:hidden}
+.rail-ledger::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(130% 100% at 90% 0%,var(--gold-w),transparent 62%)}
+.rail-ledger .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--ink-3);position:relative}
+.rail-ledger .big{font-family:var(--mono);font-size:32px;font-weight:600;letter-spacing:-0.035em;margin:8px 0 2px;position:relative}
+.rail-ledger .trend{font-family:var(--mono);font-size:11px;color:var(--gold);position:relative}
+.rail-ledger .split{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:15px;
+  background:var(--hair);border-radius:10px;overflow:hidden;position:relative}
+.rail-ledger .split div{background:var(--glass-2);padding:11px 12px}
+.rail-ledger .split .k{font-family:var(--mono);font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-3)}
+.rail-ledger .split .v{font-family:var(--mono);font-size:16px;font-weight:600;margin-top:4px}
+
+.nav{flex:1;overflow-y:auto;padding:10px 12px 16px}
+.nav-sec{font-family:var(--mono);font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-4);padding:18px 10px 8px}
+.nav a{display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:10px;
+  font-size:13.5px;color:var(--ink-2);font-weight:450;position:relative;
+  transition:background .25s var(--ease),color .25s var(--ease),padding-left .25s var(--ease)}
+.nav a .ic{width:17px;text-align:center;font-size:14px;opacity:.7;transition:opacity .2s}
+.nav a:hover{background:var(--maple-w);color:var(--ink);padding-left:17px}
+.nav a:hover .ic{opacity:1}
+.nav a.on{background:var(--glass-2);color:var(--ink);font-weight:550}
+.nav a.on::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+  width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--maple);box-shadow:0 0 12px var(--maple-glow)}
+.nav a .pro{margin-left:auto;font-family:var(--mono);font-size:8px;font-weight:600;letter-spacing:0.1em;
+  padding:2px 7px;border-radius:6px;background:var(--gold-w);color:var(--gold)}
+.rail-foot{border-top:1px solid var(--hair);padding:15px 18px;display:flex;align-items:center;gap:11px}
+.rail-foot .av{width:32px;height:32px;border-radius:50%;background:var(--forest-w);display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--forest)}
+.rail-foot .who{font-size:12.5px;font-weight:500}
+.rail-foot .who small{display:block;color:var(--ink-3);font-size:11px}
+
+/* ---------- main ---------- */
+.main{min-width:0}
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:18px;
+  padding:16px 40px;background:linear-gradient(180deg,var(--glass-2),transparent);
+  backdrop-filter:blur(18px) saturate(1.4);border-bottom:1px solid var(--hair)}
+.crumb{font-family:var(--mono);font-size:11px;letter-spacing:0.07em;color:var(--ink-3);text-transform:uppercase}
+.crumb b{color:var(--ink);font-weight:600}
+.search{margin-left:auto;display:flex;align-items:center;gap:10px;background:var(--glass);
+  border:1px solid var(--hair);padding:9px 15px;border-radius:11px;min-width:248px;
+  font-size:12.5px;color:var(--ink-3);font-family:var(--mono);cursor:text;transition:border-color .2s}
+.search:hover{border-color:var(--hair-2)}
+.search kbd{margin-left:auto;font-size:10px;background:var(--glass-hi);border:1px solid var(--hair);padding:1px 6px;border-radius:5px}
+.tgl{display:flex;background:var(--glass);border:1px solid var(--hair);border-radius:10px;padding:3px;gap:2px}
+.tgl button{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:0.04em;
+  color:var(--ink-3);background:transparent;border:none;padding:7px 12px;border-radius:7px;cursor:pointer;transition:all .25s var(--ease)}
+.tgl button.on{background:var(--maple);color:oklch(98% 0.01 84)}
+
+.canvas{padding:44px 40px 120px;max-width:var(--max);margin:0 auto}
+.screen{display:none}
+.screen.active{display:block}
+
+/* ============================================================ DASHBOARD v2 */
+.hero{position:relative;padding:34px 0 40px;margin-bottom:8px}
+.hero .eyebrow{margin-bottom:24px}
+.hero h1{font-family:var(--serif);font-weight:400;letter-spacing:-0.03em;
+  font-size:clamp(54px,7.4vw,108px);line-height:0.92}
+.hero h1 i{font-style:italic;color:var(--maple)}
+.hero .lede{font-family:var(--serif);font-size:clamp(18px,1.7vw,24px);color:var(--ink-2);
+  margin-top:22px;max-width:46ch;line-height:1.4}
+
+/* live ticker marquee */
+.ticker{margin:30px 0 34px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
+  overflow:hidden;padding:13px 0;position:relative;mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.ticker .run{display:flex;gap:48px;width:max-content;animation:slide 34s linear infinite}
+.ticker:hover .run{animation-play-state:paused}
+@keyframes slide{to{transform:translateX(-50%)}}
+.ticker .t{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+.ticker .t b{color:var(--ink);font-weight:600}
+.ticker .t .up{color:var(--forest)} .ticker .t .dn{color:var(--maple)}
+.ticker .t .d{width:5px;height:5px;border-radius:50%;background:var(--ink-4)}
+
+/* the decision: dramatic glass centerpiece over shader */
+.decision{position:relative;border-radius:26px;overflow:hidden;
+  border:1px solid var(--hair-2);background:var(--glass);backdrop-filter:blur(24px) saturate(1.5);
+  display:grid;grid-template-columns:1.6fr 1fr;box-shadow:0 40px 90px -50px oklch(0% 0 0 / 0.6)}
+.decision::before{content:"";position:absolute;left:-20%;top:-60%;width:60%;height:200%;
+  background:radial-gradient(circle,var(--maple-glow),transparent 70%);filter:blur(40px);opacity:.7;pointer-events:none}
+.dec-l{padding:38px 40px;position:relative}
+.dec-l .top{display:flex;align-items:center;justify-content:space-between}
+.tag{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;
+  font-weight:600;letter-spacing:0.15em;text-transform:uppercase;color:var(--maple);
+  background:var(--maple-w);padding:6px 12px;border-radius:8px;border:1px solid var(--hair)}
+.tag .dot{width:6px;height:6px;border-radius:50%;background:var(--maple);box-shadow:0 0 10px var(--maple);animation:pulse 2.2s var(--ease) infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.65)}}
+.dec-l .ctx{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.dec-l h2{font-family:var(--serif);font-size:clamp(38px,4.4vw,56px);line-height:1;letter-spacing:-0.025em;margin:26px 0 8px}
+.dec-l h2 i{font-style:italic;color:var(--maple)}
+.dec-l .sub{color:var(--ink-2);font-size:14.5px;max-width:42ch}
+.dec-l .sub b{color:var(--ink)}
+
+.pipe{display:flex;align-items:stretch;margin:28px 0 26px;border:1px solid var(--hair);
+  border-radius:15px;overflow:hidden;background:var(--glass-2)}
+.pipe .seg{flex:1;padding:15px 18px;border-right:1px solid var(--hair);position:relative}
+.pipe .seg:last-child{border-right:0;background:var(--maple-w)}
+.pipe .seg .k{font-family:var(--mono);font-size:9px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-3)}
+.pipe .seg .v{font-family:var(--mono);font-size:23px;font-weight:600;margin-top:6px}
+.pipe .seg:last-child .v{color:var(--maple)}
+.pipe .seg .x{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+.pipe .seg::after{content:"";position:absolute;right:-5px;top:50%;width:9px;height:9px;
+  border-top:1.5px solid var(--maple);border-right:1.5px solid var(--maple);
+  transform:translateY(-50%) rotate(45deg);z-index:2;opacity:.85}
+.pipe .seg:last-child::after{display:none}
+html[data-theme="dark"] .hero h1,html[data-theme="dark"] .hero .lede,
+html[data-theme="dark"] .ohead h1,html[data-theme="dark"] .ohead .lede{
+  text-shadow:0 2px 28px oklch(14% 0.014 56 / 0.78)}
+
+.cta-row{display:flex;gap:12px}
+.btn{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.04em;
+  padding:13px 24px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+  transition:transform .15s var(--ease),background .25s,box-shadow .25s,border-color .25s}
+.btn-p{background:var(--maple);color:oklch(98% 0.01 84);box-shadow:0 10px 30px -10px var(--maple-glow)}
+.btn-p:hover{background:var(--maple-2);box-shadow:0 14px 40px -10px var(--maple-glow)}
+.btn-g{background:var(--glass-2);border-color:var(--hair-2);color:var(--ink)}
+.btn-g:hover{border-color:var(--ink-3)}
+
+.dec-r{border-left:1px solid var(--hair);background:linear-gradient(180deg,var(--glass-2),transparent);position:relative;display:flex;flex-direction:column}
+.dec-r .cardstage{flex:none;padding:34px 34px 14px;perspective:1300px}
+/* ===== fintech card anatomy: chip · contactless · magstripe · flip ===== */
+.creditcard{width:100%;aspect-ratio:1.585;position:relative;transition:transform .12s var(--ease);transform-style:preserve-3d}
+.cc-flip{position:absolute;inset:0;transition:transform .9s var(--ease);transform-style:preserve-3d}
+.creditcard:hover .cc-flip{transform:rotateY(180deg)}
+.cc-face{position:absolute;inset:0;border-radius:16px;overflow:hidden;backface-visibility:hidden;
+  color:oklch(96% 0.01 84);box-shadow:0 30px 60px -24px oklch(0% 0 0 / 0.7);
+  background:
+    radial-gradient(120% 90% at 85% 12%, oklch(46% 0.13 26 / .55), transparent 55%),
+    repeating-linear-gradient(135deg, oklch(100% 0 0 / .028) 0 2px, transparent 2px 7px),
+    linear-gradient(135deg, oklch(40% 0.11 28), oklch(22% 0.05 34) 58%, oklch(30% 0.12 24))}
+.cc-face::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(115deg,transparent 40%,oklch(100% 0 0 / 0.18) 50%,transparent 60%);
+  transform:translateX(-120%);animation:sheen 6s var(--ease) infinite 1.6s}
+.cc-front{padding:22px 24px;display:flex;flex-direction:column}
+.cc-front .row1{display:flex;align-items:flex-start;justify-content:space-between}
+.cc-issuer{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:oklch(86% .01 84 / .8)}
+.cc-net{font-family:var(--serif);font-style:italic;font-size:19px;opacity:.92}
+.cc-chiprow{display:flex;align-items:center;gap:13px;margin:16px 0 auto}
+.cc-chip{width:44px;height:34px;border-radius:6px;position:relative;
+  background:linear-gradient(135deg,oklch(86% .12 86),oklch(62% .10 78));
+  box-shadow:inset 0 0 0 1px oklch(40% .06 80 / .5)}
+.cc-chip::before{content:"";position:absolute;inset:5px;border-radius:2px;
+  background:
+    linear-gradient(90deg,transparent 32%,oklch(38% .05 80 / .7) 32% 34%,transparent 34%),
+    linear-gradient(90deg,transparent 64%,oklch(38% .05 80 / .7) 64% 66%,transparent 66%),
+    linear-gradient(0deg,transparent 46%,oklch(38% .05 80 / .7) 46% 54%,transparent 54%)}
+.cc-wifi{width:20px;height:20px;opacity:.8;transform:rotate(90deg)}
+.cc-num{font-family:var(--mono);font-size:clamp(15px,1.9vw,21px);font-weight:600;letter-spacing:.12em;
+  text-shadow:0 1px 0 oklch(0% 0 0 / .35);display:flex;gap:.7em;margin:6px 0 14px}
+.cc-meta{display:flex;justify-content:space-between;align-items:flex-end}
+.cc-name{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+.cc-name small{display:block;font-size:8.5px;letter-spacing:.16em;color:oklch(86% .01 84 / .55);margin-bottom:3px}
+.cc-exp{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-align:right}
+.cc-exp small{display:block;font-size:7.5px;letter-spacing:.14em;color:oklch(86% .01 84 / .55)}
+.cc-back{transform:rotateY(180deg);display:flex;flex-direction:column}
+.cc-magstripe{height:46px;width:100%;margin-top:22px;
+  background:linear-gradient(180deg,oklch(8% .01 56),oklch(18% .015 56) 45%,oklch(6% .01 56));
+  box-shadow:inset 0 1px 0 oklch(100% 0 0 / .06)}
+.cc-sig{margin:16px 20px 0;height:34px;border-radius:4px;position:relative;
+  background:repeating-linear-gradient(45deg,oklch(92% .02 84) 0 7px,oklch(86% .03 60) 7px 14px)}
+.cc-sig::after{content:"CVV 4 1 9";position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:oklch(20% .02 56);
+  background:oklch(98% 0 0);padding:3px 8px;border-radius:3px}
+.cc-back .fineprint{font-family:var(--mono);font-size:8px;letter-spacing:.04em;color:oklch(86% .01 84 / .5);
+  margin:auto 20px 14px;line-height:1.6}
+.cc-hint{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-family:var(--mono);
+  font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:oklch(86% .01 84 / .42);
+  backface-visibility:hidden;pointer-events:none}
+@keyframes sheen{0%,55%{transform:translateX(-120%)}80%,100%{transform:translateX(120%)}}
+/* recurring magstripe motif used as a section rule */
+.stripe-rule{height:26px;border-radius:6px;margin:30px 0;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,oklch(20% .02 56),oklch(11% .012 56));
+  border:1px solid var(--hair);box-shadow:inset 0 1px 0 oklch(100% 0 0 / .04)}
+.stripe-rule::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg,
+    var(--maple) 0 2px, transparent 2px 6px,
+    var(--gold) 6px 8px, transparent 8px 13px,
+    var(--teal) 13px 15px, transparent 15px 22px);opacity:.5}
+.stripe-rule span{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
+  background:var(--bg-2);padding:3px 10px;border-radius:4px}
+.dec-r .alts{border-top:1px solid var(--hair);flex:1}
+.dec-r .alts .h{padding:16px 26px 10px}
+.alt{display:flex;align-items:center;gap:13px;padding:13px 26px;border-top:1px solid var(--hair);
+  cursor:pointer;transition:background .22s var(--ease),padding-left .22s var(--ease)}
+.alt:hover{background:var(--glass-2);padding-left:30px}
+.alt .sw{width:36px;height:24px;border-radius:5px;flex:none}
+.alt .nm{font-size:12.5px;font-weight:550}
+.alt .meta{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:2px}
+.alt .ret{margin-left:auto;text-align:right}
+.alt .ret .v{font-family:var(--mono);font-size:15px;font-weight:600}
+.alt .ret .d{font-family:var(--mono);font-size:9.5px;color:var(--ink-4)}
+
+/* asymmetric bento — varied instruments, glass over shader */
+.bento{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:18px;margin-top:18px}
+.card{border:1px solid var(--hair);border-radius:20px;background:var(--glass);
+  backdrop-filter:blur(20px) saturate(1.4);padding:24px 26px;position:relative;overflow:hidden;
+  transition:transform .4s var(--ease),border-color .4s}
+.card:hover{transform:translateY(-3px);border-color:var(--hair-2)}
+.card .eyebrow{margin-bottom:18px}
+.card .big{font-family:var(--mono);font-size:38px;font-weight:600;letter-spacing:-0.035em}
+.card .big.g{color:var(--forest)}
+.card .cap{font-size:12.5px;color:var(--ink-2);margin-top:7px;line-height:1.45}
+.card .cap b{color:var(--ink);font-weight:600}
+.spark{margin-top:16px;height:60px;width:100%}
+.spark path.area{fill:url(#g-area)}
+.spark path.line{fill:none;stroke:var(--forest);stroke-width:2.5;stroke-linecap:round;
+  stroke-dasharray:1000;stroke-dashoffset:1000;transition:stroke-dashoffset 2s var(--ease)}
+.in .spark path.line{stroke-dashoffset:0}
+.spark circle{fill:var(--forest);stroke:var(--bg);stroke-width:3;filter:drop-shadow(0 0 6px var(--forest))}
+.recover .track{height:11px;border-radius:7px;background:var(--glass-2);overflow:hidden;display:flex;margin-top:8px}
+.recover .got{background:var(--forest);height:100%;width:0;transition:width 1.3s var(--ease) .3s;box-shadow:0 0 12px var(--forest-w)}
+.recover .leak{background:var(--maple);height:100%;width:0;transition:width 1.3s var(--ease) .45s}
+.recover .legend{display:flex;justify-content:space-between;margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.recover .legend b{color:var(--ink);font-weight:600}
+.radial{display:flex;align-items:center;gap:18px;margin-top:4px}
+.radial .ring-bg{fill:none;stroke:var(--glass-2);stroke-width:9}
+.radial .ring-fg{fill:none;stroke:var(--gold);stroke-width:9;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 1.6s var(--ease) .4s;filter:drop-shadow(0 0 6px var(--gold-w))}
+.radial .ctr{font-family:var(--mono);font-size:15px;font-weight:600;text-anchor:middle;fill:var(--ink)}
+.radial .info .k{font-family:var(--mono);font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-3)}
+.radial .info .v{font-size:13px;color:var(--ink-2);margin-top:6px;line-height:1.45}
+.radial .info .v b{color:var(--ink);font-weight:600}
+
+.split2{display:grid;grid-template-columns:1fr 372px;gap:18px;margin-top:18px}
+.panel{border:1px solid var(--hair);border-radius:20px;background:var(--glass);backdrop-filter:blur(20px) saturate(1.4);overflow:hidden}
+.panel .ph{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--hair)}
+.panel .ph h3{font-family:var(--serif);font-size:23px;letter-spacing:-0.015em}
+.panel .ph a{font-family:var(--mono);font-size:11px;color:var(--maple);font-weight:600}
+.brief-it{display:flex;gap:16px;padding:18px 24px;border-bottom:1px solid var(--hair);transition:background .22s}
+.brief-it:last-child{border-bottom:0}
+.brief-it:hover{background:var(--glass-2)}
+.brief-it .icn{width:42px;height:42px;border-radius:12px;flex:none;display:grid;place-items:center;font-size:17px}
+.bi-r{background:var(--maple-w);color:var(--maple)} .bi-y{background:var(--gold-w);color:var(--gold)} .bi-g{background:var(--forest-w);color:var(--forest)}
+.brief-it .bt{font-size:14px;font-weight:600}
+.brief-it .bd{font-size:12.5px;color:var(--ink-2);margin-top:4px;line-height:1.45}
+.brief-it .bm{font-family:var(--mono);font-size:10px;color:var(--ink-4);margin-top:7px;letter-spacing:0.04em}
+.lg{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--hair);font-size:13px}
+.lg:last-child{border-bottom:0}
+.lg .ld{width:6px;height:6px;border-radius:50%;flex:none}
+.lg .lt{flex:1;color:var(--ink-2)} .lg .lt b{color:var(--ink);font-weight:600}
+.lg .lv{font-family:var(--mono);font-size:12.5px;font-weight:600}
+.lg .lv.pos{color:var(--forest)} .lg .lv.neg{color:var(--maple)}
+
+/* ============================================================ OPTIMIZER v2 — command deck */
+.ohead{display:flex;align-items:flex-end;justify-content:space-between;gap:30px;margin-bottom:34px}
+.ohead h1{font-family:var(--serif);font-weight:400;letter-spacing:-0.03em;font-size:clamp(46px,5.6vw,80px);line-height:0.94}
+.ohead h1 i{font-style:italic;color:var(--maple)}
+.ohead .lede{font-family:var(--serif);font-size:19px;color:var(--ink-2);margin-top:14px;max-width:42ch;line-height:1.42}
+.ohead .scope{display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:14px;overflow:hidden;flex:none}
+.ohead .scope div{background:var(--glass);padding:16px 22px;text-align:center}
+.ohead .scope .v{font-family:var(--mono);font-size:22px;font-weight:600}
+.ohead .scope .k{font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+
+.cats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px}
+.cat{font-family:var(--mono);font-size:12.5px;font-weight:500;padding:11px 19px;border-radius:11px;
+  cursor:pointer;border:1px solid var(--hair);background:var(--glass);color:var(--ink-2);
+  transition:all .25s var(--ease)}
+.cat:hover{border-color:var(--hair-2);color:var(--ink);transform:translateY(-2px)}
+.cat.on{background:var(--maple);color:oklch(98% 0.01 84);border-color:var(--maple);box-shadow:0 10px 26px -10px var(--maple-glow)}
+
+/* the winner reveal */
+.winner{position:relative;border-radius:24px;overflow:hidden;border:1px solid var(--hair-2);
+  background:var(--glass);backdrop-filter:blur(24px) saturate(1.5);padding:34px 38px;margin-bottom:18px;
+  display:grid;grid-template-columns:1fr auto;align-items:center;gap:36px}
+.winner::before{content:"";position:absolute;right:-15%;top:-80%;width:55%;height:260%;
+  background:radial-gradient(circle,var(--maple-glow),transparent 68%);filter:blur(46px);opacity:.75}
+.winner .l{position:relative}
+.winner .rk{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:var(--maple)}
+.winner h2{font-family:var(--serif);font-size:clamp(36px,4.2vw,54px);line-height:1;letter-spacing:-0.025em;margin:12px 0 10px}
+.winner h2 i{font-style:italic;color:var(--maple)}
+.winner .meta{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.winner .pipe{margin:24px 0 0;max-width:560px}
+.winner .r{position:relative;text-align:right}
+.winner .r .vlbl{font-family:var(--mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-3)}
+.winner .r .vbig{font-family:var(--mono);font-size:clamp(48px,6vw,86px);font-weight:600;letter-spacing:-0.04em;color:var(--maple);line-height:1;text-shadow:0 0 40px var(--maple-glow)}
+.winner .r .vsub{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:6px}
+@keyframes winpop{0%{transform:scale(.985);opacity:.4}60%{transform:scale(1.006)}100%{transform:scale(1);opacity:1}}
+/* staged pipeline segment reveal */
+.pipe .seg{opacity:1;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.pipe.stage .seg{opacity:0;transform:translateY(10px)}
+.pipe.stage.go .seg{opacity:1;transform:none}
+.pipe.stage.go .seg:nth-child(1){transition-delay:.05s}
+.pipe.stage.go .seg:nth-child(2){transition-delay:.18s}
+.pipe.stage.go .seg:nth-child(3){transition-delay:.31s}
+.pipe.stage.go .seg:nth-child(4){transition-delay:.44s}
+.pipe .seg::after{transition:opacity .4s var(--ease)}
+.pipe.stage:not(.go) .seg::after{opacity:0}
+/* winner shimmer sweep on category change */
+.winner .sweep{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:24px;z-index:1}
+.winner .sweep::before{content:"";position:absolute;top:0;bottom:0;width:38%;left:-50%;
+  background:linear-gradient(105deg,transparent,oklch(100% 0 0 / .10) 45%,oklch(100% 0 0 / .16) 50%,transparent);
+  transform:skewX(-14deg)}
+.winner.flash .sweep::before{animation:sweep 1.05s var(--ease)}
+@keyframes sweep{0%{left:-50%}100%{left:120%}}
+/* animated aurora ring on the decision panel */
+@property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.decision::after{content:"";position:absolute;inset:-1px;border-radius:26px;padding:1px;pointer-events:none;
+  background:conic-gradient(from var(--ang),var(--maple),var(--gold),var(--teal),var(--maple));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;opacity:.34;animation:ring 13s linear infinite}
+@keyframes ring{to{--ang:360deg}}
+
+.race{border:1px solid var(--hair);border-radius:20px;overflow:hidden;background:var(--glass);backdrop-filter:blur(18px)}
+.rrow{display:grid;grid-template-columns:40px 1fr 96px 110px;align-items:center;gap:22px;
+  padding:20px 28px;border-bottom:1px solid var(--hair);transition:background .2s}
+.rrow:last-child{border-bottom:0}
+.rrow:hover{background:var(--glass-2)}
+.rrow .pos{font-family:var(--serif);font-style:italic;font-size:26px;color:var(--ink-4)}
+.rrow .who .nm{font-size:14.5px;font-weight:600}
+.rrow .who .pr{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:3px}
+.rrow .barwrap{height:8px;border-radius:5px;background:var(--glass-2);overflow:hidden;margin-top:9px}
+.rrow .barwrap i{display:block;height:100%;background:linear-gradient(90deg,var(--forest),var(--teal));width:0;transition:width 1.1s var(--ease)}
+.rrow .pt{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right;color:var(--ink-2)}
+.rrow .val{font-family:var(--mono);font-size:19px;font-weight:600;text-align:right}
+
+/* ============================================================ PRO TOOLS (kept, retuned) */
+.phead{margin-bottom:30px}
+.phead h1{font-family:var(--serif);font-weight:400;font-size:clamp(42px,5vw,64px);line-height:0.96;letter-spacing:-0.028em;margin:14px 0 0}
+.phead h1 i{font-style:italic;color:var(--maple)}
+.phead .lede{font-family:var(--serif);font-size:19px;color:var(--ink-2);margin-top:14px;max-width:50ch;line-height:1.42}
+.pro-banner{display:flex;align-items:center;gap:18px;border:1px solid var(--hair);background:var(--gold-w);
+  padding:18px 24px;border-radius:16px;margin-bottom:26px;backdrop-filter:blur(14px)}
+.pro-banner .st{font-size:24px;color:var(--gold)}
+.pro-banner .tx{font-size:13px;color:var(--ink-2)}
+.pro-banner .tx b{display:block;font-family:var(--serif);font-size:19px;color:var(--ink);font-style:italic}
+.tabset{display:flex;gap:6px;border-bottom:1px solid var(--hair);margin-bottom:28px}
+.tb{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.04em;padding:14px 19px;cursor:pointer;color:var(--ink-3);position:relative;transition:color .2s}
+.tb:hover{color:var(--ink)}.tb.on{color:var(--ink)}
+.tb.on::after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:2px;background:var(--maple);border-radius:2px;box-shadow:0 0 10px var(--maple-glow)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tile{border:1px solid var(--hair);border-radius:18px;background:var(--glass);backdrop-filter:blur(18px) saturate(1.4);
+  padding:24px;cursor:pointer;position:relative;overflow:hidden;
+  transition:transform .4s var(--ease),box-shadow .4s var(--ease),border-color .4s}
+.tile:hover{transform:translateY(-5px);box-shadow:0 26px 50px -28px oklch(0% 0 0 / 0.6);border-color:var(--hair-2)}
+.tile .ic{font-size:22px;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--maple-w);color:var(--maple);margin-bottom:18px}
+.tile.acc-g .ic{background:var(--forest-w);color:var(--forest)} .tile.acc-y .ic{background:var(--gold-w);color:var(--gold)}
+.tile h4{font-family:var(--serif);font-size:21px;letter-spacing:-0.015em}
+.tile p{font-size:12.5px;color:var(--ink-2);margin-top:8px;line-height:1.5}
+.tile .stat{font-family:var(--mono);font-size:13px;font-weight:600;margin-top:16px;display:flex;align-items:center;gap:9px}
+.tile .stat .chip{font-size:9.5px;padding:3px 8px;border-radius:6px;background:var(--forest-w);color:var(--forest);letter-spacing:0.05em}
+.tile .arrow{position:absolute;top:24px;right:24px;color:var(--ink-4);font-size:15px;transition:transform .3s var(--ease),color .3s}
+.tile:hover .arrow{transform:translate(4px,-4px);color:var(--maple)}
+
+/* ============================================================ TRIP PLANNER (kept, retuned) */
+.tp-form{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:1px;background:var(--hair);
+  border:1px solid var(--hair);border-radius:16px;overflow:hidden;margin-bottom:16px}
+.fld{background:var(--glass);backdrop-filter:blur(14px);padding:16px 20px}
+.fld .k{font-family:var(--mono);font-size:9.5px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink-3)}
+.fld .v{font-size:16px;font-weight:600;margin-top:6px}
+.fld .v small{font-weight:400;color:var(--ink-3);font-size:12px}
+.fld.go{background:var(--maple);display:grid;place-items:center;padding:0 34px;cursor:pointer;transition:background .25s}
+.fld.go:hover{background:var(--maple-2)}
+.fld.go span{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.06em;color:oklch(98% 0.01 84)}
+.routes{display:flex;gap:10px;margin-bottom:30px;flex-wrap:wrap}
+.route{font-family:var(--mono);font-size:11px;padding:8px 14px;border-radius:9px;border:1px solid var(--hair);background:var(--glass);color:var(--ink-2);cursor:pointer;transition:all .2s}
+.route:hover{border-color:var(--maple);color:var(--maple)}
+.award{display:grid;grid-template-columns:110px 1fr 170px 150px 140px;align-items:center;gap:22px;
+  border:1px solid var(--hair);border-radius:16px;background:var(--glass);backdrop-filter:blur(16px);
+  padding:22px 26px;margin-bottom:13px;transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s}
+.award:hover{transform:translateX(5px);border-color:var(--hair-2);box-shadow:-7px 0 0 -2px var(--maple)}
+.award .date .d{font-family:var(--serif);font-size:26px}
+.award .date .m{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-3)}
+.award .arc .pts{display:flex;align-items:center;gap:10px}
+.award .arc .ap{font-family:var(--mono);font-size:13px;font-weight:600}
+.award .arc .lbl{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:6px}
+.award .prog .k{font-family:var(--mono);font-size:9px;letter-spacing:0.11em;text-transform:uppercase;color:var(--ink-4)}
+.award .prog .v{font-size:14px;font-weight:600;margin-top:5px}
+.award .prog .src{font-family:var(--mono);font-size:9.5px;color:var(--teal);margin-top:6px}
+.award .cost{text-align:right}
+.award .cost .pt{font-family:var(--mono);font-size:21px;font-weight:600}
+.award .cost .tx{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:4px}
+.afford{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:0.04em;padding:9px 14px;border-radius:9px;text-align:center}
+.afford.yes{background:var(--forest-w);color:var(--forest)}
+.afford.no{background:var(--maple-w);color:var(--maple)}
+
+/* ============================================================ SWITCHER chrome */
+.switcher{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;
+  display:flex;align-items:center;gap:4px;background:var(--glass-2);backdrop-filter:blur(24px) saturate(1.5);
+  padding:7px;border-radius:16px;border:1px solid var(--hair-2);box-shadow:0 24px 60px -20px oklch(0% 0 0 / 0.6)}
+.switcher .lab{font-family:var(--mono);font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3);padding:0 13px 0 8px;border-right:1px solid var(--hair);margin-right:4px}
+.switcher .sb{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:0.03em;color:var(--ink-3);
+  padding:10px 17px;border-radius:10px;cursor:pointer;border:none;background:transparent;transition:all .25s var(--ease)}
+.switcher .sb:hover{color:var(--ink)}
+.switcher .sb.on{background:var(--maple);color:oklch(98% 0.01 84)}
+
+/* ===== WALLET ===== */
+.wrail{display:flex;gap:18px;overflow-x:auto;padding:6px 2px 18px;margin-bottom:26px;scrollbar-width:none}
+.wrail::-webkit-scrollbar{display:none}
+.wcard{flex:none;width:268px;aspect-ratio:1.62;border-radius:18px;padding:22px;position:relative;overflow:hidden;
+  color:oklch(96% 0.01 84);box-shadow:0 24px 50px -26px oklch(0% 0 0 / .7);
+  transition:transform .4s var(--ease);display:flex;flex-direction:column;cursor:pointer}
+.wcard::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(135deg,oklch(100% 0 0 / .03) 0 2px,transparent 2px 8px)}
+.wcard:hover{transform:translateY(-8px) rotate(-1deg)}
+.wcard .stripe{position:absolute;left:0;right:0;top:46px;height:30px;
+  background:linear-gradient(180deg,oklch(8% .01 56),oklch(17% .015 56) 50%,oklch(7% .01 56))}
+.wcard .chip{width:34px;height:26px;border-radius:5px;position:relative;z-index:1;margin-top:auto;
+  background:linear-gradient(135deg,oklch(86% .12 86),oklch(60% .10 78));
+  box-shadow:inset 0 0 0 1px oklch(40% .06 80 / .5)}
+.wcard .chip::before{content:"";position:absolute;inset:4px;border-radius:2px;
+  background:linear-gradient(0deg,transparent 46%,oklch(38% .05 80 / .6) 46% 54%,transparent 54%)}
+.wcard .nm{font-family:var(--serif);font-size:22px;margin-top:14px;position:relative;z-index:1}
+.wcard .iss{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;opacity:.7;margin-top:4px;position:relative;z-index:1}
+.wcard .bal{font-family:var(--mono);font-size:13px;font-weight:600;margin-top:12px;position:relative;z-index:1}
+.wcard .net{position:absolute;top:18px;right:22px;font-family:var(--serif);font-style:italic;font-size:15px;opacity:.9;z-index:1}
+.wtable{border:1px solid var(--hair);border-radius:18px;overflow:hidden;background:var(--glass);backdrop-filter:blur(18px)}
+.wrow{display:grid;grid-template-columns:1.4fr 1fr 120px 120px 80px;align-items:center;gap:20px;padding:18px 26px;border-bottom:1px solid var(--hair);transition:background .2s}
+.wrow:last-child{border-bottom:0}.wrow:hover{background:var(--glass-2)}
+.wrow .nm{font-size:14px;font-weight:600}.wrow .sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:3px}
+.wrow .k{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-4)}
+.wrow .v{font-family:var(--mono);font-size:15px;font-weight:600;margin-top:4px}
+.wrow .ed{font-family:var(--mono);font-size:11px;color:var(--maple);text-align:right;cursor:pointer}
+.devban{display:flex;align-items:center;gap:14px;border:1px solid var(--hair);background:var(--maple-w);
+  padding:15px 22px;border-radius:14px;margin-bottom:20px;font-size:13px;color:var(--ink-2);backdrop-filter:blur(14px)}
+.devban b{color:var(--ink)}
+/* ===== INSIGHTS ===== */
+.spendrow{display:grid;grid-template-columns:130px 1fr 90px;align-items:center;gap:22px;padding:16px 26px;border-bottom:1px solid var(--hair)}
+.spendrow:last-child{border-bottom:0}
+.spendrow .cat{font-size:13.5px;font-weight:600;background:none;border:none;padding:0;color:var(--ink)}
+.spendrow .bt{height:10px;border-radius:6px;background:var(--glass-2);overflow:hidden}
+.spendrow .bt i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--forest),var(--teal));transition:width 1.1s var(--ease)}
+.spendrow.miss .bt i{background:linear-gradient(90deg,var(--maple-2),var(--maple))}
+.spendrow .amt{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right}
+.spendrow .amt.neg{color:var(--maple)}
+/* ===== CHAT ===== */
+.chatwrap{border:1px solid var(--hair);border-radius:20px;background:var(--glass);backdrop-filter:blur(20px) saturate(1.4);overflow:hidden}
+.prompts{display:flex;gap:10px;flex-wrap:wrap;padding:22px 24px;border-bottom:1px solid var(--hair)}
+.prompt{font-family:var(--mono);font-size:11.5px;padding:9px 15px;border-radius:10px;border:1px solid var(--hair);background:var(--glass-2);color:var(--ink-2);cursor:pointer;transition:all .2s}
+.prompt:hover{border-color:var(--maple);color:var(--maple)}
+.thread{padding:26px 24px;display:flex;flex-direction:column;gap:20px}
+.msg{display:flex;gap:14px;max-width:80%}
+.msg.me{align-self:flex-end;flex-direction:row-reverse}
+.msg .av{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:600}
+.msg.ai .av{background:var(--maple-w);color:var(--maple)}.msg.me .av{background:var(--forest-w);color:var(--forest)}
+.bub{border:1px solid var(--hair);border-radius:14px;padding:14px 18px;font-size:13.5px;line-height:1.55;background:var(--glass-2)}
+.msg.me .bub{background:var(--maple-w);border-color:var(--hair-2)}
+.bub b{color:var(--ink)}
+.toolpills{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
+.tp{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.04em;padding:6px 11px;border-radius:8px;
+  background:var(--glass-hi);border:1px solid var(--hair);color:var(--ink-3);display:flex;align-items:center;gap:7px}
+.tp .dt{width:5px;height:5px;border-radius:50%;background:var(--forest)}
+.tp.run .dt{background:var(--gold);animation:pulse 1.4s var(--ease) infinite}
+.composer{display:flex;align-items:center;gap:12px;padding:18px 22px;border-top:1px solid var(--hair)}
+.composer .inp{flex:1;font-family:var(--sans);font-size:13.5px;color:var(--ink-3);background:var(--glass-2);border:1px solid var(--hair);border-radius:11px;padding:13px 16px}
+/* ===== LANDING (art-directed brand hero) ===== */
+.land{position:relative;border-radius:24px;overflow:hidden;border:1px solid var(--hair-2);min-height:560px;
+  display:flex;align-items:center;box-shadow:0 50px 110px -50px oklch(0% 0 0 / .75)}
+.land .bg{position:absolute;inset:0;background-size:cover;background-position:center;transform:scale(1.06);transition:transform 1.2s var(--ease)}
+.land:hover .bg{transform:scale(1.12)}
+/* Landing is an always-dark cinematic surface (image is intrinsically dark) */
+.land .scrim{position:absolute;inset:0;background:
+  linear-gradient(100deg,oklch(12% .012 56 / .96) 2%,oklch(13% .013 56 / .80) 32%,oklch(13% .013 56 / .15) 62%,transparent 80%)}
+.land .inner{position:relative;padding:64px 60px;max-width:760px}
+.land .kick{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:oklch(82% .012 80);border:1px solid oklch(95% .01 84 / .18);
+  background:oklch(20% .014 56 / .5);backdrop-filter:blur(10px);padding:8px 15px;border-radius:999px}
+.land .kick .d{width:6px;height:6px;border-radius:50%;background:var(--maple);box-shadow:0 0 10px var(--maple)}
+.land h1{font-family:var(--serif);font-weight:400;letter-spacing:-0.035em;line-height:.93;color:oklch(96% .012 84);
+  font-size:clamp(52px,6.6vw,104px);margin:26px 0 0;text-shadow:0 4px 40px oklch(10% .012 56 / .85)}
+.land h1 i{font-style:italic;color:oklch(64% .19 26)}
+.land .sub{font-family:var(--serif);font-size:clamp(18px,1.7vw,23px);color:oklch(80% .014 76);margin-top:22px;max-width:40ch;line-height:1.42;text-shadow:0 2px 18px oklch(10% .012 56 / .8)}
+.land .cta{display:flex;gap:13px;margin-top:34px;flex-wrap:wrap}
+.land .cta .btn-g{background:oklch(22% .014 56 / .6);border-color:oklch(95% .01 84 / .22);color:oklch(94% .012 84)}
+.land .stats{display:flex;gap:34px;margin-top:44px;flex-wrap:wrap}
+.land .stats .s .v{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-0.03em;color:oklch(96% .012 84)}
+.land .stats .s .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:oklch(72% .014 72);margin-top:5px}
+.land .foil{position:absolute;right:38px;bottom:38px;width:230px;border-radius:16px;overflow:hidden;
+  border:1px solid var(--hair-2);box-shadow:0 30px 60px -30px oklch(0% 0 0 / .7);transform:rotate(3deg);
+  transition:transform .5s var(--ease)}
+.land .foil:hover{transform:rotate(0) scale(1.04)}
+.land .foil img{display:block;width:100%}
+.land .foil .cap{position:absolute;left:0;right:0;bottom:0;padding:12px 14px;font-family:var(--mono);
+  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--on-dark-2);
+  background:linear-gradient(0deg,oklch(10% .01 56 / .85),transparent)}
+/* ===== PRO TOOLS — forensics bento (elevated) ===== */
+.pro-bento{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+.pro-feature{position:relative;border:1px solid var(--hair-2);border-radius:20px;overflow:hidden;
+  background:var(--glass);backdrop-filter:blur(20px) saturate(1.4);padding:28px 30px}
+.pro-feature::before{content:"";position:absolute;right:-12%;top:-70%;width:50%;height:240%;
+  background:radial-gradient(circle,var(--maple-glow),transparent 68%);filter:blur(44px);opacity:.7;pointer-events:none}
+.pro-feature .top{display:flex;align-items:flex-start;justify-content:space-between;position:relative}
+.pro-feature h3{font-family:var(--serif);font-size:25px;letter-spacing:-0.015em}
+.pro-feature .tagline{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:5px}
+.pro-feature .big{font-family:var(--mono);font-size:46px;font-weight:600;letter-spacing:-0.04em;color:var(--maple);margin:18px 0 2px;position:relative;text-shadow:0 0 36px var(--maple-glow)}
+.pro-feature .bn{font-size:12.5px;color:var(--ink-2);position:relative}
+.pbars{margin:22px 0 6px;position:relative}
+.pbar{display:grid;grid-template-columns:96px 1fr 56px;align-items:center;gap:16px;padding:9px 0;border-bottom:1px solid var(--hair)}
+.pbar:last-child{border-bottom:0}
+.pbar .nm{font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+.pbar .tk{height:9px;border-radius:5px;background:var(--glass-2);overflow:hidden}
+.pbar .tk i{display:block;height:100%;width:0;border-radius:5px;background:linear-gradient(90deg,var(--maple-2),var(--maple));transition:width 1.1s var(--ease)}
+.pbar .vv{font-family:var(--mono);font-size:12px;font-weight:600;text-align:right;color:var(--ink)}
+.pro-feature .act{display:flex;gap:11px;margin-top:22px;position:relative}
+.pro-stack{display:flex;flex-direction:column;gap:18px}
+.pinst{border:1px solid var(--hair);border-radius:16px;background:var(--glass);backdrop-filter:blur(16px);
+  padding:18px 20px;cursor:pointer;transition:transform .35s var(--ease),border-color .35s}
+.pinst:hover{transform:translateY(-3px);border-color:var(--hair-2)}
+.pinst .ph2{display:flex;align-items:center;gap:11px}
+.pinst .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:16px;background:var(--gold-w);color:var(--gold);flex:none}
+.pinst.g .ic{background:var(--forest-w);color:var(--forest)}
+.pinst.r .ic{background:var(--maple-w);color:var(--maple)}
+.pinst .nm{font-size:13.5px;font-weight:600}
+.pinst .meta{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:2px}
+.pinst .v{margin-left:auto;font-family:var(--mono);font-size:15px;font-weight:600}
+.pinst .gauge{height:7px;border-radius:5px;background:var(--glass-2);overflow:hidden;margin-top:13px}
+.pinst .gauge i{display:block;height:100%;width:0;border-radius:5px;transition:width 1.1s var(--ease)}
+.pinst .gauge.gld i{background:linear-gradient(90deg,var(--gold),oklch(72% .10 70))}
+.pinst .gauge.grn i{background:linear-gradient(90deg,var(--forest),var(--teal))}
+.pinst .cd{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:11px}
+.pinst .cd b{color:var(--maple);font-weight:600}
+.pro-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px}
+.ptool{border:1px solid var(--hair);border-radius:15px;background:var(--glass);backdrop-filter:blur(16px);
+  padding:18px 20px;cursor:pointer;display:flex;align-items:center;gap:14px;
+  transition:transform .35s var(--ease),border-color .35s}
+.ptool:hover{transform:translateY(-3px);border-color:var(--hair-2)}
+.ptool .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:16px;background:var(--glass-hi);color:var(--ink-2);flex:none}
+.ptool .nm{font-size:13px;font-weight:600}
+.ptool .meta{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:3px}
+.ptool .go{margin-left:auto;color:var(--ink-4);transition:transform .3s var(--ease),color .3s}
+.ptool:hover .go{transform:translateX(3px);color:var(--maple)}
+@media (max-width:1080px){.pro-bento,.pro-strip{grid-template-columns:1fr}}
+@media (max-width:1080px){.land .foil{display:none}.land .inner{padding:40px 30px}}
+@media (max-width:1080px){
+  .shell{grid-template-columns:1fr}.rail{display:none}
+  .decision,.bento,.split2,.ohead,.winner{grid-template-columns:1fr}
+  .rrow,.award,.tp-form,.tiles{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<canvas id="shader"></canvas>
+<div class="vignette"></div>
+<div class="spotlight" id="spot"></div>
+
+<div class="shell">
+  <!-- RAIL -->
+  <aside class="rail">
+    <div class="brand"><div class="leaf">&#127809;</div><div class="wm">maple<b>rewards</b></div></div>
+    <div class="rail-ledger">
+      <div class="lbl">Portfolio value</div>
+      <div class="big" data-count="4182" data-prefix="$">$0</div>
+      <div class="trend">&#9650; $214 this month</div>
+      <div class="split"><div><div class="k">Points</div><div class="v">247.3K</div></div><div><div class="k">Programs</div><div class="v">6</div></div></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-sec">Workspace</div>
+      <a href="#" class="on"><span class="ic">&#9632;</span> Home</a>
+      <a href="#"><span class="ic">&#9889;</span> Optimizer</a>
+      <a href="#"><span class="ic">&#10022;</span> Pro Tools <span class="pro">PRO</span></a>
+      <a href="#"><span class="ic">&#9707;</span> Wallet</a>
+      <a href="#"><span class="ic">&#9638;</span> Cards</a>
+      <a href="#"><span class="ic">&#9819;</span> Loyalty</a>
+      <a href="#"><span class="ic">&#9992;</span> Trip Planner</a>
+      <a href="#"><span class="ic">&#9670;</span> AI Assistant</a>
+      <div class="nav-sec">Your data</div>
+      <a href="#"><span class="ic">&#9650;</span> Insights</a>
+      <a href="#"><span class="ic">&#9648;</span> Portfolio</a>
+      <a href="#"><span class="ic">&#9636;</span> Applications</a>
+      <a href="#"><span class="ic">&#9634;</span> Feed</a>
+      <a href="#"><span class="ic">&#9733;</span> Promos</a>
+    </nav>
+    <div class="rail-foot"><div class="av">AS</div><div class="who">Aditya S.<small>Free plan</small></div></div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">MapleRewards / <b id="crumb">Home</b></div>
+      <div class="search">&#9906; Search cards, programs, awards <kbd>&#8984;K</kbd></div>
+      <div class="tgl" id="tgl">
+        <button data-t="dark" class="on">Dark</button>
+        <button data-t="light">Light</button>
+      </div>
+    </div>
+
+    <div class="canvas">
+
+      <!-- ============ LANDING (art-directed) ============ -->
+      <section class="screen" id="s-land">
+        <div class="land rv hero">
+          <div class="bg" style="background-image:url('hero-a.png')"></div>
+          <div class="scrim"></div>
+          <div class="inner">
+            <span class="kick"><span class="d"></span> MapleRewards &middot; Canada &middot; est. 2025</span>
+            <h1>Stop guessing<br>which card to <i>use</i></h1>
+            <p class="sub">The first Canadian-built rewards engine. Every swipe, priced in real dollars, before you pay.</p>
+            <div class="cta">
+              <button class="btn btn-p mag">Start free</button>
+              <button class="btn btn-g mag">See the optimizer &rarr;</button>
+            </div>
+            <div class="stats">
+              <div class="s"><div class="v"><span data-count="102">0</span></div><div class="k">Canadian cards</div></div>
+              <div class="s"><div class="v"><span data-count="27">0</span></div><div class="k">Loyalty programs</div></div>
+              <div class="s"><div class="v">$<span data-count="340">0</span></div><div class="k">Avg recovered / yr</div></div>
+            </div>
+          </div>
+          <figure class="foil">
+            <img src="hero-b.png" alt="">
+            <figcaption class="cap">Built in Canada &middot; CAD-native</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============ DASHBOARD v2 ============ -->
+      <section class="screen active" id="s-home">
+        <div class="hero rv">
+          <div class="eyebrow">Tuesday, May 18 &middot; Toronto &middot; CAD</div>
+          <h1>
+            <span class="clip"><span>Know what</span></span>
+            <span class="clip"><span>to swipe <i>before</i></span></span>
+            <span class="clip"><span>you pay.</span></span>
+          </h1>
+          <p class="lede">Every card you hold, ranked in real Canadian dollars, the instant it matters.</p>
+        </div>
+
+        <div class="ticker rv">
+          <div class="run">
+            <span class="t"><span class="d"></span> Aeroplan CPP <b>2.1&cent;</b> <span class="up">&#9650; 4%</span></span>
+            <span class="t"><span class="d"></span> Cobalt 5&times; dining <b>active</b></span>
+            <span class="t"><span class="d"></span> Missed last 30d <span class="dn">&#9660; $18</span></span>
+            <span class="t"><span class="d"></span> Scene+ promo <b>3,000 bonus</b></span>
+            <span class="t"><span class="d"></span> SQC pace <b>74%</b> <span class="up">on track</span></span>
+            <span class="t"><span class="d"></span> Aeroplan devalues <span class="dn">June 1</span></span>
+            <span class="t"><span class="d"></span> Aeroplan CPP <b>2.1&cent;</b> <span class="up">&#9650; 4%</span></span>
+            <span class="t"><span class="d"></span> Cobalt 5&times; dining <b>active</b></span>
+            <span class="t"><span class="d"></span> Missed last 30d <span class="dn">&#9660; $18</span></span>
+            <span class="t"><span class="d"></span> Scene+ promo <b>3,000 bonus</b></span>
+            <span class="t"><span class="d"></span> SQC pace <b>74%</b> <span class="up">on track</span></span>
+            <span class="t"><span class="d"></span> Aeroplan devalues <span class="dn">June 1</span></span>
+          </div>
+        </div>
+
+        <div class="decision rv">
+          <div class="dec-l">
+            <div class="top">
+              <span class="tag"><span class="dot"></span> Best move right now</span>
+              <span class="ctx">Dining &middot; est. $80</span>
+            </div>
+            <h2>Pay with the <i>Amex Cobalt</i></h2>
+            <p class="sub">5&times; Membership Rewards beats your next-best card by <b>$2.84</b> on this swipe after transfer value.</p>
+            <div class="pipe stage">
+              <div class="seg"><div class="k">Earn</div><div class="v">5&times;</div><div class="x">Membership Rewards</div></div>
+              <div class="seg"><div class="k">Points</div><div class="v">400</div><div class="x">on $80 dining</div></div>
+              <div class="seg"><div class="k">CPP</div><div class="v">2.1&cent;</div><div class="x">Aeroplan transfer</div></div>
+              <div class="seg"><div class="k">Real value</div><div class="v">$8.40</div><div class="x">net of caps</div></div>
+            </div>
+            <div class="cta-row">
+              <button class="btn btn-p mag">Log this spend</button>
+              <button class="btn btn-g mag">Why this card?</button>
+            </div>
+          </div>
+          <div class="dec-r">
+            <div class="cardstage">
+              <div class="creditcard" id="cc">
+                <div class="cc-flip">
+                  <div class="cc-face cc-front">
+                    <div class="row1">
+                      <div class="cc-issuer">American&nbsp;Express</div>
+                      <div class="cc-net">Cobalt</div>
+                    </div>
+                    <div class="cc-chiprow">
+                      <div class="cc-chip"></div>
+                      <svg class="cc-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5a10 10 0 0 1 0 14"/><path d="M12 8a6 6 0 0 1 0 8"/><path d="M16 11a2.5 2.5 0 0 1 0 2"/></svg>
+                    </div>
+                    <div class="cc-num"><span>3759</span><span>&bull;&bull;&bull;&bull;</span><span>&bull;&bull;&bull;&bull;</span><span>4021</span></div>
+                    <div class="cc-meta">
+                      <div class="cc-name"><small>Cardholder</small>A. SAHNI</div>
+                      <div class="cc-exp"><small>VALID THRU</small>08 / 28</div>
+                    </div>
+                    <div class="cc-hint">Hover to flip &#8635;</div>
+                  </div>
+                  <div class="cc-face cc-back">
+                    <div class="cc-magstripe"></div>
+                    <div class="cc-sig"></div>
+                    <div class="fineprint">Membership Rewards &middot; 5&times; dining, groceries &middot; transfers to Aeroplan, Avios, Marriott. This is a design mockup, not a real card.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="alts">
+              <div class="h"><div class="eyebrow tight">If not Cobalt</div></div>
+              <div class="alt"><div class="sw" style="background:linear-gradient(135deg,oklch(50% 0.10 250),oklch(38% 0.09 255))"></div><div><div class="nm">Scotiabank Gold Amex</div><div class="meta">5&times; &middot; Scene+ &middot; cap $50k</div></div><div class="ret"><div class="v">$5.56</div><div class="d">&minus;$2.84</div></div></div>
+              <div class="alt"><div class="sw" style="background:linear-gradient(135deg,oklch(44% 0.08 30),oklch(32% 0.06 35))"></div><div><div class="nm">CIBC Aventura VI</div><div class="meta">1.25&times; &middot; Aventura</div></div><div class="ret"><div class="v">$2.10</div><div class="d">&minus;$6.30</div></div></div>
+              <div class="alt"><div class="sw" style="background:linear-gradient(135deg,oklch(58% 0.02 70),oklch(46% 0.02 70))"></div><div><div class="nm">Tangerine Money-Back</div><div class="meta">2% &middot; cash back</div></div><div class="ret"><div class="v">$1.60</div><div class="d">&minus;$6.80</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bento rv">
+          <div class="card">
+            <div class="eyebrow">Portfolio &middot; 90 days</div>
+            <div class="big" data-count="4182" data-prefix="$">$0</div>
+            <div class="cap"><b>+5.4%</b> as Aeroplan CPP recovered. Tracking 6 programs.</div>
+            <svg class="spark" viewBox="0 0 320 60" preserveAspectRatio="none">
+              <defs><linearGradient id="g-area" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--forest-w)"/><stop offset="100%" stop-color="transparent"/></linearGradient></defs>
+              <path class="area" d="M0,46 C30,42 50,33 80,35 C110,37 130,24 160,26 C190,28 210,15 240,16 C270,17 295,9 320,7 L320,60 L0,60 Z"/>
+              <path class="line" d="M0,46 C30,42 50,33 80,35 C110,37 130,24 160,26 C190,28 210,15 240,16 C270,17 295,9 320,7"/>
+              <circle cx="320" cy="7" r="3.5"/>
+            </svg>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Missed rewards &middot; 30d</div>
+            <div class="big g">$63</div>
+            <div class="cap">Recovered by following moves. <b>$18</b> still leaking on fuel.</div>
+            <div class="recover">
+              <div class="track"><i class="got" data-w="78"></i><i class="leak" data-w="22"></i></div>
+              <div class="legend"><span><b>$63</b> recovered</span><span><b>$18</b> leaked</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Aeroplan SQC</div>
+            <div class="radial">
+              <svg width="86" height="86" viewBox="0 0 86 86">
+                <circle class="ring-bg" cx="43" cy="43" r="34"/>
+                <circle class="ring-fg" cx="43" cy="43" r="34" data-pct="74"/>
+                <text class="ctr" x="43" y="48">74%</text>
+              </svg>
+              <div class="info"><div class="k">25K Status</div><div class="v"><b>18,400</b> / 25,000 SQM<br>On pace by <b>Sep 2026</b></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stripe-rule rv"><span>Ledger</span></div>
+
+        <div class="split2 rv">
+          <div class="panel">
+            <div class="ph"><h3>Today's brief</h3><a href="#">All insights &rarr;</a></div>
+            <div class="brief-it"><div class="icn bi-r">&#9888;</div><div><div class="bt">Aeroplan devaluation lands June 1</div><div class="bd">Short-haul awards rise 12&ndash;18%. Your 84,000 points lose ~$310 if unbooked.</div><div class="bm">Recommendation &middot; book before May 31</div></div></div>
+            <div class="brief-it"><div class="icn bi-y">&#10022;</div><div><div class="bt">Cobalt 5&times; dining promo active</div><div class="bd">Stacked with your welcome bonus, projected +6,200 MR this cycle.</div><div class="bm">Offer &middot; expires in 11 days</div></div></div>
+            <div class="brief-it"><div class="icn bi-g">&#9745;</div><div><div class="bt">Scotiabank Gold fee credit posted</div><div class="bd">$120 travel credit applied. Net card cost this year is now $0.</div><div class="bm">Credits tracker &middot; 2 days ago</div></div></div>
+          </div>
+          <div class="panel">
+            <div class="ph"><h3>Activity</h3><a href="#">Ledger &rarr;</a></div>
+            <div class="lg"><span class="ld" style="background:var(--forest)"></span><span class="lt"><b>Dining</b> &middot; Cobalt 5&times;</span><span class="lv pos">+400</span></div>
+            <div class="lg"><span class="ld" style="background:var(--forest)"></span><span class="lt"><b>Groceries</b> &middot; Scotia Gold</span><span class="lv pos">+285</span></div>
+            <div class="lg"><span class="ld" style="background:var(--maple)"></span><span class="lt"><b>Fuel</b> &middot; wrong card</span><span class="lv neg">&minus;$6</span></div>
+            <div class="lg"><span class="ld" style="background:var(--forest)"></span><span class="lt"><b>Travel</b> &middot; Scotia Passport</span><span class="lv pos">+1,240</span></div>
+            <div class="lg"><span class="ld" style="background:var(--gold)"></span><span class="lt"><b>Welcome bonus</b> &middot; Cobalt</span><span class="lv pos">+5,000</span></div>
+            <div class="lg"><span class="ld" style="background:var(--forest)"></span><span class="lt"><b>Pharmacy</b> &middot; PC World Elite</span><span class="lv pos">+120</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ OPTIMIZER v2 ============ -->
+      <section class="screen" id="s-opt">
+        <div class="ohead rv">
+          <div>
+            <div class="eyebrow">Optimizer</div>
+            <h1>Which card for <i>this</i> swipe?</h1>
+            <p class="lede">Pick a category. Your wallet, raced by real CAD return after caps and transfer value.</p>
+          </div>
+          <div class="scope">
+            <div><div class="v">102</div><div class="k">Cards</div></div>
+            <div><div class="v">27</div><div class="k">Programs</div></div>
+            <div><div class="v">8</div><div class="k">Categories</div></div>
+          </div>
+        </div>
+
+        <div class="cats rv" id="cats">
+          <div class="cat" data-k="groceries">Groceries</div>
+          <div class="cat on" data-k="dining">Dining</div>
+          <div class="cat" data-k="travel">Travel</div>
+          <div class="cat" data-k="gas">Gas &amp; transit</div>
+          <div class="cat" data-k="pharmacy">Pharmacy</div>
+          <div class="cat" data-k="recurring">Recurring</div>
+          <div class="cat" data-k="entertainment">Entertainment</div>
+          <div class="cat" data-k="other">Everything else</div>
+        </div>
+
+        <div class="winner rv" id="winner">
+          <div class="sweep"></div>
+          <div class="l">
+            <div class="rk" id="w-rk">&#9733; Winner &middot; Dining &middot; $80</div>
+            <h2 id="w-nm">Amex <i>Cobalt</i></h2>
+            <div class="meta" id="w-meta">Membership Rewards &middot; no cap on dining &middot; transfer to Aeroplan @ 2.1&cent;</div>
+            <div class="pipe stage" id="w-pipe">
+              <div class="seg"><div class="k">Earn</div><div class="v">5&times;</div><div class="x">MR points</div></div>
+              <div class="seg"><div class="k">Points</div><div class="v">400</div><div class="x">on $80</div></div>
+              <div class="seg"><div class="k">CPP</div><div class="v">2.1&cent;</div><div class="x">Aeroplan</div></div>
+              <div class="seg"><div class="k">Net</div><div class="v">$8.40</div><div class="x">real CAD</div></div>
+            </div>
+          </div>
+          <div class="r">
+            <div class="vlbl">Real value / swipe</div>
+            <div class="vbig" id="w-val" data-count="840" data-prefix="$" data-div="100">$0</div>
+            <div class="vsub" id="w-sub">+$2.84 vs next best</div>
+          </div>
+        </div>
+
+        <div class="race rv" id="race"></div>
+      </section>
+
+      <!-- ============ PRO TOOLS ============ -->
+      <section class="screen" id="s-pro">
+        <div class="phead rv">
+          <div class="eyebrow">Pro Tools &middot; Canada-first &middot; CAD</div>
+          <h1>The forensics <i>desk</i></h1>
+          <p class="lede">Where your points stop leaking. Fourteen instruments, four workbenches.</p>
+        </div>
+        <div class="pro-banner rv">
+          <div class="st">&#10022;</div>
+          <div class="tx"><b>Pro unlocks the full desk</b>You're previewing. Members recover an average of $340 / year in missed rewards.</div>
+          <button class="btn btn-p mag" style="margin-left:auto">Upgrade</button>
+        </div>
+        <div class="tabset rv">
+          <div class="tb on">Forensics</div><div class="tb">Status &amp; balances</div><div class="tb">Stacking &amp; math</div><div class="tb">Knowledge</div>
+        </div>
+        <div class="pro-bento rv">
+          <div class="pro-feature">
+            <div class="top">
+              <div><h3>Missed Rewards</h3><div class="tagline">Every swipe where a better card sat in your wallet, priced in CAD</div></div>
+              <span class="chip" style="font-family:var(--mono);font-size:9.5px;padding:5px 10px;border-radius:7px;background:var(--maple-w);color:var(--maple);letter-spacing:.08em">LAST 30 DAYS</span>
+            </div>
+            <div class="big">$<span data-count="63">0</span></div>
+            <div class="bn">recoverable by following the optimizer. <b>$18</b> still leaking, mostly on fuel.</div>
+            <div class="pbars">
+              <div class="pbar"><span class="nm">Fuel</span><span class="tk"><i data-w="100"></i></span><span class="vv">$18</span></div>
+              <div class="pbar"><span class="nm">Recurring</span><span class="tk"><i data-w="44"></i></span><span class="vv">$8</span></div>
+              <div class="pbar"><span class="nm">Groceries</span><span class="tk"><i data-w="28"></i></span><span class="vv">$5</span></div>
+              <div class="pbar"><span class="nm">Dining</span><span class="tk"><i data-w="11"></i></span><span class="vv">$2</span></div>
+            </div>
+            <div class="act">
+              <button class="btn btn-p mag">Fix in Optimizer</button>
+              <button class="btn btn-g mag">Export report</button>
+            </div>
+          </div>
+          <div class="pro-stack">
+            <div class="pinst">
+              <div class="ph2"><div class="ic">&#10022;</div><div><div class="nm">Welcome Bonus Missions</div><div class="meta">2 active &middot; $1,400 to spend</div></div><div class="v">63%</div></div>
+              <div class="gauge gld"><i data-w="63"></i></div>
+              <div class="cd">Cobalt bonus &middot; <b>11 days</b> to deadline</div>
+            </div>
+            <div class="pinst g">
+              <div class="ph2"><div class="ic">&#9745;</div><div><div class="nm">Credits &amp; Renewals</div><div class="meta">$240 unclaimed this year</div></div><div class="v">$240</div></div>
+              <div class="gauge grn"><i data-w="48"></i></div>
+              <div class="cd">Amex Plat $200 travel &middot; expires Dec 31</div>
+            </div>
+            <div class="pinst r">
+              <div class="ph2"><div class="ic">&#9888;</div><div><div class="nm">Devaluation Radar</div><div class="meta">1 active alert</div></div><div class="v">June 1</div></div>
+              <div class="cd">Aeroplan short-haul +12&ndash;18% &middot; <b>book before May 31</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="pro-strip rv">
+          <div class="ptool"><div class="ic">&#9650;</div><div><div class="nm">Card Value</div><div class="meta">7 cards &middot; net of fees</div></div><span class="go">&rarr;</span></div>
+          <div class="ptool"><div class="ic">&#9670;</div><div><div class="nm">Portfolio Optimizer</div><div class="meta">+$190 / yr opportunity</div></div><span class="go">&rarr;</span></div>
+          <div class="ptool"><div class="ic">&#9881;</div><div><div class="nm">Stack &amp; Buy-Points Math</div><div class="meta">3 calculators</div></div><span class="go">&rarr;</span></div>
+        </div>
+      </section>
+
+      <!-- ============ TRIP PLANNER ============ -->
+      <section class="screen" id="s-trip">
+        <div class="phead rv">
+          <div class="eyebrow">Trip Planner &middot; Award search</div>
+          <h1>Can your points <i>actually</i> book this?</h1>
+          <p class="lede">Live award space, cross-checked against the balances you really hold.</p>
+        </div>
+        <div class="tp-form rv">
+          <div class="fld"><div class="k">From</div><div class="v">YYZ <small>Toronto</small></div></div>
+          <div class="fld"><div class="k">To</div><div class="v">HND <small>Tokyo</small></div></div>
+          <div class="fld"><div class="k">Depart</div><div class="v">Oct 14 <small>&plusmn;7d</small></div></div>
+          <div class="fld"><div class="k">Cabin</div><div class="v">Business <small>1 pax</small></div></div>
+          <div class="fld go mag"><span>Search &rarr;</span></div>
+        </div>
+        <div class="routes rv">
+          <div class="route">Toronto &rarr; London</div><div class="route">Toronto &rarr; Tokyo</div>
+          <div class="route">Vancouver &rarr; Honolulu</div><div class="route">Montreal &rarr; Paris</div><div class="route">Toronto &rarr; Dubai</div>
+        </div>
+        <div class="rv">
+          <div class="award">
+            <div class="date"><div class="d">14</div><div class="m">Oct &middot; Mon</div></div>
+            <div class="arc"><div class="pts"><span class="ap">YYZ</span><svg width="120" height="22" viewBox="0 0 120 22"><path d="M2,20 Q60,-8 118,20" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-dasharray="3 3"/><circle cx="2" cy="20" r="2.5" fill="var(--teal)"/><circle cx="118" cy="20" r="2.5" fill="var(--teal)"/></svg><span class="ap">HND</span></div><div class="lbl">1 stop &middot; YVR &middot; 13h 40m</div></div>
+            <div class="prog"><div class="k">Program</div><div class="v">Aeroplan</div><div class="src">Seats.aero &middot; fresh 4m ago</div></div>
+            <div class="cost"><div class="pt">75,000</div><div class="tx">+ $186 taxes</div></div>
+            <div class="afford yes">&#10003; You can book</div>
+          </div>
+          <div class="award">
+            <div class="date"><div class="d">17</div><div class="m">Oct &middot; Thu</div></div>
+            <div class="arc"><div class="pts"><span class="ap">YYZ</span><svg width="120" height="22" viewBox="0 0 120 22"><path d="M2,20 Q60,-8 118,20" fill="none" stroke="var(--teal)" stroke-width="1.5"/><circle cx="2" cy="20" r="2.5" fill="var(--teal)"/><circle cx="118" cy="20" r="2.5" fill="var(--teal)"/></svg><span class="ap">HND</span></div><div class="lbl">Nonstop &middot; 13h 05m</div></div>
+            <div class="prog"><div class="k">Program</div><div class="v">Aeroplan</div><div class="src">Seats.aero &middot; fresh 4m ago</div></div>
+            <div class="cost"><div class="pt">87,500</div><div class="tx">+ $192 taxes</div></div>
+            <div class="afford yes">&#10003; You can book</div>
+          </div>
+          <div class="award">
+            <div class="date"><div class="d">19</div><div class="m">Oct &middot; Sat</div></div>
+            <div class="arc"><div class="pts"><span class="ap">YYZ</span><svg width="120" height="22" viewBox="0 0 120 22"><path d="M2,20 Q60,-8 118,20" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-dasharray="3 3"/><circle cx="2" cy="20" r="2.5" fill="var(--teal)"/><circle cx="118" cy="20" r="2.5" fill="var(--teal)"/></svg><span class="ap">HND</span></div><div class="lbl">1 stop &middot; SFO &middot; 15h 10m</div></div>
+            <div class="prog"><div class="k">Program</div><div class="v">Cathay (Asia Miles)</div><div class="src">Seats.aero &middot; fresh 9m ago</div></div>
+            <div class="cost"><div class="pt">110,000</div><div class="tx">+ $96 taxes</div></div>
+            <div class="afford no">Short 22,600 pts</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ WALLET ============ -->
+      <section class="screen" id="s-wallet">
+        <div class="phead rv">
+          <div class="eyebrow">Wallet &middot; 7 cards &middot; CAD</div>
+          <h1>Your wallet, <i>valued</i></h1>
+          <p class="lede">Live balances, every loyalty program, what each card is really worth to you.</p>
+        </div>
+        <div class="devban rv">&#9888;&nbsp; <span><b>Aeroplan devalues June 1.</b> Two of your cards transfer to Aeroplan. Estimated balance impact ~<b>$310</b>. Book before May 31.</span></div>
+        <div class="wrail rv">
+          <div class="wcard" style="background:linear-gradient(135deg,oklch(40% .10 28),oklch(26% .05 35) 60%,oklch(34% .12 24))"><div class="net">amex</div><div class="stripe"></div><div class="chip"></div><div class="nm">Cobalt</div><div class="iss">American Express &bull;&bull;&bull;&bull; 4021</div><div class="bal">42,180 MR &middot; ~$886</div></div>
+          <div class="wcard" style="background:linear-gradient(135deg,oklch(46% .10 250),oklch(30% .08 255))"><div class="net">amex</div><div class="stripe"></div><div class="chip"></div><div class="nm">Gold</div><div class="iss">Scotiabank &bull;&bull;&bull;&bull; 7733</div><div class="bal">68,400 Scene+ &middot; ~$958</div></div>
+          <div class="wcard" style="background:linear-gradient(135deg,oklch(38% .07 30),oklch(24% .05 35))"><div class="net">visa</div><div class="stripe"></div><div class="chip"></div><div class="nm">Aventura VI</div><div class="iss">CIBC &bull;&bull;&bull;&bull; 2914</div><div class="bal">54,900 Aventura &middot; ~$769</div></div>
+          <div class="wcard" style="background:linear-gradient(135deg,oklch(34% .03 60),oklch(22% .02 60))"><div class="net">visa</div><div class="stripe"></div><div class="chip"></div><div class="nm">Passport VI</div><div class="iss">Scotiabank &bull;&bull;&bull;&bull; 1180</div><div class="bal">31,250 Scene+ &middot; ~$437</div></div>
+          <div class="wcard" style="background:linear-gradient(135deg,oklch(50% .02 70),oklch(38% .02 70))"><div class="net">mc</div><div class="stripe"></div><div class="chip"></div><div class="nm">Money-Back</div><div class="iss">Tangerine &bull;&bull;&bull;&bull; 6602</div><div class="bal">$132 cash back</div></div>
+        </div>
+        <div class="wtable rv">
+          <div class="wrow"><div><div class="nm">American Express Cobalt</div><div class="sub">Membership Rewards &middot; transfers to Aeroplan</div></div><div><div class="k">Balance</div><div class="v">42,180</div></div><div><div class="k">Value</div><div class="v">$886</div></div><div><div class="k">Net / yr</div><div class="v">+$412</div></div><div class="ed">Edit</div></div>
+          <div class="wrow"><div><div class="nm">Scotiabank Gold Amex</div><div class="sub">Scene+ &middot; fee credit applied</div></div><div><div class="k">Balance</div><div class="v">68,400</div></div><div><div class="k">Value</div><div class="v">$958</div></div><div><div class="k">Net / yr</div><div class="v">+$0</div></div><div class="ed">Edit</div></div>
+          <div class="wrow"><div><div class="nm">CIBC Aventura Visa Infinite</div><div class="sub">Aventura &middot; renews Aug 2026</div></div><div><div class="k">Balance</div><div class="v">54,900</div></div><div><div class="k">Value</div><div class="v">$769</div></div><div><div class="k">Net / yr</div><div class="v">&minus;$48</div></div><div class="ed">Edit</div></div>
+          <div class="wrow"><div><div class="nm">Scotiabank Passport VI</div><div class="sub">Scene+ &middot; no FX fee &middot; lounge</div></div><div><div class="k">Balance</div><div class="v">31,250</div></div><div><div class="k">Value</div><div class="v">$437</div></div><div><div class="k">Net / yr</div><div class="v">+$190</div></div><div class="ed">Edit</div></div>
+          <div class="wrow"><div><div class="nm">Tangerine Money-Back</div><div class="sub">Cash back &middot; no annual fee</div></div><div><div class="k">Balance</div><div class="v">$132</div></div><div><div class="k">Value</div><div class="v">$132</div></div><div><div class="k">Net / yr</div><div class="v">+$132</div></div><div class="ed">Edit</div></div>
+        </div>
+      </section>
+
+      <!-- ============ INSIGHTS ============ -->
+      <section class="screen" id="s-ins">
+        <div class="phead rv">
+          <div class="eyebrow">Insights &middot; last 30 days</div>
+          <h1>Where your money <i>actually</i> went</h1>
+          <p class="lede">Spend by category, and exactly where you left rewards on the table.</p>
+        </div>
+        <div class="tabset rv">
+          <div class="tb">7 days</div><div class="tb on">30 days</div><div class="tb">90 days</div><div class="tb">All time</div>
+        </div>
+        <div class="bento rv" style="grid-template-columns:1fr 1fr">
+          <div class="card">
+            <div class="eyebrow">Spend by category</div>
+            <div style="margin-top:6px">
+              <div class="spendrow"><button class="cat">Groceries</button><div class="bt"><i data-w="100"></i></div><div class="amt">$1,240</div></div>
+              <div class="spendrow"><button class="cat">Dining</button><div class="bt"><i data-w="74"></i></div><div class="amt">$910</div></div>
+              <div class="spendrow"><button class="cat">Travel</button><div class="bt"><i data-w="56"></i></div><div class="amt">$690</div></div>
+              <div class="spendrow"><button class="cat">Recurring</button><div class="bt"><i data-w="38"></i></div><div class="amt">$470</div></div>
+              <div class="spendrow"><button class="cat">Fuel</button><div class="bt"><i data-w="22"></i></div><div class="amt">$280</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Missed rewards by category</div>
+            <div style="margin-top:6px">
+              <div class="spendrow miss"><button class="cat">Fuel</button><div class="bt"><i data-w="100"></i></div><div class="amt neg">&minus;$18</div></div>
+              <div class="spendrow miss"><button class="cat">Recurring</button><div class="bt"><i data-w="44"></i></div><div class="amt neg">&minus;$8</div></div>
+              <div class="spendrow miss"><button class="cat">Groceries</button><div class="bt"><i data-w="28"></i></div><div class="amt neg">&minus;$5</div></div>
+              <div class="spendrow miss"><button class="cat">Dining</button><div class="bt"><i data-w="11"></i></div><div class="amt neg">&minus;$2</div></div>
+              <div class="spendrow"><button class="cat">All other</button><div class="bt"><i data-w="6"></i></div><div class="amt">$0</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel rv" style="margin-top:18px">
+          <div class="ph"><h3>Biggest leak</h3><a href="#">Fix in Optimizer &rarr;</a></div>
+          <div class="brief-it"><div class="icn bi-r">&#9906;</div><div><div class="bt">Fuel is costing you $18 / month</div><div class="bd">You used Tangerine (2%) for fuel 9 times. CIBC Dividend Visa Infinite (4%) was in your wallet each time.</div><div class="bm">Switch card &middot; recover ~$216 / yr</div></div></div>
+        </div>
+      </section>
+
+      <!-- ============ AI ASSISTANT ============ -->
+      <section class="screen" id="s-ai">
+        <div class="phead rv">
+          <div class="eyebrow">AI Assistant &middot; 9 live tools</div>
+          <h1>Ask it <i>anything</i> about your points</h1>
+          <p class="lede">It searches award space, checks transfer ratios, and prices everything in real CAD.</p>
+        </div>
+        <div class="chatwrap rv">
+          <div class="prompts">
+            <button class="prompt">Best way to fly to Tokyo in business?</button>
+            <button class="prompt">Should I buy Aeroplan points?</button>
+            <button class="prompt">What's my Cobalt welcome bonus pacing?</button>
+            <button class="prompt">Is Scene+ worth more than cash here?</button>
+          </div>
+          <div class="thread">
+            <div class="msg me"><div class="av">AS</div><div class="bub">Best way to get 2 business seats YYZ &rarr; Tokyo in October using what I have?</div></div>
+            <div class="msg ai"><div class="av">&#9670;</div><div class="bub">
+              Checking live award space and your balances now.
+              <div class="toolpills">
+                <span class="tp"><span class="dt"></span> search_award_space</span>
+                <span class="tp"><span class="dt"></span> get_transfer_partners</span>
+                <span class="tp run"><span class="dt"></span> get_program_cpp</span>
+              </div>
+              Best option: <b>Aeroplan, 75,000 pts + $186</b> each, YYZ&ndash;HND via YVR on Oct 14. You hold <b>110,580</b> transferable to Aeroplan, enough for one seat now; transferring 39,420 Amex MR covers the second. Cathay is cheaper in taxes but you're <b>22,600 pts short</b>.
+            </div></div>
+          </div>
+          <div class="composer"><div class="inp">Ask about awards, transfers, welcome bonuses&hellip;</div><button class="btn btn-p mag">Send</button></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="switcher">
+  <span class="lab">Pitch</span>
+  <button class="sb" data-s="s-land" data-c="Landing">Landing</button>
+  <button class="sb on" data-s="s-home" data-c="Home">Dashboard</button>
+  <button class="sb" data-s="s-opt" data-c="Optimizer">Optimizer</button>
+  <button class="sb" data-s="s-pro" data-c="Pro Tools">Pro Tools</button>
+  <button class="sb" data-s="s-trip" data-c="Trip Planner">Trip Planner</button>
+  <button class="sb" data-s="s-wallet" data-c="Wallet">Wallet</button>
+  <button class="sb" data-s="s-ins" data-c="Insights">Insights</button>
+  <button class="sb" data-s="s-ai" data-c="AI Assistant">AI</button>
+</div>
+
+<script>
+/* ===================== WebGL noise-flow shader (ShaderGradient-style) ===================== */
+(function(){
+  const cv = document.getElementById('shader');
+  const gl = cv.getContext('webgl',{antialias:true,alpha:true});
+  if(!gl){ document.body.classList.add('no-webgl'); return; }
+  const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const fs=`
+  precision highp float;
+  uniform vec2 u_res; uniform float u_t; uniform vec2 u_mouse;
+  uniform vec3 u_a,u_b,u_c,u_d,u_bg; uniform float u_grain;
+  // ---- simplex noise (Ashima) ----
+  vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+  vec2 mod289(vec2 x){return x-floor(x*(1./289.))*289.;}
+  vec3 permute(vec3 x){return mod289(((x*34.)+1.)*x);}
+  float snoise(vec2 v){
+    const vec4 C=vec4(0.211324865,0.366025403,-0.577350269,0.024390243);
+    vec2 i=floor(v+dot(v,C.yy));vec2 x0=v-i+dot(i,C.xx);
+    vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+    vec4 x12=x0.xyxy+C.xxzz;x12.xy-=i1;
+    i=mod289(i);
+    vec3 perm=permute(permute(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+    vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.);
+    m=m*m;m=m*m;
+    vec3 x=2.*fract(perm*C.www)-1.;vec3 h=abs(x)-0.5;vec3 ox=floor(x+0.5);vec3 a0=x-ox;
+    m*=1.79284291-0.85373472*(a0*a0+h*h);
+    vec3 g;g.x=a0.x*x0.x+h.x*x0.y;g.yz=a0.yz*x12.xz+h.yz*x12.yw;
+    return 130.*dot(m,g);
+  }
+  float fbm(vec2 p){float s=0.,a=0.5;for(int i=0;i<5;i++){s+=a*snoise(p);p*=2.03;a*=0.5;}return s;}
+  void main(){
+    vec2 uv=gl_FragCoord.xy/u_res.xy;
+    vec2 p=(gl_FragCoord.xy-0.5*u_res.xy)/u_res.y;
+    // interactive flow: warp the field toward the cursor
+    vec2 m=(u_mouse-0.5*u_res.xy)/u_res.y;
+    vec2 toM=p-m; float md=length(toM);
+    float pull=exp(-md*md*1.6);
+    p+=normalize(toM+0.0001)*pull*0.16*sin(u_t*0.9-md*5.0);
+    float t=u_t*0.05;
+    // softer, larger diffuse colour fields (true ShaderGradient feel)
+    float n1=fbm(p*0.72+vec2(t,t*0.6)+pull*0.4);
+    float n2=fbm(p*1.05-vec2(t*0.6,t*0.45)+n1*0.5);
+    float n3=fbm(p*0.5+vec2(-t*0.35,t*0.75)+n2*0.25);
+    float band=sin(p.x*1.1+n1*1.3+t*1.0)*0.5+0.5;
+    vec3 col=u_bg;
+    col=mix(col,u_a,smoothstep(-0.05,1.05,n1*0.62+0.5));
+    col=mix(col,u_b,smoothstep(0.06,1.08,n2*0.62+0.5)*0.9);
+    col=mix(col,u_c,smoothstep(0.18,1.12,n3*0.6+0.5)*0.74);
+    col=mix(col,u_d,band*smoothstep(0.22,1.05,n2*0.5+0.5)*0.44);
+    // luminous bloom, biased to the right where content is glass
+    float bloom=smoothstep(1.0,0.0,uv.y)*0.34*smoothstep(-0.2,0.9,p.x);
+    col+=u_a*bloom*0.42+u_d*bloom*0.30;
+    // keep the left text column calmer for legibility
+    col*=0.74+0.26*smoothstep(-0.75,0.55,p.x);
+    // gentle radial richness, keep it vivid
+    col*=0.84+0.16*smoothstep(0.0,0.7,1.0-length(p)*0.5);
+    float gr=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233))+u_t)*43758.5453);
+    col+=(gr-0.5)*u_grain;
+    gl_FragColor=vec4(col,1.0);
+  }`;
+  function fail(){document.body.classList.add('no-webgl');}
+  function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){console.warn(gl.getShaderInfoLog(o));return null;}return o;}
+  const v=sh(gl.VERTEX_SHADER,vs),f=sh(gl.FRAGMENT_SHADER,fs);
+  if(!v||!f){fail();return;}
+  const pr=gl.createProgram();
+  gl.attachShader(pr,v);gl.attachShader(pr,f);
+  gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){fail();return;}
+  gl.useProgram(pr);
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  const lp=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);
+  const U={res:gl.getUniformLocation(pr,'u_res'),t:gl.getUniformLocation(pr,'u_t'),
+    a:gl.getUniformLocation(pr,'u_a'),b:gl.getUniformLocation(pr,'u_b'),c:gl.getUniformLocation(pr,'u_c'),
+    d:gl.getUniformLocation(pr,'u_d'),bg:gl.getUniformLocation(pr,'u_bg'),grain:gl.getUniformLocation(pr,'u_grain'),
+    mouse:gl.getUniformLocation(pr,'u_mouse')};
+  let mX=innerWidth/2,mY=innerHeight/2,tX=mX,tY=mY;
+  addEventListener('pointermove',e=>{tX=e.clientX;tY=innerHeight-e.clientY;},{passive:true});
+  function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim().split(',').map(Number);}
+  let A=[.86,.16,.22],B=[.09,.30,.27],C=[.72,.55,.24],Dc=[.42,.18,.62],BG=[.06,.05,.05],GR=0.05,tgt;
+  function readTheme(){tgt={A:css('--sh-a'),B:css('--sh-b'),C:css('--sh-c'),D:css('--sh-d'),BG:css('--sh-bg'),GR:css('--grain')[0]};}
+  readTheme();A=tgt.A.slice();B=tgt.B.slice();C=tgt.C.slice();Dc=tgt.D.slice();BG=tgt.BG.slice();GR=tgt.GR;
+  window.__shaderRetheme=readTheme;
+  function resize(){const d=Math.min(devicePixelRatio,1.75);cv.width=innerWidth*d;cv.height=innerHeight*d;gl.viewport(0,0,cv.width,cv.height);}
+  addEventListener('resize',resize);resize();
+  cv.classList.add('ready');
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  function lerp(a,b,k){return a+(b-a)*k;}
+  let start=performance.now();
+  function frame(now){
+    const t=(now-start)/1000;
+    // ease color toward theme target
+    for(let i=0;i<3;i++){A[i]=lerp(A[i],tgt.A[i],0.05);B[i]=lerp(B[i],tgt.B[i],0.05);C[i]=lerp(C[i],tgt.C[i],0.05);Dc[i]=lerp(Dc[i],tgt.D[i],0.05);BG[i]=lerp(BG[i],tgt.BG[i],0.05);}
+    GR=lerp(GR,tgt.GR,0.05);
+    mX=lerp(mX,tX,0.06);mY=lerp(mY,tY,0.06);
+    const sx=cv.width/innerWidth, sy=cv.height/innerHeight;
+    gl.uniform2f(U.mouse,mX*sx,mY*sy);
+    gl.uniform2f(U.res,cv.width,cv.height);
+    gl.uniform1f(U.t,reduce?6.0:t);
+    gl.uniform3fv(U.a,A);gl.uniform3fv(U.b,B);gl.uniform3fv(U.c,C);gl.uniform3fv(U.d,Dc);gl.uniform3fv(U.bg,BG);
+    gl.uniform1f(U.grain,GR);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    if(!reduce) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  if(reduce){requestAnimationFrame(frame);}
+})();
+
+/* ===================== theme toggle ===================== */
+document.getElementById('tgl').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#tgl button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.documentElement.setAttribute('data-theme',b.dataset.t);
+  setTimeout(()=>window.__shaderRetheme&&window.__shaderRetheme(),20);
+});
+
+/* ===================== screen switching ===================== */
+const sw=document.querySelector('.switcher'),crumb=document.getElementById('crumb');
+sw.addEventListener('click',e=>{
+  const b=e.target.closest('.sb'); if(!b) return;
+  sw.querySelectorAll('.sb').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const sc=document.getElementById(b.dataset.s);sc.classList.add('active');
+  crumb.textContent=b.dataset.c;scrollTo({top:0});animate(sc);
+  if(b.dataset.s==='s-opt'&&window.__optRender) setTimeout(window.__optRender,260);
+});
+
+/* ===================== reveal + counters + fills ===================== */
+function countUp(el){
+  const tgt=+el.dataset.count,pre=el.dataset.prefix||'',dv=+el.dataset.div||1;
+  const t0=performance.now(),dur=1500;
+  (function tick(t){
+    const p=Math.min((t-t0)/dur,1),e=1-Math.pow(2,-10*p);
+    let val=(tgt*e)/dv;
+    el.textContent=pre+(dv>1?val.toFixed(2):Math.round(val).toLocaleString());
+    if(p<1)requestAnimationFrame(tick);
+  })(t0);
+}
+function animate(scope){
+  scope.querySelectorAll('.rv,.hero').forEach((el,i)=>setTimeout(()=>el.classList.add('in'),i*100));
+  scope.querySelectorAll('[data-count]').forEach(el=>{el.textContent=(el.dataset.prefix||'')+'0';countUp(el);});
+  scope.querySelectorAll('.recover .got,.recover .leak,.spendrow .bt i,.pbar .tk i,.pinst .gauge i').forEach(b=>setTimeout(()=>b.style.width=(b.dataset.w||100)+'%',350));
+  scope.querySelectorAll('.ring-fg').forEach(r=>{
+    const len=2*Math.PI*34,pct=+r.dataset.pct;
+    r.style.strokeDasharray=len;r.style.strokeDashoffset=len;
+    setTimeout(()=>r.style.strokeDashoffset=len*(1-pct/100),400);
+  });
+  scope.querySelectorAll('.pipe.stage').forEach(p=>{p.classList.remove('go');void p.offsetWidth;setTimeout(()=>p.classList.add('go'),420);});
+}
+document.querySelectorAll('.rail-ledger [data-count]').forEach(countUp);
+animate(document.getElementById('s-home'));
+
+/* ===================== magnetic buttons ===================== */
+document.querySelectorAll('.mag').forEach(el=>{
+  el.addEventListener('mousemove',e=>{
+    const r=el.getBoundingClientRect();
+    el.style.transform=`translate(${(e.clientX-r.left-r.width/2)*0.25}px,${(e.clientY-r.top-r.height/2)*0.35}px)`;
+  });
+  el.addEventListener('mouseleave',()=>el.style.transform='');
+});
+
+/* ===================== 3D card tilt ===================== */
+const cc=document.getElementById('cc');
+if(cc){
+  const stg=cc.closest('.dec-r');
+  stg.addEventListener('mousemove',e=>{
+    const r=cc.getBoundingClientRect();
+    const x=(e.clientX-r.left-r.width/2)/r.width,y=(e.clientY-r.top-r.height/2)/r.height;
+    cc.style.transform=`rotateY(${x*12}deg) rotateX(${-y*12}deg) translateZ(20px)`;
+  });
+  stg.addEventListener('mouseleave',()=>cc.style.transform='');
+}
+
+/* ===================== cursor spotlight ===================== */
+(function(){
+  const sp=document.getElementById('spot');let raf;
+  addEventListener('mousemove',e=>{
+    sp.classList.add('on');
+    cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(()=>{
+      sp.style.setProperty('--mx',e.clientX+'px');
+      sp.style.setProperty('--my',e.clientY+'px');
+    });
+  });
+  addEventListener('mouseleave',()=>sp.classList.remove('on'));
+})();
+
+/* ===================== hero scroll parallax ===================== */
+(function(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  let raf;
+  addEventListener('scroll',()=>{
+    cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(()=>{
+      const y=Math.min(scrollY,520);
+      document.querySelectorAll('.screen.active .hero,.screen.active .ohead,.screen.active .phead').forEach(h=>{
+        h.style.transform='translateY('+(y*0.16)+'px)';
+        h.style.opacity=String(Math.max(0,1-y/440));
+      });
+    });
+  },{passive:true});
+})();
+
+/* ===================== OPTIMIZER — interactive ===================== */
+(function(){
+  const D={
+    groceries:{nm:'Scotiabank <i>Gold Amex</i>',meta:'Scene+ &middot; 5&times; groceries &middot; $50k annual cap',
+      pipe:[['Earn','5&times;','Scene+'],['Points','400','on $80'],['CPP','1.4&cent;','redeem'],['Net','$5.60','real CAD']],val:560,sub:'+$1.20 vs next best',
+      race:[['02','American Express Cobalt','MR &middot; 1&times; groceries',58,'80 pts','$4.40'],
+            ['03','PC World Elite Mastercard','PC Optimum &middot; 30 pts/$',46,'2,400 pts','$2.40'],
+            ['04','CIBC Dividend Visa Infinite','4% cash &middot; capped',39,'no pts','$3.20'],
+            ['05','Tangerine Money-Back','2% chosen category',22,'no pts','$1.60']]},
+    dining:{nm:'American Express <i>Cobalt</i>',meta:'Membership Rewards &middot; no cap on dining &middot; transfer to Aeroplan @ 2.1&cent;',
+      pipe:[['Earn','5&times;','MR points'],['Points','400','on $80'],['CPP','2.1&cent;','Aeroplan'],['Net','$8.40','real CAD']],val:840,sub:'+$2.84 vs next best',
+      race:[['02','Scotiabank Gold Amex','Scene+ &middot; $50k annual cap',66,'400 pts','$5.56'],
+            ['03','CIBC Aventura Visa Infinite','Aventura &middot; 1.25&times; dining',25,'100 pts','$2.10'],
+            ['04','Tangerine Money-Back','Cash back &middot; chosen category',19,'no pts','$1.60'],
+            ['05','RBC Avion Visa Infinite','Avion &middot; 1&times; base',14,'80 pts','$1.20']]},
+    travel:{nm:'Scotiabank <i>Passport</i> VI',meta:'Scene+ &middot; 3&times; travel &middot; no FX fee &middot; lounge access',
+      pipe:[['Earn','3&times;','Scene+'],['Points','240','on $80'],['CPP','1.5&cent;','partners'],['Net','$3.60','real CAD']],val:360,sub:'+$0.40 vs next best',
+      race:[['02','American Express Platinum','MR &middot; 2&times; travel',82,'160 pts','$3.20'],
+            ['03','CIBC Aventura Visa Infinite','Aventura &middot; 2&times; travel',74,'160 pts','$2.90'],
+            ['04','RBC Avion Visa Infinite','Avion &middot; 1.25&times;',38,'100 pts','$1.50'],
+            ['05','Amex Cobalt','MR &middot; 2&times; travel',71,'160 pts','$2.80']]},
+    gas:{nm:'CIBC <i>Dividend</i> VI',meta:'4% cash back on gas &middot; capped at $80k spend',
+      pipe:[['Earn','4%','cash'],['Cash','$3.20','on $80'],['CPP','1.0&cent;','direct'],['Net','$3.20','real CAD']],val:320,sub:'+$1.20 vs next best',
+      race:[['02','Tangerine Money-Back','2% chosen category',62,'no pts','$2.00'],
+            ['03','Scotiabank Gold Amex','Scene+ &middot; 1&times;',31,'80 pts','$1.12'],
+            ['04','Amex Cobalt','MR &middot; 1&times;',28,'80 pts','$1.00'],
+            ['05','RBC Avion Visa','Avion &middot; 1&times;',22,'80 pts','$0.96']]},
+    pharmacy:{nm:'PC World Elite <i>Mastercard</i>',meta:'PC Optimum &middot; 45 pts/$ at Shoppers Drug Mart',
+      pipe:[['Earn','45/$','PC Optimum'],['Points','3,600','on $80'],['CPP','0.1&cent;','PC redeem'],['Net','$3.60','real CAD']],val:360,sub:'+$2.00 vs next best',
+      race:[['02','Amex Cobalt','MR &middot; 2&times; drugstore',44,'160 pts','$1.60'],
+            ['03','Scotiabank Gold Amex','Scene+ &middot; 1&times;',31,'80 pts','$1.12'],
+            ['04','CIBC Dividend VI','2% cash',28,'no pts','$1.60'],
+            ['05','Tangerine Money-Back','2% chosen',26,'no pts','$1.60']]},
+    recurring:{nm:'American Express <i>Cobalt</i>',meta:'Membership Rewards &middot; 2&times; recurring bills &middot; transfer @ 2.1&cent;',
+      pipe:[['Earn','2&times;','MR points'],['Points','160','on $80'],['CPP','2.1&cent;','Aeroplan'],['Net','$3.36','real CAD']],val:336,sub:'+$1.36 vs next best',
+      race:[['02','Scotiabank Gold Amex','Scene+ &middot; 1&times;',33,'80 pts','$1.12'],
+            ['03','Tangerine Money-Back','2% chosen category',47,'no pts','$1.60'],
+            ['04','RBC Avion Visa Infinite','Avion &middot; 1&times;',22,'80 pts','$1.00'],
+            ['05','CIBC Dividend VI','1% cash',12,'no pts','$0.80']]},
+    entertainment:{nm:'Scotiabank <i>Gold Amex</i>',meta:'Scene+ &middot; 5&times; entertainment &middot; Cineplex bonus',
+      pipe:[['Earn','5&times;','Scene+'],['Points','400','on $80'],['CPP','1.4&cent;','redeem'],['Net','$5.60','real CAD']],val:560,sub:'+$3.60 vs next best',
+      race:[['02','Amex Cobalt','MR &middot; 3&times; streaming',54,'240 pts','$5.04'],
+            ['03','CIBC Aventura VI','1.25&times;',18,'100 pts','$1.50'],
+            ['04','Tangerine Money-Back','2% chosen',16,'no pts','$1.60'],
+            ['05','RBC Avion Visa','1&times;',13,'80 pts','$1.20']]},
+    other:{nm:'Rogers <i>World Elite</i> MC',meta:'1.5% cash on everything &middot; 3% on US-dollar spend',
+      pipe:[['Earn','1.5%','cash'],['Cash','$1.20','on $80'],['CPP','1.0&cent;','direct'],['Net','$1.20','real CAD']],val:120,sub:'+$0.20 vs next best',
+      race:[['02','Tangerine Money-Back','2% chosen / 0.5% rest',42,'no pts','$1.00'],
+            ['03','Amex Cobalt','MR &middot; 1&times;',38,'80 pts','$1.00'],
+            ['04','Scotiabank Gold Amex','Scene+ &middot; 1&times;',31,'80 pts','$0.96'],
+            ['05','RBC Avion Visa','Avion &middot; 1&times;',28,'80 pts','$0.92']]}
+  };
+  const cats=document.getElementById('cats'),race=document.getElementById('race');
+  const wRk=document.getElementById('w-rk'),wNm=document.getElementById('w-nm'),wMeta=document.getElementById('w-meta'),
+        wPipe=document.getElementById('w-pipe'),wVal=document.getElementById('w-val'),wSub=document.getElementById('w-sub'),
+        winner=document.getElementById('winner');
+  function render(key,label){
+    const d=D[key];
+    wRk.innerHTML='&#9733; Winner &middot; '+label+' &middot; $80';
+    wNm.innerHTML=d.nm; wMeta.innerHTML=d.meta;
+    wPipe.innerHTML=d.pipe.map(s=>`<div class="seg"><div class="k">${s[0]}</div><div class="v">${s[1]}</div><div class="x">${s[2]}</div></div>`).join('');
+    wVal.dataset.count=d.val; wVal.textContent='$0'; countUp(wVal);
+    wSub.textContent=d.sub;
+    winner.style.animation='none'; void winner.offsetWidth; winner.style.animation='winpop .6s var(--ease)';
+    wPipe.classList.add('stage');wPipe.classList.remove('go');void wPipe.offsetWidth;setTimeout(()=>wPipe.classList.add('go'),120);
+    winner.classList.remove('flash');void winner.offsetWidth;winner.classList.add('flash');
+    race.innerHTML=d.race.map((r,i)=>`<div class="rrow" style="opacity:0;transform:translateY(14px)">
+      <div class="pos">${r[0]}</div>
+      <div class="who"><div class="nm">${r[1]}</div><div class="pr">${r[2]}</div><div class="barwrap"><i></i></div></div>
+      <div class="pt">${r[4]}</div><div class="val">${r[5]}</div></div>`).join('');
+    [...race.children].forEach((row,i)=>{
+      setTimeout(()=>{
+        row.style.transition='opacity .5s var(--ease),transform .5s var(--ease)';
+        row.style.opacity=1; row.style.transform='none';
+        row.querySelector('.barwrap i').style.width=d.race[i][3]+'%';
+      }, 120+i*90);
+    });
+  }
+  cats.addEventListener('click',e=>{
+    const c=e.target.closest('.cat'); if(!c) return;
+    cats.querySelectorAll('.cat').forEach(x=>x.classList.remove('on'));
+    c.classList.add('on');
+    render(c.dataset.k, c.textContent.trim());
+  });
+  window.__optRender=()=>{const on=cats.querySelector('.cat.on')||cats.querySelector('.cat');render(on.dataset.k,on.textContent.trim());};
+  render('dining','Dining');
+})();
+</script>
+</body>
+</html>

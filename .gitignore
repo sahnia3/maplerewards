@@ -42,3 +42,6 @@ SESSION-BRIEF.pdf
 # Python bytecode caches
 __pycache__/
 *.pyc
+
+# Playwright regenerated output
+frontend/test-results/

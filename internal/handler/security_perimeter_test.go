@@ -155,8 +155,8 @@ func reqWithUser(userID string) *http.Request {
 
 type stubValidator struct{ uid string }
 
-func (s stubValidator) ValidateAccessToken(string) (string, bool, error) {
-	return s.uid, false, nil
+func (s stubValidator) ValidateAccessToken(string) (string, bool, string, error) {
+	return s.uid, false, "", nil
 }
 
 func withBearer(r *http.Request) *http.Request {

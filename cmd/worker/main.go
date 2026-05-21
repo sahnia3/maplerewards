@@ -82,10 +82,11 @@ func main() {
 	redisCache := cache.New(rdb)
 	kb, _ := knowledge.Load("internal/knowledge/rewards.yaml")
 
-	apify := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""))
-	// Worker shares the same SerpAPI monthly free-tier budget as the API; using
-	// the same Redis-backed quota counter keeps both processes honest.
+	// Worker shares the same monthly free-tier budgets as the API; using the
+	// same Redis-backed quota counter keeps both processes honest (the Apify
+	// monthly cap is enforced across API + worker combined).
 	workerQuota := quota.New(rdb)
+	apify := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), workerQuota)
 	serp := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), workerQuota)
 	seatsAero := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
 	awardSearch := service.NewAwardSearchService(apify, seatsAero, serp, walletRepo, kb, redisCache)

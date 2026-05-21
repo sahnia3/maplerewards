@@ -10,12 +10,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// anonChatDailyCap is the per-IP daily message ceiling for unauthenticated
-// chat. Tuned low because anonymous chat is essentially a sales tool — the
-// real product gate is the per-user 1-msg/month free tier behind sign-in.
-// Cap = 5 lets a curious visitor try the bot a few times without giving an
-// attacker a useful denial-of-wallet vector against our Anthropic budget.
-const anonChatDailyCap int64 = 5
+// anonChatMonthlyCap is the per-IP MONTHLY message ceiling for
+// unauthenticated chat. Chat is a paid feature; anonymous access is a tiny
+// taste to drive sign-up, not a free assistant. 2/IP/month (matching the
+// signed-in free tier) keeps anonymous Anthropic spend negligible even at
+// thousands of visitors and removes the denial-of-wallet vector.
+const anonChatMonthlyCap int64 = 2
 
 // checkAnonymousChatQuota enforces a per-client-IP daily ceiling on chat
 // requests for unauthenticated users. Returns true if the request should
@@ -32,24 +32,26 @@ func checkAnonymousChatQuota(w http.ResponseWriter, r *http.Request, rdb *redis.
 		// on a malformed RemoteAddr in some weird deployment.
 		return true
 	}
-	day := time.Now().UTC().Format("2006-01-02")
-	key := fmt.Sprintf("anon_chat_usage:%s:%s", ip, day)
+	month := time.Now().UTC().Format("2006-01")
+	key := fmt.Sprintf("anon_chat_usage:%s:%s", ip, month)
 
 	count, err := rdb.Get(r.Context(), key).Int64()
 	if err != nil && err != redis.Nil {
 		fmt.Printf("warn: redis get anon chat quota: %v\n", err)
 		return true
 	}
-	if count >= anonChatDailyCap {
+	if count >= anonChatMonthlyCap {
 		jsonErrorCode(w, "ANON_CHAT_LIMIT",
-			"Anonymous chat is limited. Sign in for free to keep chatting.",
+			"Anonymous chat is limited. Sign in for free, or upgrade to Pro for unlimited chat.",
 			http.StatusTooManyRequests)
 		return false
 	}
 
 	pipe := rdb.Pipeline()
 	pipe.Incr(r.Context(), key)
-	pipe.Expire(r.Context(), key, 26*time.Hour) // safety buffer past midnight UTC
+	// 32-day TTL so the monthly bucket survives until the calendar month
+	// rolls over, then expires on its own.
+	pipe.Expire(r.Context(), key, 32*24*time.Hour)
 	if _, err := pipe.Exec(r.Context()); err != nil {
 		fmt.Printf("warn: redis incr anon chat quota: %v\n", err)
 	}

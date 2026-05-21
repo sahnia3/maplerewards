@@ -66,6 +66,10 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pro-gate the live Apify scrape (the expensive path). Set server-side
+	// from the verified JWT context — clients cannot forge this.
+	req.IsPro = mw.IsProFromContext(r.Context())
+
 	results, err := h.svc.Search(r.Context(), req)
 	if err != nil {
 		jsonInternalError(w, "award_search.search", err)

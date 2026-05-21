@@ -20,16 +20,22 @@ type ApifyAwardService struct {
 	apiToken string
 	client   *http.Client
 	actorID  string
+	// quota enforces a hard monthly ceiling on paid actor runs (kill-switch
+	// against a bug/spike running unbounded scrapes). May be nil in tests —
+	// nil means the cap is skipped (treated as unlimited).
+	quota QuotaSpender
 }
 
-// NewApifyAwardService creates the Apify award scraper service.
-func NewApifyAwardService(apiToken string) *ApifyAwardService {
+// NewApifyAwardService creates the Apify award scraper service. quotaClient
+// may be nil (tests) — when nil the monthly cap is not enforced.
+func NewApifyAwardService(apiToken string, quotaClient QuotaSpender) *ApifyAwardService {
 	return &ApifyAwardService{
 		apiToken: apiToken,
 		client: &http.Client{
 			Timeout: 120 * time.Second, // Actor runs can take a while
 		},
 		actorID: "igolaizola~flight-award-scraper",
+		quota:   quotaClient,
 	}
 }
 
@@ -156,6 +162,21 @@ func (s *ApifyAwardService) SearchAwards(
 					"startDate", startDate)
 				return nil, fmt.Errorf("apify actor only supports dates within 60 days")
 			}
+		}
+	}
+
+	// Hard monthly ceiling on paid actor runs. Mirrors the SerpAPI gate:
+	// fail CLOSED when the cap is hit (don't run another paid scrape), but
+	// fail OPEN on a quota-infra error (a Redis blip shouldn't take the
+	// premium feature down). Checked here — after the cheap validations,
+	// before the expensive actor run.
+	if s.quota != nil {
+		_, exhausted, qErr := s.quota.Spend(ctx, "apify")
+		if qErr != nil {
+			slog.Warn("[apify-awards] quota check failed, allowing request", "err", qErr)
+		} else if exhausted {
+			slog.Warn("[apify-awards] monthly Apify cap reached — skipping scrape")
+			return nil, ErrQuotaExhausted
 		}
 	}
 

@@ -12,11 +12,12 @@ type contextKey string
 const (
 	userIDKey contextKey = "userID"
 	isProKey  contextKey = "isPro"
+	planKey   contextKey = "plan"
 )
 
 // TokenValidator validates JWT access tokens.
 type TokenValidator interface {
-	ValidateAccessToken(tokenString string) (userID string, isPro bool, err error)
+	ValidateAccessToken(tokenString string) (userID string, isPro bool, plan string, err error)
 }
 
 // JWTOptional extracts user info from Bearer token if present.
@@ -31,7 +32,7 @@ func JWTOptional(validator TokenValidator) func(http.Handler) http.Handler {
 				return
 			}
 
-			userID, isPro, err := validator.ValidateAccessToken(token)
+			userID, isPro, plan, err := validator.ValidateAccessToken(token)
 			if err != nil {
 				// Token present but invalid — still allow request (anonymous fallback)
 				next.ServeHTTP(w, r)
@@ -40,6 +41,7 @@ func JWTOptional(validator TokenValidator) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)
 			ctx = context.WithValue(ctx, isProKey, isPro)
+			ctx = context.WithValue(ctx, planKey, plan)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -56,7 +58,7 @@ func JWTRequired(validator TokenValidator) func(http.Handler) http.Handler {
 				return
 			}
 
-			userID, isPro, err := validator.ValidateAccessToken(token)
+			userID, isPro, plan, err := validator.ValidateAccessToken(token)
 			if err != nil {
 				writeAuthError(w, "UNAUTHORIZED", "invalid or expired token", http.StatusUnauthorized)
 				return
@@ -64,6 +66,7 @@ func JWTRequired(validator TokenValidator) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)
 			ctx = context.WithValue(ctx, isProKey, isPro)
+			ctx = context.WithValue(ctx, planKey, plan)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -84,6 +87,16 @@ func IsProFromContext(ctx context.Context) bool {
 		return v
 	}
 	return false
+}
+
+// PlanFromContext extracts the persisted plan string (free|pro|pro_plus|
+// lifetime) from request context. Empty for anonymous users or legacy
+// tokens minted before the plan claim — callers fall back to is_pro.
+func PlanFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(planKey).(string); ok {
+		return v
+	}
+	return ""
 }
 
 func extractBearerToken(r *http.Request) string {

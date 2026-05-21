@@ -12,18 +12,34 @@ package quota
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 // FreeTierLimits maps provider names to monthly call budgets. A limit of 0
-// means "unlimited" (used for Apify where each actor run has its own
-// per-run pricing rather than a monthly call cap).
+// means "unlimited". Apify now has a hard monthly ceiling (was 0/unlimited)
+// — a kill-switch so a bug or traffic spike can never run an unbounded
+// number of paid scrapes. The default is generous headroom over expected
+// Pro volume (Pro-gated + 6h/7d cached), not a usage throttle; tune via the
+// env vars below without a redeploy.
 var FreeTierLimits = map[string]int{
-	"serpapi": 250,
-	"apify":   0,
-	"tavily":  1000,
+	"serpapi": envInt("SERPAPI_MONTHLY_CAP", 250),
+	"apify":   envInt("APIFY_MONTHLY_CAP", 2500),
+	"tavily":  envInt("TAVILY_MONTHLY_CAP", 1000),
+}
+
+// envInt reads a positive integer override from the environment, falling
+// back to def when unset or invalid.
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return def
 }
 
 // CounterTTL is how long a monthly counter key persists. 32 days guarantees

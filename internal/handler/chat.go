@@ -23,10 +23,11 @@ import (
 )
 
 // freeChatMonthlyCap is the per-user monthly cap on AI chat messages for the
-// free tier. Pro users are unlimited (no Redis check). Bumped from 1 to 5
-// as part of the chat-history backed conversations release — users were
-// signing up, burning the single message, and never coming back.
-const freeChatMonthlyCap int64 = 5
+// free tier. Pro users are unlimited (no Redis check). Set to 2: chat is a
+// paid feature; free users get a minimal taste (a question or two a month)
+// to drive conversion, not an ongoing free assistant. Deliberately low to
+// keep free-tier Anthropic spend negligible at scale.
+const freeChatMonthlyCap int64 = 2
 
 // chatRequestBody is the wire shape for /chat and /chat/stream POSTs. It
 // extends service.ChatRequest with an optional conversation_id so authenticated
@@ -96,6 +97,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// Pro gating: check monthly usage for non-pro users
 	isPro := mw.IsProFromContext(r.Context())
+	plan := mw.PlanFromContext(r.Context()) // drives per-tier AI token budget
 	userID := mw.UserIDFromContext(r.Context())
 
 	// Anonymous-user spam guard: cap by client IP so an attacker can't burn
@@ -140,7 +142,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	// against runaway-loop abuse that would burn the Anthropic monthly budget
 	// even within the free-tier message count. Pro users have more headroom.
 	if h.budget != nil {
-		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, isPro)
+		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
 			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
 		} else if exhausted {
@@ -188,7 +190,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
 		metrics.AddAnthropicTokens(inTok, outTok)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, inTok+outTok); berr != nil {
+		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, inTok+outTok); berr != nil {
 			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
 		}
 	}
@@ -264,6 +266,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isPro := mw.IsProFromContext(r.Context())
+	plan := mw.PlanFromContext(r.Context()) // drives per-tier AI token budget
 	userID := mw.UserIDFromContext(r.Context())
 
 	// Anonymous-IP cap mirrors Chat(): protect Anthropic spend from anonymous spam.
@@ -299,7 +302,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Daily token budget gate, mirrors the non-streaming Chat handler.
 	if h.budget != nil {
-		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, isPro)
+		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
 			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
 		} else if exhausted {
@@ -404,7 +407,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
 		metrics.AddAnthropicTokens(inTok, outTok)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, isPro, inTok+outTok); berr != nil {
+		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, inTok+outTok); berr != nil {
 			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
 		}
 	}

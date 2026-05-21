@@ -72,25 +72,31 @@ export default function TermsPage() {
           <p>Where we integrate with third parties (Anthropic, Stripe, Apify, SerpAPI, airlines you link to from comparison pages) we are not responsible for outages, errors, or changes in those services. We do our best to graceful-degrade.</p>
         </Section>
 
-        <Section title="9. Warranties and liability">
+        <Section title="9. Affiliate disclosure">
+          <p>Maple Rewards earns money in two ways: paid Pro subscriptions, and affiliate commissions. Some credit-card links on the site — the &ldquo;Apply&rdquo; buttons on card pages and comparisons — are affiliate links. If you click one and are approved for the card, the issuer or an affiliate network may pay us a referral commission. This comes at no extra cost to you and never changes the price, rewards, or terms of the card.</p>
+          <p><strong>Our recommendations are not influenced by commission.</strong> The optimizer ranks cards purely on the math — earn rates, caps, fees, and your spending. A card we earn nothing on can and does rank above a card we&rsquo;re paid for. Cards with no affiliate relationship are shown and ranked identically; we do not hide or down-rank them. Where a card has no affiliate link configured, the &ldquo;Apply&rdquo; action simply points to the issuer&rsquo;s own page and we earn nothing.</p>
+          <p>Affiliate clicks are logged for our own revenue attribution and analytics only. We do not sell this data. See our <Link href="/privacy" style={linkStyle}>Privacy Policy</Link> for what is stored.</p>
+        </Section>
+
+        <Section title="10. Warranties and liability">
           <p><strong>The service is provided &ldquo;as is.&rdquo;</strong> We make no warranties of merchantability, fitness for a particular purpose, or non-infringement. Use at your own risk.</p>
           <p><strong>Our liability is capped</strong> at the greater of (a) the amount you have paid us in the 12 months preceding the claim, or (b) CAD $100. We are not liable for indirect, consequential, special, or punitive damages.</p>
           <p>Nothing in these terms limits liability for fraud, willful misconduct, or anything else that cannot be limited under applicable law.</p>
         </Section>
 
-        <Section title="10. Indemnity">
+        <Section title="11. Indemnity">
           <p>You agree to indemnify and hold Maple Rewards harmless from any third-party claim arising out of (a) your violation of these terms, (b) your violation of applicable law, or (c) information you submitted to the service that infringed someone else&rsquo;s rights.</p>
         </Section>
 
-        <Section title="11. Changes to these terms">
+        <Section title="12. Changes to these terms">
           <p>We may update these terms. Material changes will be announced via email and an in-app banner 30 days before they take effect. Continued use after a change constitutes acceptance.</p>
         </Section>
 
-        <Section title="12. Governing law">
+        <Section title="13. Governing law">
           <p>These terms are governed by the laws of the Province of Ontario, Canada. Disputes will be heard in the courts of Toronto, Ontario.</p>
         </Section>
 
-        <Section title="13. Contact">
+        <Section title="14. Contact">
           <p>Questions, complaints, or refund requests: <a href="mailto:hello@maplerewards.app" style={linkStyle}>hello@maplerewards.app</a>. We respond within 5 business days.</p>
         </Section>
 

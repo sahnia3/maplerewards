@@ -7,30 +7,44 @@ import (
 	"time"
 )
 
-// limitFor must return the right ceiling per tier. A regression here would
-// silently give free users Pro-sized budgets (cost blowout) or throttle Pro
-// users (support tickets).
-func TestAIBudget_LimitForTier(t *testing.T) {
-	if limitFor(false) != FreeDailyTokenBudget {
-		t.Fatalf("free tier limit = %d, want %d", limitFor(false), FreeDailyTokenBudget)
+// limitForPlan must resolve the exact per-tier ceiling from the plan
+// string. A regression here is a direct cost blowout (free/lifetime users
+// getting Pro+-sized budgets) or a support fire (Pro users throttled).
+func TestAIBudget_LimitForPlan(t *testing.T) {
+	cases := []struct {
+		plan  string
+		isPro bool
+		want  int
+	}{
+		{"free", false, FreeDailyTokenBudget},
+		{"", false, FreeDailyTokenBudget},                 // anon / unknown, not pro
+		{"pro", true, ProDailyTokenBudget},                // 100K
+		{"pro_plus", true, ProPlusDailyTokenBudget},       // 200K
+		{"lifetime", true, LifetimeDailyTokenBudget},      // 150K — below pro_plus on purpose
+		{"", true, ProDailyTokenBudget},                   // legacy token: is_pro but no plan → Pro, never up-leveled
 	}
-	if limitFor(true) != ProDailyTokenBudget {
-		t.Fatalf("pro tier limit = %d, want %d", limitFor(true), ProDailyTokenBudget)
-	}
-	if FreeDailyTokenBudget >= ProDailyTokenBudget {
-		t.Fatal("free budget must be strictly smaller than pro budget")
+	for _, c := range cases {
+		if got := limitForPlan(c.plan, c.isPro); got != c.want {
+			t.Errorf("limitForPlan(%q,%v) = %d, want %d", c.plan, c.isPro, got, c.want)
+		}
 	}
 }
 
-// The tier ladder must be strictly increasing Free < Pro < Pro Plus, and
-// limitFor(bool) must agree with the explicit tier function.
-func TestAIBudget_TierLadder(t *testing.T) {
-	if !(limitForTier(TierFree) < limitForTier(TierPro) && limitForTier(TierPro) < limitForTier(TierProPlus)) {
-		t.Fatalf("tier ladder not strictly increasing: free=%d pro=%d proplus=%d",
-			limitForTier(TierFree), limitForTier(TierPro), limitForTier(TierProPlus))
+// Concrete ceilings + ordering contract: Free < Pro < Lifetime < Pro Plus.
+// Lifetime is intentionally BELOW Pro Plus (one-time payment, no recurring
+// revenue ⇒ tighter cap) but ABOVE Pro is NOT required — just a sane ladder.
+func TestAIBudget_TierNumbers(t *testing.T) {
+	if FreeDailyTokenBudget != 15_000 ||
+		ProDailyTokenBudget != 100_000 ||
+		ProPlusDailyTokenBudget != 200_000 ||
+		LifetimeDailyTokenBudget != 150_000 {
+		t.Fatalf("tier budgets drifted: free=%d pro=%d proplus=%d lifetime=%d",
+			FreeDailyTokenBudget, ProDailyTokenBudget, ProPlusDailyTokenBudget, LifetimeDailyTokenBudget)
 	}
-	if limitFor(false) != limitForTier(TierFree) || limitFor(true) != limitForTier(TierPro) {
-		t.Fatal("limitFor(bool) shim must agree with limitForTier")
+	if !(FreeDailyTokenBudget < ProDailyTokenBudget &&
+		ProDailyTokenBudget < LifetimeDailyTokenBudget &&
+		LifetimeDailyTokenBudget < ProPlusDailyTokenBudget) {
+		t.Fatal("expected ladder Free < Pro < Lifetime < Pro Plus")
 	}
 }
 
@@ -82,14 +96,14 @@ func TestAIBudget_SecondsUntilMidnight(t *testing.T) {
 // because Redis is down. CheckBudget returns not-exhausted; Consume no-ops.
 func TestAIBudget_NilFailsOpen(t *testing.T) {
 	var b *AIBudget // nil — simulates "Redis not wired"
-	used, rem, exhausted, err := b.CheckBudget(context.Background(), "u1", false)
+	used, rem, exhausted, err := b.CheckBudget(context.Background(), "u1", "free", false)
 	if err != nil || exhausted {
 		t.Fatalf("nil budget must fail open: used=%d rem=%d exhausted=%v err=%v", used, rem, exhausted, err)
 	}
 	if rem != FreeDailyTokenBudget {
 		t.Fatalf("nil budget should report full free budget remaining, got %d", rem)
 	}
-	if _, _, err := b.Consume(context.Background(), "u1", false, 999); err != nil {
+	if _, _, err := b.Consume(context.Background(), "u1", "free", false, 999); err != nil {
 		t.Fatalf("nil budget Consume must no-op without error, got %v", err)
 	}
 }

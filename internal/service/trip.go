@@ -288,6 +288,10 @@ type travelPricing struct {
 // ── EvaluateTrip ────────────────────────────────────────────────────────────
 
 func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) ([]model.RedemptionOption, error) {
+	// Carry Pro status down to resolveFlightPoints so the live Apify probe
+	// only fires for Pro users (free users get the KB/zone estimate).
+	ctx = withProCtx(ctx, req.IsPro)
+
 	// ── Compute Nights from Date / CheckoutDate ─────────────────────────
 	if req.TripType == "hotel" && req.Date != "" && req.CheckoutDate != "" {
 		checkin, err1 := time.Parse("2006-01-02", req.Date)
@@ -650,10 +654,14 @@ func (s *TripService) resolveFlightPoints(ctx context.Context, yamlKey, slug, or
 		if pts, ok, _ := s.cache.GetApifyFlightMinPoints(ctx, "aeroplan", origin, dest, date, cabin); ok && pts > 0 {
 			return int64(pts), "", 0, 0
 		}
-		// Cache cold — kick off background prime so future calls are warm.
-		// Use a fresh context: the request's ctx dies when EvaluateTrip
-		// returns, and Apify takes 60-120s to complete.
-		go s.primeApifyFlightProbe(origin, dest, date, cabin)
+		// Cache cold. Only Pro users trigger a live (paid) Apify scrape;
+		// free users fall through to the zone-chart estimate below. This
+		// gates the single biggest variable Apify cost.
+		if proFromCtx(ctx) {
+			// Fresh context: the request's ctx dies when EvaluateTrip
+			// returns, and Apify takes 60-120s to complete.
+			go s.primeApifyFlightProbe(origin, dest, date, cabin)
+		}
 	}
 
 	// 1. Try exact route match from kb.Flights
@@ -773,7 +781,10 @@ func (s *TripService) primeApifyFlightProbe(origin, dest, date, cabin string) {
 		return
 	}
 
-	if err := s.cache.SetApifyFlightMinPoints(ctx, "aeroplan", origin, dest, date, cabin, min, 24*time.Hour); err != nil {
+	// 7-day TTL: award point costs are stable week-to-week and this cache is
+	// the main shield against re-running the paid Apify scrape for the same
+	// route. Longer TTL = far fewer scrapes for a small staleness tradeoff.
+	if err := s.cache.SetApifyFlightMinPoints(ctx, "aeroplan", origin, dest, date, cabin, min, 7*24*time.Hour); err != nil {
 		slog.Warn("[trip-apify-prime] cache set failed", "err", err)
 		return
 	}

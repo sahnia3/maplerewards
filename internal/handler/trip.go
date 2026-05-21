@@ -68,6 +68,10 @@ func (h *TripHandler) Evaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pro-gate the live Apify flight probe (set server-side from verified
+	// JWT context — clients cannot forge this).
+	req.IsPro = mw.IsProFromContext(r.Context())
+
 	options, err := h.tripSvc.EvaluateTrip(r.Context(), req)
 	if err != nil {
 		jsonInternalError(w, "trip.evaluate", err)

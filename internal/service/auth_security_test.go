@@ -163,7 +163,7 @@ func TestValidateAccessToken_RejectsAlgNone(t *testing.T) {
 		"sub": "u1", "iss": jwtIssuer, "exp": time.Now().Add(time.Hour).Unix(),
 	})
 	s, _ := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
-	if _, _, err := svc.ValidateAccessToken(s); err == nil {
+	if _, _, _, err := svc.ValidateAccessToken(s); err == nil {
 		t.Fatal("alg=none token must be rejected")
 	}
 }
@@ -175,7 +175,7 @@ func TestValidateAccessToken_RejectsMissingExp(t *testing.T) {
 		"sub": "u1", "iss": jwtIssuer, // no exp
 	})
 	s, _ := tok.SignedString([]byte(secret))
-	if _, _, err := svc.ValidateAccessToken(s); err == nil {
+	if _, _, _, err := svc.ValidateAccessToken(s); err == nil {
 		t.Fatal("token without exp must be rejected (WithExpirationRequired)")
 	}
 }
@@ -187,7 +187,7 @@ func TestValidateAccessToken_RejectsWrongIssuer(t *testing.T) {
 		"sub": "u1", "iss": "some-other-service", "exp": time.Now().Add(time.Hour).Unix(),
 	})
 	s, _ := tok.SignedString([]byte(secret))
-	if _, _, err := svc.ValidateAccessToken(s); err == nil {
+	if _, _, _, err := svc.ValidateAccessToken(s); err == nil {
 		t.Fatal("token with a foreign issuer must be rejected")
 	}
 }
@@ -199,7 +199,7 @@ func TestValidateAccessToken_RejectsExpired(t *testing.T) {
 		"sub": "u1", "iss": jwtIssuer, "exp": time.Now().Add(-time.Hour).Unix(),
 	})
 	s, _ := tok.SignedString([]byte(secret))
-	if _, _, err := svc.ValidateAccessToken(s); err == nil {
+	if _, _, _, err := svc.ValidateAccessToken(s); err == nil {
 		t.Fatal("expired token must be rejected")
 	}
 }
@@ -208,13 +208,16 @@ func TestValidateAccessToken_AcceptsValid(t *testing.T) {
 	secret := "test-jwt-secret-at-least-32-bytes-long-xx"
 	svc := newTestAuthService(&configurableAuthRepo{})
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": "u1", "is_pro": true, "iss": jwtIssuer,
+		"sub": "u1", "is_pro": true, "plan": "pro_plus", "iss": jwtIssuer,
 		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 	s, _ := tok.SignedString([]byte(secret))
-	uid, isPro, err := svc.ValidateAccessToken(s)
+	uid, isPro, plan, err := svc.ValidateAccessToken(s)
 	if err != nil {
 		t.Fatalf("a well-formed token must validate, got %v", err)
+	}
+	if plan != "pro_plus" {
+		t.Fatalf("plan claim not extracted: got %q want pro_plus", plan)
 	}
 	if uid != "u1" || !isPro {
 		t.Fatalf("claims not extracted correctly: uid=%q isPro=%v", uid, isPro)
