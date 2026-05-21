@@ -15,9 +15,16 @@ CREATE TABLE IF NOT EXISTS loyalty_accounts (
     last_activity   DATE,                          -- for inactivity-based expiry
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (user_id, program_slug, COALESCE(account_label, ''))
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- One row per (user, program, label). account_label is nullable, so the
+-- uniqueness key must coalesce it — and a UNIQUE constraint cannot carry an
+-- expression, so this is a UNIQUE INDEX (the form already deployed). The prior
+-- inline `UNIQUE (..., COALESCE(account_label,''))` was invalid SQL and broke a
+-- from-scratch migration of a fresh database.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_accounts_unique
+    ON loyalty_accounts (user_id, program_slug, COALESCE(account_label, ''));
 
 CREATE INDEX IF NOT EXISTS idx_loyalty_accounts_user
     ON loyalty_accounts(user_id);
