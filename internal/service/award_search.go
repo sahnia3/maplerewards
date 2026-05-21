@@ -71,27 +71,31 @@ func NewAwardSearchService(
 	}
 }
 
-// seatsAeroSources are the loyalty program IDs supported by Seats.aero.
-// These are passed to the Seats.aero `sources` parameter.
+// seatsAeroSources are the VALID Seats.aero `sources` IDs we query. Seats.aero
+// is a fast JSON API (~2s) — one call covers every source listed here at no
+// extra latency — so unlike the Apify scraper there is no reason to trim it.
 //
-// Trimmed to the 6 programs that matter for ~95% of Canadian award queries.
-// Apify actor runtime scales linearly with issuer count — 14 issuers took
-// 110+ seconds and timed out the chat dispatcher. Six finishes in 25-40s,
-// covering: Aeroplan (Canadian flag program), Avios (RBC Avion 1:1 partner),
-// Flying Blue (Amex MR 1:1), United (Aeroplan Star partner), Virgin Atlantic
-// (Amex MR sweet spot), Lufthansa (Star Alliance backup).
-//
-// Programs dropped: Delta/American/Alaska/Singapore/Emirates/Turkish/Qatar/
-// Etihad/EuroBonus — viable for niche routes but marginal for Canadian Toronto-
-// out flights. The LLM still sees them in CANONICAL PROGRAM SLUGS and can
-// answer with YAML data; they just don't get live-scraped.
+// The previous 6-entry list was an Apify-era hand-me-down and was actively
+// wrong for Seats.aero: "avios" and "lufthansa" are NOT Seats.aero source IDs
+// (Seats.aero indexes BA award space under partner programs, not "avios"; M&M
+// isn't indexed at all), so those two silently returned nothing — which is
+// why a Mumbai→Toronto business search only ever surfaced Aeroplan + United
+// even though Etihad had real space (founder-reported, confirmed via the live
+// partner API). This is the full set of premium-cabin programs a Canadian
+// points-holder can realistically transfer into or book through, so the user
+// sees the whole landscape (Star Alliance, SkyTeam, oneworld, EK/EY/SQ).
 var seatsAeroSources = []string{
-	"aeroplan",
-	"flyingblue",
-	"avios",
-	"united",
-	"virginatlantic",
-	"lufthansa",
+	"aeroplan", "united", "flyingblue", "virginatlantic", "eurobonus",
+	"etihad", "emirates", "qatar", "singapore", "lifemiles",
+	"alaska", "american", "delta", "turkish", "qantas",
+}
+
+// apifyAwardSources is the SMALL list passed to the Apify scraper. Apify
+// runtime scales linearly with issuer count (14 issuers → 110s+ timeout), so
+// it stays trimmed to the highest-yield Canadian programs. Apify is a Pro-only
+// supplementary source; Seats.aero (above) is the primary breadth source.
+var apifyAwardSources = []string{
+	"aeroplan", "united", "flyingblue", "virginatlantic",
 }
 
 // issuerProgramName maps Seats.aero source slugs to user-friendly names.
@@ -111,6 +115,8 @@ var issuerProgramName = map[string]string{
 	"turkish":        "Turkish Miles&Smiles",
 	"qatar":          "Qatar Privilege Club",
 	"etihad":         "Etihad Guest",
+	"lifemiles":      "Avianca LifeMiles",
+	"qantas":         "Qantas Frequent Flyer",
 	// Legacy slug alias
 	"flying-blue": "Flying Blue (Air France/KLM)",
 }
@@ -235,7 +241,7 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 			strings.ToUpper(req.Destination),
 			startDate, endDate,
 			req.Cabin,
-			seatsAeroSources, // reuse same issuer list
+			apifyAwardSources, // small list — Apify scraper scales w/ issuer count
 		)
 		if apifyErr != nil {
 			slog.Warn("[award-search] apify failed", "err", apifyErr)
