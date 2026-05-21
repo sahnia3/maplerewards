@@ -101,8 +101,12 @@ func TestSearchFlightsReq_RoundTripParams(t *testing.T) {
 	if got := q.Get("outbound_date"); got != "2026-07-15" {
 		t.Errorf("outbound_date = %q, want 2026-07-15", got)
 	}
-	if got := q.Get("adults"); got != "2" {
-		t.Errorf("adults = %q, want 2", got)
+	// adults must NOT be set to the passenger count: Google would then return
+	// the GROUP total, which callers already multiply by passengers (double-
+	// count → inflated CPP). We always price per-person (adults defaults to 1)
+	// and scale by passengers downstream. See serpapi.go SearchFlightsReq.
+	if got := q.Get("adults"); got != "" {
+		t.Errorf("adults = %q, want unset (per-person pricing)", got)
 	}
 	if !strings.Contains(parsed.Path, "/search.json") {
 		t.Errorf("path = %q, want it to contain /search.json", parsed.Path)

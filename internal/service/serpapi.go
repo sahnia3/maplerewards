@@ -177,9 +177,12 @@ func (s *SerpAPIService) SearchFlightsReq(
 	if roundTrip {
 		params.Set("return_date", req.ReturnDate)
 	}
-	if req.Passengers > 1 {
-		params.Set("adults", fmt.Sprintf("%d", req.Passengers))
-	}
+	// Always price PER PERSON (adults defaults to 1). Previously we set
+	// adults=passengers, but Google then returns the GROUP total, which the
+	// callers (pickCashPrice, EvaluateTrip) ALREADY multiply by passengers —
+	// double-counting cash and inflating CPP ~Npax×. Per-person × passengers
+	// (done downstream) matches the per-person points × passengers, so CPP is
+	// passenger-independent and correct. Single-pax was always fine.
 
 	searchURL := "https://serpapi.com/search.json?" + params.Encode()
 

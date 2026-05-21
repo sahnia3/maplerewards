@@ -393,6 +393,16 @@ func (s *BillingService) handleSubscriptionUpdated(ctx context.Context, data jso
 	var sub struct {
 		Customer string `json:"customer"`
 		Status   string `json:"status"`
+		// Line items carry the current price — needed to detect a portal
+		// plan switch (Pro ↔ Pro Plus) which fires subscription.updated with
+		// status still "active" but a different price.
+		Items struct {
+			Data []struct {
+				Price struct {
+					ID string `json:"id"`
+				} `json:"price"`
+			} `json:"data"`
+		} `json:"items"`
 	}
 	if err := json.Unmarshal(data, &sub); err != nil {
 		return fmt.Errorf("parse subscription: %w", err)
@@ -437,6 +447,28 @@ func (s *BillingService) handleSubscriptionUpdated(ctx context.Context, data jso
 		// next request must refresh and pick up is_pro=false from the DB.
 		if err := s.repo.RevokeAllUserTokens(ctx, user.ID); err != nil {
 			slog.Warn("failed to revoke tokens on downgrade", "user_id", user.ID, "err", err)
+		}
+	}
+
+	// Sync the plan tier from the subscription's current price so a Billing
+	// Portal plan switch (Pro ↔ Pro Plus) actually moves entitlements (AI
+	// budget, PLUS badge) — not just is_pro. Only when the subscription still
+	// confers Pro access; subscription.deleted reverts to free, and lifetime
+	// returned earlier. Skip the write when the tier is unchanged.
+	if isPro && len(sub.Items.Data) > 0 {
+		var plan string
+		switch sub.Items.Data[0].Price.ID {
+		case s.priceProPlus:
+			plan = "pro_plus"
+		case s.pricePro:
+			plan = "pro"
+		}
+		if plan != "" && plan != user.Plan {
+			if err := s.repo.SetUserPlan(ctx, user.ID, plan); err != nil {
+				slog.Warn("failed to sync plan on subscription update", "user_id", user.ID, "plan", plan, "err", err)
+			} else {
+				slog.Info("plan synced from subscription price", "user_id", user.ID, "from", user.Plan, "to", plan)
+			}
 		}
 	}
 

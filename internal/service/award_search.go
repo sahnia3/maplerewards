@@ -500,13 +500,22 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 // hard-coded seatsAeroSources list — if that ever becomes per-request,
 // hash the sorted slice into the key.
 func awardCacheKey(req model.AwardSearchRequest) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%d:%d",
+	// Tier MUST be part of the key. Pro searches include the live Apify scrape
+	// (gated on req.IsPro in Search); free searches do not. Without this, the
+	// two tiers would share one entry within the 6h TTL — leaking paid Apify
+	// availability to free users, or serving Pro users the degraded free body.
+	tier := "free"
+	if req.IsPro {
+		tier = "pro"
+	}
+	return fmt.Sprintf("%s:%s:%s:%s:%d:%d:%s",
 		strings.ToUpper(req.Origin),
 		strings.ToUpper(req.Destination),
 		req.Date,
 		strings.ToLower(req.Cabin),
 		req.Passengers,
 		req.FlexDays,
+		tier,
 	)
 }
 

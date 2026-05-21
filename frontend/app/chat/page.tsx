@@ -310,7 +310,7 @@ export default function ChatPage() {
               Upgrade for <span style={{ fontStyle: "italic" }}>unlimited</span> editor access.
             </h3>
             <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", marginBottom: 18, fontSize: 15 }}>
-              Free users get one message per month. Pro members get the full concierge.
+              Free users get 2 messages per month. Pro members get the full concierge.
             </p>
             <Link
               href="/pricing"
@@ -399,7 +399,7 @@ export default function ChatPage() {
                     </Link>
                   </>
                 ) : (
-                  <>Free tier · 5 messages/month · upgrade for unlimited</>
+                  <>Free tier · 2 messages/month · upgrade for unlimited</>
                 )}
               </span>
             )}

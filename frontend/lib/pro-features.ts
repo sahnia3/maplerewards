@@ -34,7 +34,7 @@ export const PRO_FEATURES = {
   // Unlimited chat
   unlimitedChat: {
     label: "Unlimited AI Chat",
-    description: "Ask unlimited questions. Free tier allows 1 message per month.",
+    description: "Ask unlimited questions. Free tier allows 2 messages per month.",
   },
   // Priority recommendations
   priorityRecommendations: {
@@ -48,7 +48,7 @@ export type ProFeatureKey = keyof typeof PRO_FEATURES;
 // Free tier limits
 export const FREE_LIMITS = {
   maxCards: 3,
-  maxChatMessagesPerMonth: 1,
+  maxChatMessagesPerMonth: 2,
   maxVisibleTransactions: 10,
 } as const;
 
@@ -67,7 +67,7 @@ export const PRICING = {
     price: 0,
     currency: "CAD",
     label: "Free",
-    note: "Optimizer, wallet, 5 AI messages/mo, public tools",
+    note: "Optimizer, wallet, 2 AI messages/mo, public tools",
   },
   pro: {
     price: 39.99,
@@ -143,7 +143,7 @@ export const TIER_GROUPS: TierGroup[] = [
     name: "Travel & advisor",
     features: [
       { name: "Trip planner",                  free: false,             pro: true },
-      { name: "AI chat messages",              free: "1 per month",     pro: "Unlimited" },
+      { name: "AI chat messages",              free: "2 per month",     pro: "Unlimited" },
       { name: "AI Research Mode",              free: false,             pro: true },
       { name: "Priority recommendations",      free: false,             pro: true },
     ],

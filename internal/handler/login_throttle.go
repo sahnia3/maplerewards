@@ -14,8 +14,9 @@ import (
 // (best-effort; a Redis-backed cross-instance limiter is a separate, larger
 // piece of work) and self-pruning.
 type loginThrottle struct {
-	mu  sync.Mutex
-	att map[string]*loginAttempt
+	mu   sync.Mutex
+	att  map[string]*loginAttempt
+	stop chan struct{}
 }
 
 type loginAttempt struct {
@@ -31,8 +32,39 @@ const (
 )
 
 func newLoginThrottle() *loginThrottle {
-	return &loginThrottle{att: make(map[string]*loginAttempt)}
+	t := &loginThrottle{att: make(map[string]*loginAttempt), stop: make(chan struct{})}
+	go t.cleanupLoop()
+	return t
 }
+
+// cleanupLoop periodically evicts stale entries. allowed()'s on-access prune
+// only fires when the SAME key is revisited, so a distributed credential-
+// stuffing spray of many distinct emails (each tried once) would otherwise
+// leave one permanent entry per email → unbounded map growth → memory DoS.
+// This sweeper bounds it, mirroring middleware.RateLimiter's cleanup ticker.
+func (t *loginThrottle) cleanupLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-t.stop:
+			return
+		case now := <-ticker.C:
+			t.mu.Lock()
+			for k, a := range t.att {
+				// Evict only entries with no live lockout AND an elapsed
+				// failure window — i.e. exactly what allowed() would discard.
+				if now.After(a.lockedUntil) && now.Sub(a.windowStart) > loginFailWindow {
+					delete(t.att, k)
+				}
+			}
+			t.mu.Unlock()
+		}
+	}
+}
+
+// Stop halts the cleanup goroutine (graceful shutdown / tests).
+func (t *loginThrottle) Stop() { close(t.stop) }
 
 func normalizeLoginKey(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))

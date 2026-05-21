@@ -236,7 +236,7 @@ function PricingContent() {
                 "Up to 3 cards in wallet",
                 "Spend optimizer",
                 "Card catalog & comparison",
-                "1 AI chat message per month",
+                "2 AI chat messages per month",
                 "Welcome-bonus tracking",
                 "Last 10 spend entries",
               ].map((item) => (
