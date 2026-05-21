@@ -144,13 +144,18 @@ func (r *TransferBonusRepo) MarkSourceDead(ctx context.Context, id string) error
 
 // MarkSourceLive clears the dead flag when a previously-dead citation resolves
 // again (transient block lifted), so the promo can return to the feed.
-func (r *TransferBonusRepo) MarkSourceLive(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `
+// Returns true only when a row actually flipped (was dead, now live) — so the
+// caller's "revived" telemetry counts real recoveries, not every live promo.
+func (r *TransferBonusRepo) MarkSourceLive(ctx context.Context, id string) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
 		UPDATE transfer_bonus_events
 		SET source_dead_at = NULL
 		WHERE id = $1 AND source_dead_at IS NOT NULL
 	`, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // ListForFromProgram returns active promos with a specific source program —

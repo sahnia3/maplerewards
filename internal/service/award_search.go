@@ -130,7 +130,7 @@ var yamlFallbackPrograms = []string{}
 // Search runs both APIs (Seats.aero + Amadeus) in parallel and returns sorted
 // AwardSearchResult. Both APIs are synchronous (~2-5s each), so the total
 // response time is ~3-5 seconds. Successful searches are written to Redis
-// with a 45-minute TTL so repeated probes of a popular route (Aeroplan
+// with a 6-hour TTL so repeated probes of a popular route (Aeroplan
 // alerters, ICP debugging) hit warm cache.
 func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRequest) ([]model.AwardSearchResult, error) {
 	start := time.Now()
@@ -478,8 +478,8 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 	})
 
 	// ── Cache write ───────────────────────────────────────────────────────
-	// Cache even when results is empty — saves a future "no availability"
-	// route from re-burning the Seats.aero/Apify quotas for 45 minutes.
+	// Cache only non-empty result sets (a transient upstream blip returning 0
+	// rows must not be cached as "no availability" for the whole TTL window).
 	if s.cache != nil && len(results) > 0 {
 		if payload, err := json.Marshal(results); err == nil {
 			if err := s.cache.SetAwardSearch(ctx, cacheKey, payload, awardCacheTTL); err != nil {

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"maplerewards/internal/repo"
@@ -167,24 +169,42 @@ func (s *PromoSentinelService) RecheckSources(ctx context.Context, log *slog.Log
 		log.Warn("promo source recheck: list failed", "err", err)
 		return
 	}
-	var dead, revived int
-	for _, ref := range refs {
-		if sourceURLLive(ctx, s.httpClient, ref.SourceURL) {
-			if err := s.repo.MarkSourceLive(ctx, ref.ID); err != nil {
-				log.Warn("promo source recheck: mark live failed", "id", ref.ID, "err", err)
-			} else {
-				revived++
-			}
-			continue
-		}
-		if err := s.repo.MarkSourceDead(ctx, ref.ID); err != nil {
-			log.Warn("promo source recheck: mark dead failed", "id", ref.ID, "err", err)
-		} else {
-			dead++
-			log.Info("promo source recheck: citation no longer resolves, hidden",
-				"id", ref.ID, "url", ref.SourceURL)
-		}
+	// Cap the work per sweep and bound concurrency: each probe can take up to
+	// ~16s (HEAD then range-GET) and the loop used to be fully sequential,
+	// so a large catalog of slow/dead hosts could pin the worker for many
+	// minutes. 6 workers + a 200-row cap keeps a sweep bounded.
+	const maxWorkers, maxPerSweep = 6, 200
+	if len(refs) > maxPerSweep {
+		refs = refs[:maxPerSweep]
 	}
+	var dead, revived int64
+	sem := make(chan struct{}, maxWorkers)
+	var wg sync.WaitGroup
+	for _, ref := range refs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(ref repo.SourceRef) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if sourceURLLive(ctx, s.httpClient, ref.SourceURL) {
+				// Only count a real recovery (dead → live), not every live promo.
+				if flipped, err := s.repo.MarkSourceLive(ctx, ref.ID); err != nil {
+					log.Warn("promo source recheck: mark live failed", "id", ref.ID, "err", err)
+				} else if flipped {
+					atomic.AddInt64(&revived, 1)
+				}
+				return
+			}
+			if err := s.repo.MarkSourceDead(ctx, ref.ID); err != nil {
+				log.Warn("promo source recheck: mark dead failed", "id", ref.ID, "err", err)
+			} else {
+				atomic.AddInt64(&dead, 1)
+				log.Info("promo source recheck: citation no longer resolves, hidden",
+					"id", ref.ID, "url", ref.SourceURL)
+			}
+		}(ref)
+	}
+	wg.Wait()
 	log.Info("promo source recheck done", "checked", len(refs), "newlyDead", dead, "revived", revived)
 }
 

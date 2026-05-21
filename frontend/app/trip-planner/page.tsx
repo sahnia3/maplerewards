@@ -466,7 +466,7 @@ function TripPlannerInner() {
           </div>
 
           {/* Refresh-live action: shown only after a search has produced results.
-              Bypasses the 45-min Redis cache by sending refresh:true, so the
+              Bypasses the 6-hour Redis cache by sending refresh:true, so the
               user can force a fresh upstream pull when they suspect the cached
               cash/points baseline has moved. */}
           {results && results.length > 0 && !loading && (
@@ -475,7 +475,7 @@ function TripPlannerInner() {
                 type="button"
                 onClick={() => search({ refresh: true })}
                 className="mono"
-                title="Bypass the 45-minute Redis cache and call Apify + Google Flights live again."
+                title="Bypass the 6-hour Redis cache and call Apify + Google Flights live again."
                 style={{
                   background: "transparent",
                   border: "1px solid var(--rule)",

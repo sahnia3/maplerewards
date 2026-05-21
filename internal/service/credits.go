@@ -37,6 +37,12 @@ func (s *CreditsService) ListCredits(ctx context.Context, sessionID string) ([]m
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	// GetUserBySession returns (nil,nil) for an unknown session. Guard the
+	// nil-deref (consistent with RecordRedemption/AddUserCredit) — today the
+	// route is shielded by RequireSessionOwner, but don't depend on that.
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
 	out, err := s.creditRepo.ListUserCardCredits(ctx, user.ID)
 	if err != nil {
 		return nil, err
