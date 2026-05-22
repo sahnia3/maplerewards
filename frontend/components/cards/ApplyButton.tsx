@@ -35,7 +35,10 @@ export function ApplyButton({
   const [hovered, setHovered] = useState(false);
   if (!hasAffiliate && !alwaysShow) return null;
 
-  const href = `${BASE_URL}/api/v1/affiliate/click/${cardId}`;
+  // BASE_URL already ends in /api/v1; the affiliate route lives at
+  // /affiliate/click/{id} inside that group. The old double-/api/v1 404'd
+  // every Apply click (and logged no affiliate attribution).
+  const href = `${BASE_URL}/affiliate/click/${cardId}`;
   const padding = size === "sm" ? "8px 14px" : "12px 22px";
   const fontSize = size === "sm" ? 11 : 12;
 

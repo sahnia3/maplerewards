@@ -135,8 +135,15 @@ export default function OnboardingPage() {
   const handleAddTopCards = async () => {
     setAddingCards(true);
     try {
-      for (const score of results.slice(0, 3)) {
-        try { await addCard(score.card_id); } catch {}
+      // Seed the wallet with the cards the user said they CARRY (step 1),
+      // not the recommendations — adding cards they don't hold misrepresents
+      // their wallet. Recommendations stay on-screen as suggestions. Fall
+      // back to the top-3 recs only if (somehow) nothing was selected.
+      const toAdd = selectedCardIds.length > 0
+        ? selectedCardIds
+        : results.slice(0, 3).map((s) => s.card_id);
+      for (const id of toAdd) {
+        try { await addCard(id); } catch {}
       }
       // User finished onboarding — discard the cached form state so a
       // returning user (e.g. resetting their wallet) starts fresh.
@@ -668,7 +675,7 @@ export default function OnboardingPage() {
               {addingCards ? (
                 <><Loader2 size={14} className="animate-spin" /> Adding…</>
               ) : (
-                <>Add top 3 cards to wallet <ChevronRight size={14} /></>
+                <>Add my {selectedCardIds.length > 0 ? selectedCardIds.length : 3} card{(selectedCardIds.length > 0 ? selectedCardIds.length : 3) === 1 ? "" : "s"} to wallet <ChevronRight size={14} /></>
               )}
             </button>
             <Link

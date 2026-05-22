@@ -120,8 +120,12 @@ export default function ApplicationsPage() {
 
   async function handleDelete(id: string) {
     if (!sessionId) return;
-    await deleteApplication(sessionId, id);
-    await refresh();
+    try {
+      await deleteApplication(sessionId, id);
+      await refresh();
+    } catch (e) {
+      setRecordedMsg({ tone: "warn", text: e instanceof Error ? e.message : "Couldn't delete that application. Try again." });
+    }
   }
 
   return (
@@ -129,7 +133,7 @@ export default function ApplicationsPage() {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         <PageMasthead
           eyebrow="Application tracker"
-          eyebrowEnd="Pro · 7-day issuer memory"
+          eyebrowEnd="Pro · issuer cooldown tracker"
           title={<>Stop hitting the <span style={{ fontStyle: "italic" }}>cooldown</span> wall.</>}
           lede="Record every card application here and we'll warn before you apply again inside an issuer's typical cooldown window — RBC 90 days, TD 12 months, BMO 90 days, and so on."
         />

@@ -110,7 +110,7 @@ export default function ChatPage() {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       if (msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro")) {
         setRateLimited(true);
-        setMessages((prev) => [...prev, { role: "assistant", content: "You've used your 5 free messages for the month. Upgrade to Pro for unlimited AI access." }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: "You've used your 2 free messages for the month. Upgrade to Pro for unlimited AI access." }]);
       } else {
         setError(msg);
         setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't process your request. Please try again." }]);

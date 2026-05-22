@@ -371,6 +371,14 @@ func (s *FeedAggregatorService) fetchSource(ctx context.Context, src feedSource)
 
 // ── Parsers ──────────────────────────────────────────────────────────────────
 
+// isHTTPURL reports whether s is an absolute http(s) URL. Used to reject
+// javascript:/data:/relative links + image srcs from feed bodies before they
+// reach the frontend as href/src (React won't block javascript: hrefs).
+func isHTTPURL(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
 func parseRSS(body []byte, sourceName string) []FeedArticle {
 	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
@@ -383,7 +391,11 @@ func parseRSS(body []byte, sourceName string) []FeedArticle {
 	out := make([]FeedArticle, 0, len(feed.Channel.Items))
 	for _, item := range feed.Channel.Items {
 		link := strings.TrimSpace(item.Link)
-		if link == "" {
+		// Drop items whose link isn't http(s): a feed could carry a
+		// javascript:/data: URI that the frontend renders as a clickable
+		// href (React does not block those), → stored XSS off a compromised
+		// or MITM'd feed source.
+		if !isHTTPURL(link) {
 			continue
 		}
 		title := htmlTextOnly(item.Title)
@@ -403,6 +415,9 @@ func parseRSS(body []byte, sourceName string) []FeedArticle {
 		}
 		if image == "" {
 			image = firstImageInHTML(item.Content + item.Description)
+		}
+		if !isHTTPURL(image) {
+			image = "" // never render a non-http image src
 		}
 
 		out = append(out, FeedArticle{
@@ -442,7 +457,7 @@ func parseAtom(body []byte, sourceName string) []FeedArticle {
 			link = entry.Links[0].Href
 		}
 		link = strings.TrimSpace(link)
-		if link == "" {
+		if !isHTTPURL(link) { // reject javascript:/data:/relative — see parseRSS
 			continue
 		}
 
@@ -459,6 +474,9 @@ func parseAtom(body []byte, sourceName string) []FeedArticle {
 		published := parseFeedDate(dateStr)
 
 		image := firstImageInHTML(entry.Content + entry.Summary)
+		if !isHTTPURL(image) {
+			image = ""
+		}
 
 		out = append(out, FeedArticle{
 			ID:          urlHash(link),

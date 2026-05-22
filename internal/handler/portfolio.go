@@ -42,6 +42,10 @@ func (h *PortfolioHandler) GetAnalysis(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "session not found", http.StatusNotFound)
 		return
 	}
+	if user == nil { // unknown/scrubbed session — GetUserBySession returns (nil,nil)
+		jsonError(w, "session not found", http.StatusNotFound)
+		return
+	}
 
 	userCards, err := h.walletRepo.GetUserCards(ctx, user.ID)
 	if err != nil {

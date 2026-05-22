@@ -152,12 +152,6 @@ export default function ComparePage() {
                         className="w-full h-8 pl-6 pr-2 rounded-lg text-[12px] font-medium outline-none input-maple"
                       />
                     </div>
-                    <span
-                      className="mono shrink-0"
-                      style={{ fontSize: 11, width: 60, color: "var(--ink-3)", letterSpacing: "0.04em" }}
-                    >
-                      {cat.name}
-                    </span>
                   </div>
                 ))}
               </div>

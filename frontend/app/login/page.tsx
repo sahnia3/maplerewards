@@ -208,9 +208,11 @@ function LoginForm() {
               marginTop: 18,
             }}
           >
-            <Link href="/forgot-password" style={{ color: "inherit", textDecoration: "underline" }}>
+            {/* Self-serve reset flow is a tracked follow-up; until it ships,
+                route locked-out users to support rather than a dead 404. */}
+            <a href="mailto:hello@maplerewards.app?subject=Password%20reset" style={{ color: "inherit", textDecoration: "underline" }}>
               Forgot password?
-            </Link>
+            </a>
           </p>
         </div>
 

@@ -22,6 +22,8 @@ export function AwardWatchTile({ sessionId, ensureSession }: Props) {
   const [flex, setFlex] = useState("3");
   const [cabin, setCabin] = useState<"economy" | "business" | "first">("business");
   const [maxPoints, setMaxPoints] = useState("80000");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -30,20 +32,33 @@ export function AwardWatchTile({ sessionId, ensureSession }: Props) {
   useEffect(() => { load(); }, [load]);
 
   async function add() {
-    const sid = await ensureSession();
-    await createAwardWatch(sid, {
-      origin, destination, depart_date: date,
-      flex_days: parseInt(flex) || 3, cabin,
-      max_points: parseInt(maxPoints) || null, program_slug: "aeroplan",
-    });
-    setShowForm(false);
-    load();
+    setErr(null);
+    setBusy(true);
+    try {
+      const sid = await ensureSession();
+      await createAwardWatch(sid, {
+        origin, destination, depart_date: date,
+        flex_days: parseInt(flex) || 3, cabin,
+        max_points: parseInt(maxPoints) || null, program_slug: "aeroplan",
+      });
+      setShowForm(false);
+      load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't create the watch. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function remove(id: string) {
     if (!sessionId) return;
-    await deleteAwardWatch(sessionId, id);
-    load();
+    setErr(null);
+    try {
+      await deleteAwardWatch(sessionId, id);
+      load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't remove the watch. Try again.");
+    }
   }
 
   return (
@@ -112,9 +127,12 @@ export function AwardWatchTile({ sessionId, ensureSession }: Props) {
               </select>
               <input type="number" value={maxPoints} onChange={e => setMaxPoints(e.target.value)} placeholder="max points" style={fieldStyle} />
             </div>
-            <button onClick={add} disabled={!date} style={{ ...ctaStyle, opacity: date ? 1 : 0.6, alignSelf: "start" }}>
-              Save watch →
+            <button onClick={add} disabled={!date || busy} style={{ ...ctaStyle, opacity: date && !busy ? 1 : 0.6, alignSelf: "start" }}>
+              {busy ? "Saving…" : "Save watch →"}
             </button>
+            {err && (
+              <p className="serif" style={{ margin: 0, color: "var(--loss)", fontSize: 13, fontStyle: "italic" }}>{err}</p>
+            )}
           </div>
         )}
 

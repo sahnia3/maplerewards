@@ -2,6 +2,25 @@ import Link from "next/link";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 
+// Current ISO-8601 week (e.g. "2026-W21"), so the weekly-digest link tracks
+// the present week instead of a hardcoded one that drifts into the past.
+function currentISOWeek(): string {
+  const d = new Date();
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  date.setUTCDate(date.getUTCDate() - dayNum + 3); // nearest Thursday
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const week =
+    1 +
+    Math.round(
+      ((date.getTime() - firstThursday.getTime()) / 86400000 -
+        3 +
+        ((firstThursday.getUTCDay() + 6) % 7)) /
+        7,
+    );
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
 export const metadata = {
   title: "Tools — Maple Rewards",
   description:
@@ -72,7 +91,7 @@ export default function ToolsIndexPage() {
             cta="See active promos →"
           />
           <ToolCard
-            href="/feed/weekly/2026-W20"
+            href={`/feed/weekly/${currentISOWeek()}`}
             eyebrow="Editorial digest"
             title="This week in Canadian rewards"
             body="Every devaluation, every bonus, every issuer change — grouped by week so you can scan what mattered. One stable URL per ISO-8601 week."

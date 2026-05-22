@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -52,6 +52,14 @@ export default function ProfilePage() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 
+  // Redirect unauthenticated users in an effect, not during render (navigating
+  // mid-render triggers React "update during render" warnings + double-fires).
+  useEffect(() => {
+    if (!isLoading && (!isAuthenticated || !user)) {
+      router.push("/login?redirect=/profile");
+    }
+  }, [isLoading, isAuthenticated, user, router]);
+
   if (isLoading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
@@ -61,8 +69,7 @@ export default function ProfilePage() {
   }
 
   if (!isAuthenticated || !user) {
-    router.push("/login?redirect=/profile");
-    return null;
+    return null // redirect handled by the effect above
   }
 
   async function handleSave() {

@@ -236,5 +236,8 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 }
 
 func round2(v float64) float64 {
-	return float64(int(v*100+0.5)) / 100
+	// Delegates to the shared rounder. The old int(v*100+0.5) truncated
+	// toward zero, so NEGATIVE values rounded the wrong way (-2.345 → -2.34);
+	// Gap can be negative when program CPP dropped since the entry was logged.
+	return roundMoney(v)
 }

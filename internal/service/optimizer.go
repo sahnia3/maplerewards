@@ -339,6 +339,7 @@ func (s *OptimizerService) scoreCard(
 	// Check if transferring points to a partner program yields higher value
 	transfers, transferErr := s.transferRepo.GetTransferRoutes(ctx, uc.Card.LoyaltyProgramID)
 	if transferErr == nil {
+		baseNote := note // the cap/blended note, before any transfer suffix
 		for _, tp := range transfers {
 			destCPP, destErr := s.getCPP(ctx, tp.ToProgram.Slug, segment)
 			if destErr != nil {
@@ -359,12 +360,15 @@ func (s *OptimizerService) scoreCard(
 				rec.TransferPartner = tp.ToProgram.Name
 				rec.TransferRatio = tp.TransferRatio
 				rec.TransferCPP = destCPP
-				if note != "" {
-					note += " | "
-				}
-				note += fmt.Sprintf("Best via %s (%.0f:1 transfer, %.2f¢/pt)",
+				// Rebuild from baseNote so only the CURRENT winning partner is
+				// listed — appending left superseded partners in the note.
+				suffix := fmt.Sprintf("Best via %s (%.0f:1 transfer, %.2f¢/pt)",
 					tp.ToProgram.Name, tp.TransferRatio, destCPP)
-				rec.Note = note
+				if baseNote != "" {
+					rec.Note = baseNote + " | " + suffix
+				} else {
+					rec.Note = suffix
+				}
 			}
 		}
 	}

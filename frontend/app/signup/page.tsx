@@ -99,7 +99,7 @@ function SignupForm() {
                 lineHeight: 1.5,
               }}
             >
-              Free forever for the basics. Pro is $5/mo when you're ready.
+              Free forever for the basics. Pro is $39.99/yr (~$3.33/mo) when you're ready.
             </p>
           </header>
 

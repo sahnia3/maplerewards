@@ -105,14 +105,29 @@ func (h *SpendHandler) ExportSpend(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		_ = cw.Write([]string{
 			e.SpentAt,
-			e.CardName,
-			e.CategoryName,
+			csvSafe(e.CardName),
+			csvSafe(e.CategoryName),
 			strconv.FormatFloat(e.Amount, 'f', 2, 64),
 			strconv.FormatFloat(e.PointsEarned, 'f', 2, 64),
 			strconv.FormatFloat(e.DollarValue, 'f', 2, 64),
-			e.Note,
+			csvSafe(e.Note),
 		})
 	}
+}
+
+// csvSafe neutralizes CSV/spreadsheet formula injection: a cell beginning with
+// =, +, -, @, tab, or CR executes as a formula in Excel/Sheets. User-supplied
+// free text (note, card nickname) flows into the export, so prefix any such
+// cell with a leading apostrophe to force it to render as literal text.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 // GetSpendStats returns aggregated spend statistics.

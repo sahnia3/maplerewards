@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { getActiveTransferPromos, type TransferBonusEvent } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -127,7 +126,7 @@ function PromoCard({ promo }: { promo: TransferBonusEvent }) {
         )}
         {!daysLeft && !expires && <span>ONGOING</span>}
       </div>
-      <Link
+      <a
         href={promo.source_url}
         target="_blank"
         rel="noopener noreferrer"
@@ -141,7 +140,7 @@ function PromoCard({ promo }: { promo: TransferBonusEvent }) {
         }}
       >
         Source →
-      </Link>
+      </a>
     </article>
   );
 }
