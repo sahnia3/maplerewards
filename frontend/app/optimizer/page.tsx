@@ -95,9 +95,9 @@ export default function OptimizerPage() {
           }}
         >
           {[
-            { value: "102", label: "Canadian cards" },
-            { value: "27", label: "Loyalty programs" },
-            { value: "8", label: "Spend categories" },
+            { value: "104", label: "Canadian cards" },
+            { value: "28", label: "Loyalty programs" },
+            { value: "10", label: "Spend categories" },
             { value: "CAD", label: "Dollar values" },
           ].map((s, i) => (
             <div

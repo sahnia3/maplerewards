@@ -107,7 +107,11 @@ export default function HomePage() {
   const totalPoints = walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0;
   const totalValue = walletSummary?.value_range_high ?? 0;
   const cardsCount = wallet.length;
-  const programsCount = walletSummary?.cards.length ?? 0;
+  // Distinct loyalty programs, not card count — four Aeroplan cards are one
+  // program, not four. Empty program_name (pure-cashback cards) doesn't count.
+  const programsCount = walletSummary
+    ? new Set(walletSummary.cards.map((c) => c.program_name).filter(Boolean)).size
+    : 0;
 
   // First-name greeting for the masthead.
   const firstName =
