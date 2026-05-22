@@ -32,7 +32,7 @@ UNION SELECT affiliate_url FROM cards WHERE affiliate_url ~ '^https?://'
 UNION SELECT welcome_bonus_offer_source FROM cards WHERE welcome_bonus_offer_source ~ '^https?://'
 UNION SELECT source_url FROM devaluation_events WHERE source_url ~ '^https?://'
 UNION SELECT source_url FROM portal_rates WHERE source_url ~ '^https?://'
-UNION SELECT source_url FROM transfer_bonus_events WHERE source_url ~ '^https?://'
+UNION SELECT source_url FROM transfer_bonus_events WHERE source_url ~ '^https?://' AND source_dead_at IS NULL
 UNION SELECT url FROM issuer_pages WHERE url ~ '^https?://'
 UNION SELECT primary_url FROM merchants WHERE primary_url ~ '^https?://';
 SQL
