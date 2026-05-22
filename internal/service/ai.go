@@ -213,7 +213,7 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 
 	// Build message history for the API call. Cap BEFORE the call — this is
 	// the cost-control boundary; the post-call trim only bounds storage.
-	messages := s.buildMessages(capHistoryForLLM(req.History), req.Message)
+	messages := s.buildMessages(CapHistoryForLLM(req.History), req.Message)
 
 	// Call Claude API
 	reply, err := s.callClaude(ctx, systemPrompt, messages)
@@ -1031,10 +1031,10 @@ const maxLLMHistoryMessages = 12
 // novel; we don't pay to re-send it every turn. ~8000 chars ≈ 2k tokens.
 const maxLLMMessageChars = 8000
 
-// capHistoryForLLM returns at most the last maxLLMHistoryMessages messages,
+// CapHistoryForLLM returns at most the last maxLLMHistoryMessages messages,
 // each truncated to maxLLMMessageChars. Pure function — callers apply it to
 // req.History before constructing the API payload.
-func capHistoryForLLM(history []model.ChatMessage) []model.ChatMessage {
+func CapHistoryForLLM(history []model.ChatMessage) []model.ChatMessage {
 	if len(history) > maxLLMHistoryMessages {
 		history = history[len(history)-maxLLMHistoryMessages:]
 	}

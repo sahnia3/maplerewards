@@ -526,35 +526,18 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 // expects. Catches future struct renames at build time.
 var _ = model.ChatMessage{Role: "user", Content: "ping"}
 
-// estimateTokensUsed produces a coarse token-count estimate for the daily
-// budget tracker. The Anthropic API returns precise usage counts in its
-// response body; until those are plumbed through ChatResponse this estimate
-// is the stop-gap.
-//
-// Components:
-//   - System-prompt overhead: ~3,000 tokens (cached, but still billed at
-//     cached-input rates). We bill at full rate here to over-estimate
-//     intentionally — under-counting is the dangerous failure mode.
-//   - User message: 1 token per ~3.5 characters (English; Claude tokenizer).
-//   - Tool calls: untracked; add a 1.3× multiplier to the assistant reply
-//     to amortize tool round-trips.
-//   - Assistant reply: 1 token per ~3.5 characters × 1.3.
-func estimateTokensUsed(userMessage, assistantReply string) int {
-	in, out := estimateTokenSplit(userMessage, assistantReply)
-	return in + out
-}
-
 // estimateRequestInputTokens estimates the INPUT tokens a request will cost
 // before the Claude call: system-prompt overhead + the new message + the
-// full client-supplied history. Used for the per-request hard ceiling so a
-// client that pads history can't slip a giant payload through under the
-// daily budget. Conservative (over-estimates) — under-counting is the
-// dangerous direction for a cost guard.
+// history AS THE LLM WILL ACTUALLY RECEIVE IT (CapHistoryForLLM — last N
+// messages, each truncated). This MUST match the real payload: estimating
+// the raw, uncapped client history while the 14k ceiling is sized for the
+// capped payload falsely 413'd legitimate multi-turn chats once history grew.
+// Still conservative for cost — the cap only ever shrinks the estimate.
 func estimateRequestInputTokens(req service.ChatRequest) int {
 	const baseSystemOverhead = 3000
 	const charsPerToken = 3.5
 	chars := len(req.Message)
-	for _, h := range req.History {
+	for _, h := range service.CapHistoryForLLM(req.History) {
 		chars += len(h.Content)
 	}
 	return baseSystemOverhead + int(float64(chars)/charsPerToken)

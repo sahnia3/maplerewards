@@ -127,6 +127,21 @@ type toolRegistry struct {
 
 func newToolRegistry() *toolRegistry { return &toolRegistry{tools: map[string]toolDef{}} }
 
+// isIATACode reports whether s is a 3-letter (already-uppercased) IATA code.
+// Service-local mirror of the handler's isValidIATA (different package) so the
+// LLM tool path validates inputs before paid scrapers, same as the HTTP path.
+func isIATACode(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for _, c := range s {
+		if c < 'A' || c > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
 // mustJSON marshals a tool result, falling back to a JSON error object so a
 // handler can never return malformed bytes to the model.
 func mustJSON(v any) json.RawMessage {
@@ -367,16 +382,34 @@ func (s *AIService) registerTools() {
 			if args.Cabin == "" {
 				args.Cabin = "economy"
 			}
-			if args.Passengers == 0 {
-				args.Passengers = 1
-			}
 			if args.FlexDays == 0 {
 				args.FlexDays = 7
 			}
+			// Validate + clamp before the PAID scrapers. The HTTP handlers do
+			// this; the LLM tool path used to forward inputs raw and left
+			// flex_days uncapped, so a free user (Seats.aero/SerpAPI fire for
+			// non-Pro too) could fan out an unbounded scrape window.
+			origin := strings.ToUpper(strings.TrimSpace(args.Origin))
+			dest := strings.ToUpper(strings.TrimSpace(args.Destination))
+			if !isIATACode(origin) || !isIATACode(dest) {
+				return errResultJSON("invalid_args", "origin and destination must be 3-letter IATA airport codes"), nil
+			}
+			if args.Passengers < 1 {
+				args.Passengers = 1
+			}
+			if args.Passengers > 9 {
+				args.Passengers = 9
+			}
+			if args.FlexDays < 0 {
+				args.FlexDays = 0
+			}
+			if args.FlexDays > 14 {
+				args.FlexDays = 14 // matches award_watch cap; bounds the scrape window
+			}
 			results, err := s.awardSearchSvc.Search(ctx, model.AwardSearchRequest{
 				SessionID:   sessionID,
-				Origin:      strings.ToUpper(args.Origin),
-				Destination: strings.ToUpper(args.Destination),
+				Origin:      origin,
+				Destination: dest,
 				Date:        args.Date,
 				FlexDays:    args.FlexDays,
 				Cabin:       args.Cabin,
@@ -1410,7 +1443,7 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	// previous tool turns are NOT replayed (they were stored as the synthesized
 	// final assistant message). Cap BEFORE building the payload so a giant
 	// client-supplied history can't drain the Anthropic budget in one request.
-	cappedHistory := capHistoryForLLM(req.History)
+	cappedHistory := CapHistoryForLLM(req.History)
 	msgs := make([]claudeBlockMessage, 0, len(cappedHistory)+8)
 	for _, h := range cappedHistory {
 		role := h.Role

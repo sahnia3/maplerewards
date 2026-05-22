@@ -29,6 +29,12 @@ type TripService struct {
 	apifySvc     *ApifyAwardService // optional; nil disables live award probes
 	cache        *cache.Cache       // optional; nil disables Apify probe caching
 	kb           *knowledge.KnowledgeBase
+	// inflightProbes dedupes concurrent Apify scrapes for the same route within
+	// one process. resolveFlightPoints is reachable twice in a single
+	// EvaluateTrip (direct + transfer loops for the same program, e.g.
+	// Aeroplan), and a cold-cache probe takes 60-120s — without this, both
+	// calls launched a separate PAID actor run for the identical route.
+	inflightProbes sync.Map // key "origin|dest|date|cabin" → struct{}{}
 }
 
 func NewTripService(
@@ -456,7 +462,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 		// Scale by passengers / nights
 		totalPts := ptReq * int64(req.Passengers)
 		if req.TripType == "hotel" {
-			totalPts = ptReq * int64(req.Nights) * int64(req.Passengers)
+			totalPts = ptReq * int64(req.Nights) // per room-night, NOT per guest
 		}
 
 		// Compute CPP & cash price — per-program pricing
@@ -465,7 +471,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 
 		if req.TripType == "hotel" && propertyCash > 0 {
 			// Hotels: use per-property YAML prices (unique per hotel chain)
-			cashPrice = propertyCash * float64(req.Nights) * float64(req.Passengers)
+			cashPrice = propertyCash * float64(req.Nights) // per room-night, NOT per guest
 			cpp = cashPrice / float64(totalPts) * 100
 			dataSource = "knowledge_base"
 		} else if req.TripType == "flight" {
@@ -545,7 +551,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 
 			totalPts := ptReq * int64(req.Passengers)
 			if req.TripType == "hotel" {
-				totalPts = ptReq * int64(req.Nights) * int64(req.Passengers)
+				totalPts = ptReq * int64(req.Nights) // per room-night, NOT per guest
 			}
 
 			var cpp, cashPrice float64
@@ -553,7 +559,7 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 
 			if req.TripType == "hotel" && propertyCash > 0 {
 				// Hotels: use per-property YAML prices
-				cashPrice = propertyCash * float64(req.Nights) * float64(req.Passengers)
+				cashPrice = propertyCash * float64(req.Nights) // per room-night, NOT per guest
 				cpp = cashPrice / float64(totalPts) * 100
 				dataSource = "knowledge_base"
 			} else if req.TripType == "flight" {
@@ -658,9 +664,19 @@ func (s *TripService) resolveFlightPoints(ctx context.Context, yamlKey, slug, or
 		// free users fall through to the zone-chart estimate below. This
 		// gates the single biggest variable Apify cost.
 		if proFromCtx(ctx) {
-			// Fresh context: the request's ctx dies when EvaluateTrip
-			// returns, and Apify takes 60-120s to complete.
-			go s.primeApifyFlightProbe(origin, dest, date, cabin)
+			// Dedup concurrent probes for the same route. LoadOrStore is
+			// atomic; if a probe is already in flight for this key (the direct
+			// + transfer loops can both resolve Aeroplan in one request), skip
+			// the second PAID scrape rather than racing it.
+			probeKey := strings.ToUpper(origin) + "|" + strings.ToUpper(dest) + "|" + date + "|" + strings.ToLower(cabin)
+			if _, inFlight := s.inflightProbes.LoadOrStore(probeKey, struct{}{}); !inFlight {
+				// Fresh context: the request's ctx dies when EvaluateTrip
+				// returns, and Apify takes 60-120s to complete.
+				go func() {
+					defer s.inflightProbes.Delete(probeKey)
+					s.primeApifyFlightProbe(origin, dest, date, cabin)
+				}()
+			}
 		}
 	}
 
