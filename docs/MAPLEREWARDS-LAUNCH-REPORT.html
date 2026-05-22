@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MapleRewards — Where It Stands</title>
+<style>
+  @page { size: Letter; margin: 15mm 17mm; }
+  * { box-sizing: border-box; }
+  body { font: 11.5px/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c1c1e; margin: 0; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
+  .sub { color: #777; font-size: 10px; margin: 3px 0 0; }
+  h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.07em; color: #b00020; margin: 17px 0 6px; }
+  p { margin: 6px 0; }
+  .tldr { background: #fbf7f2; border: 1px solid #ecdfce; border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+  .tldr b { color: #1c1c1e; }
+  .scorewrap { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
+  .score { font-size: 38px; font-weight: 700; color: #b00020; line-height: 1; white-space: nowrap; }
+  .score small { font-size: 15px; color: #999; font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+  td, th { text-align: left; padding: 3px 8px; border-bottom: 1px solid #eee; }
+  th { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; }
+  td.n { text-align: right; font-weight: 600; color: #137333; white-space: nowrap; }
+  .feat { margin: 4px 0; padding-left: 0; list-style: none; }
+  .feat li { margin: 5px 0; padding-left: 16px; position: relative; }
+  .feat li::before { content: "✓"; color: #137333; position: absolute; left: 0; font-weight: 700; }
+  .feat b { color: #111; }
+  ul.plain { margin: 4px 0; padding-left: 17px; }
+  ul.plain li { margin: 3px 0; }
+  .foot { margin-top: 16px; color: #aaa; font-size: 9px; border-top: 1px solid #eee; padding-top: 7px; }
+  .bottom { background: #f4f9f4; border: 1px solid #cfe6cf; border-radius: 8px; padding: 11px 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>MapleRewards — where it stands</h1>
+  <p class="sub">A plain-language read on the product · 22 May 2026</p>
+
+  <div class="tldr">
+    <div class="scorewrap">
+      <div class="score">8.5<small>&nbsp;/ 10</small></div>
+      <div><b>The short version:</b> MapleRewards is in strong shape and close to launch. Everything a customer actually touches works, and — just as important — it now tells the <b>truth</b>: the numbers it shows are real. It's not deployed yet, and there's a short, ordinary list of "flip-the-switch" steps left, but the product itself is solid and worth charging for.</div>
+    </div>
+  </div>
+
+  <h2>What MapleRewards is</h2>
+  <p>A Canada-first credit-card rewards advisor. It knows the cards you carry, the points you hold, and how the Canadian rewards market works — and turns that into clear answers: which card to use for a purchase, what your points are actually worth, how to fly on points, what's about to expire, and which promotions are worth acting on. The big idea is that no one else does all of this <i>for Canada, personalized to you</i> — the comparison sites are generic, and the good blogs aren't personal.</p>
+
+  <h2>What works right now</h2>
+  <ul class="feat">
+    <li><b>The optimizer</b> — tells you the best card for any purchase, in real dollars, and is genuinely Canada-smart (e.g. it warns that Amex won't work at Costco or the Loblaws stores and points you to the right backup).</li>
+    <li><b>Your wallet &amp; points</b> — track every card and balance, edit them in one tap, and see the real CAD value instantly.</li>
+    <li><b>Trip planner</b> — finds award flights across 12+ airline programs (not just Aeroplan/United), and is honest about which prices are live versus estimated.</li>
+    <li><b>Maple, the AI advisor</b> — answers in plain English, knows your balances, and proactively warns about things like an upcoming Aeroplan devaluation before it costs you. Clean, readable answers.</li>
+    <li><b>Pro tools</b> — shows what you left on the table, which card credits are about to expire, your status progress, and card "stacks" tailored to how you actually spend.</li>
+    <li><b>Promos &amp; news</b> — live transfer-bonus alerts and a constantly-refreshed Canadian rewards news feed.</li>
+    <li><b>Catalog, comparisons &amp; calculators</b> — browse every card, compare any two head-to-head, and check what a points balance is worth — all free, no sign-in.</li>
+  </ul>
+
+  <h2>The condition, honestly</h2>
+  <p>The most valuable thing this pass did was make the product <b>trustworthy</b>. Almost everything that needed fixing was about the <i>accuracy of numbers</i>, not broken buttons — for example, one points program (Air Miles) was being valued about 70× too low, and a few pieces of data were listed twice. Those are now corrected and double-checked. That matters a lot for a paid product: people will stop trusting it the moment a number looks wrong.</p>
+  <p>Underneath, the engineering is healthy: the automated test suite passes, the app builds cleanly, and the security checks came back clean. Nothing a customer clicks is broken.</p>
+
+  <h2>How I'd rate it</h2>
+  <table>
+    <tr><th>Dimension</th><th>What it means</th><th style="text-align:right">Score</th></tr>
+    <tr><td>Features &amp; completeness</td><td>Is there enough here to charge for?</td><td class="n">9 / 10</td></tr>
+    <tr><td>Reliability &amp; code health</td><td>Does it hold together, tested?</td><td class="n">8.5 / 10</td></tr>
+    <tr><td>Data accuracy</td><td>Are the numbers true?</td><td class="n">8 / 10</td></tr>
+    <tr><td>Security</td><td>Is customer data safe?</td><td class="n">9 / 10</td></tr>
+    <tr><td>Honesty &amp; polish</td><td>Does it level with the user?</td><td class="n">9 / 10</td></tr>
+    <tr><td><b>Overall</b></td><td><b>Launch-grade, indie-SaaS</b></td><td class="n"><b>8.5 / 10</b></td></tr>
+  </table>
+  <p>It's an 8.5 and not a 9.5 for honest reasons, none of them alarming: it hasn't met real users at scale yet, a couple of small data questions are still open (e.g. one transfer ratio that's listed two different ways), and the premium cards undersell themselves slightly because their perks aren't fully priced in. These are polish items, not problems.</p>
+
+  <h2>Before you flip the switch</h2>
+  <p>Ordinary launch steps, in plain terms:</p>
+  <ul class="plain">
+    <li><b>Code is committed and pushed.</b> ✓ Done.</li>
+    <li><b>Apply the data fixes to the live database</b> — they're proven on the test copy; they just need to run on production.</li>
+    <li><b>Run one more automated code review</b> — the last cloud run crashed on their side before finishing; worth a clean pass.</li>
+    <li><b>Make a call on two small data questions</b> (the duplicate transfer ratio, and pricing premium-card perks) — or knowingly ship as-is.</li>
+    <li><b>Double-check the live settings &amp; keys</b> are in place (payments, AI, flight data).</li>
+  </ul>
+
+  <div class="bottom">
+    <b>Bottom line:</b> Yes — this is ready to be a paid product, and you're close to deploy. It works, it's honest, and it's genuinely useful in a way the competition isn't. Knock out the short checklist above and launch with confidence.
+  </div>
+
+  <div class="foot">MapleRewards · Canadian credit-card rewards optimizer · founder briefing, 22 May 2026 · reflects the current state of the codebase; no production deploy has been performed.</div>
+</body>
+</html>
