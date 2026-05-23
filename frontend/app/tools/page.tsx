@@ -70,6 +70,13 @@ export default function ToolsIndexPage() {
           }}
         >
           <ToolCard
+            href="/tools/aeroplan-june-1"
+            eyebrow="Devaluation watch"
+            title="Beat the June 1 Aeroplan hike"
+            body="Long-haul Aeroplan business class goes up ~17% on June 1, 2026. Filter to your home airport and see the routings cheapest to lock in before the change."
+            cta="See what to lock in →"
+          />
+          <ToolCard
             href="/compare/amex-cobalt/cibc-aventura-gold-visa"
             eyebrow="Head-to-head"
             title="Compare any two cards"
