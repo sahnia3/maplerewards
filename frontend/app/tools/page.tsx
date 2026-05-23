@@ -69,6 +69,8 @@ export default function ToolsIndexPage() {
             gap: 18,
           }}
         >
+          {/* TODO(2026-06-02): retire/repoint this tile — the June 1, 2026 Aeroplan
+              long-haul business hike has passed, so this tool is now stale. */}
           <ToolCard
             href="/tools/aeroplan-june-1"
             eyebrow="Devaluation watch"
