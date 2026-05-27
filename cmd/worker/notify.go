@@ -116,7 +116,7 @@ func awardAlertHTML(w model.AwardWatch, alertMessage, link string) string {
           ` + escapeHTML(alertMessage) + `
         </td></tr>
         <tr><td style="padding-bottom:24px;">
-          <a href="` + link + `" style="display:inline-block;background:#A51F2D;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">Open this watch</a>
+          <a href="` + escapeHTML(link) + `" style="display:inline-block;background:#A51F2D;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">Open this watch</a>
         </td></tr>
         <tr><td style="padding-top:24px;border-top:1px solid #EAE2D2;font-size:11px;color:#5A5347;line-height:1.5;">
           You're receiving this because you set up an award watch on Maple Rewards. Award seats often vanish in minutes — book quickly if the price looks right.

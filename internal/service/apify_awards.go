@@ -257,7 +257,7 @@ func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput)
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
 		return "", "", fmt.Errorf("apify HTTP %d: %s", resp.StatusCode, truncateStr(string(respBody), 300))
 	}
@@ -289,13 +289,15 @@ func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, tim
 
 		resp, err := s.client.Do(req)
 		if err != nil {
+			slog.Debug("apify poll request failed, retrying", "run_id", runID, "err", err)
 			continue
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readCappedBody(resp.Body)
 		resp.Body.Close()
 
 		var runResp apifyRunResponse
 		if err := json.Unmarshal(body, &runResp); err != nil {
+			slog.Debug("apify poll response unmarshal failed, retrying", "run_id", runID, "err", err)
 			continue
 		}
 
@@ -309,6 +311,19 @@ func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, tim
 	}
 
 	return fmt.Errorf("actor run timed out after %s", timeout)
+}
+
+// maxExternalRespBytes caps how much of an external API response body we read
+// into memory, so a malformed or maliciously-huge upstream payload (Apify,
+// SerpAPI, Anthropic) can't exhaust memory. Generous headroom over any real
+// response, including long LLM completions.
+const maxExternalRespBytes = 16 << 20 // 16 MiB
+
+// readCappedBody reads at most maxExternalRespBytes from r. A body larger than
+// the cap is truncated (and then fails JSON parsing downstream) rather than
+// read unbounded into memory.
+func readCappedBody(r io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r, maxExternalRespBytes))
 }
 
 // fetchDataset retrieves the result items from the actor's default dataset.
@@ -327,7 +342,7 @@ func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) 
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("dataset HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 300))
 	}

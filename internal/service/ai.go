@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"regexp"
@@ -1130,7 +1129,7 @@ func (s *AIService) callClaude(ctx context.Context, systemPrompt string, message
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readCappedBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read response: %w", err)
 	}

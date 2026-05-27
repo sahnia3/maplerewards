@@ -26,7 +26,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -1668,7 +1667,7 @@ func (s *AIService) callClaudeWithTools(
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readCappedBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -196,7 +195,7 @@ func (s *SerpAPIService) SearchFlightsReq(
 		return nil, fmt.Errorf("serpapi call: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readCappedBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("[serpapi] API error",
@@ -367,7 +366,7 @@ func (s *SerpAPIService) SearchHotels(
 		return nil, fmt.Errorf("serpapi hotels call: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("serpapi hotels HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 300))
 	}
