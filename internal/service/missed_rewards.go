@@ -78,7 +78,16 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 	// repo returns rows ordered most-recent-first, so the cap keeps the
 	// freshest behaviour.
 	const pageSize = 500
+	// Window floor first: entries come back most-recent-first (spent_at DESC),
+	// so collect only rows within the since-days window and stop as soon as a
+	// page drops below the floor. Applying the maxEntries cap to in-window rows
+	// (rather than capping raw rows and then filtering) means a heavy logger
+	// with >maxEntries lifetime entries no longer has in-window history
+	// silently dropped behind a wall of older rows.
+	floor := time.Now().AddDate(0, 0, -sinceDays).Format("2006-01-02")
+	sinceISO := floor
 	var allEntries []model.SpendEntry
+scanLoop:
 	for offset := 0; ; offset += pageSize {
 		batch, err := s.spendRepo.ListSpendEntries(ctx, user.ID, pageSize, offset)
 		if err != nil {
@@ -87,25 +96,19 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 		if len(batch) == 0 {
 			break
 		}
-		allEntries = append(allEntries, batch...)
-		if len(allEntries) >= maxEntries || len(batch) < pageSize {
+		for _, e := range batch {
+			if e.SpentAt < floor {
+				break scanLoop // all remaining rows are older (DESC order)
+			}
+			allEntries = append(allEntries, e)
+			if len(allEntries) >= maxEntries {
+				break scanLoop
+			}
+		}
+		if len(batch) < pageSize {
 			break
 		}
 	}
-	if len(allEntries) > maxEntries {
-		allEntries = allEntries[:maxEntries]
-	}
-
-	// Apply since-days floor.
-	floor := time.Now().AddDate(0, 0, -sinceDays).Format("2006-01-02")
-	sinceISO := floor
-	filtered := allEntries[:0]
-	for _, e := range allEntries {
-		if e.SpentAt >= floor {
-			filtered = append(filtered, e)
-		}
-	}
-	allEntries = filtered
 
 	report := &model.MissedRewardsReport{
 		Since:          sinceISO,
@@ -147,9 +150,22 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 			continue
 		}
 		best := recs[0]
+		// Value the actually-used card under the SAME optimizer model (caps,
+		// segment, transfer partners) by reading its score from this ranking,
+		// rather than the stored e.DollarValue (computed with a different
+		// uncapped / base-CPP / no-transfer formula). This keeps both sides of
+		// the gap comparable. Falls back to the stored value if the card is no
+		// longer in the wallet (absent from recs).
+		actualValue := e.DollarValue
+		for _, rc := range recs {
+			if rc.CardID == e.CardID {
+				actualValue = rc.DollarValue
+				break
+			}
+		}
 
 		report.TotalSpend += e.Amount
-		report.TotalActual += e.DollarValue
+		report.TotalActual += actualValue
 		report.TotalOptimal += best.DollarValue
 		report.EntryCount++
 
@@ -163,12 +179,12 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 			catMap[e.CategorySlug] = ca
 		}
 		ca.spend += e.Amount
-		ca.actualValue += e.DollarValue
+		ca.actualValue += actualValue
 		ca.optimalValue += best.DollarValue
 		ca.entryCount++
 		ca.optimalCards[best.CardName]++
 
-		gap := best.DollarValue - e.DollarValue
+		gap := best.DollarValue - actualValue
 		if gap > 0.01 && best.CardID != e.CardID {
 			ca.missedCount++
 			report.MissedCount++
@@ -181,7 +197,7 @@ func (s *MissedRewardsService) ComputeMissedRewards(
 				Amount:          e.Amount,
 				ActualCardID:    e.CardID,
 				ActualCardName:  e.CardName,
-				ActualValue:     round2(e.DollarValue),
+				ActualValue:     round2(actualValue),
 				OptimalCardID:   best.CardID,
 				OptimalCardName: best.CardName,
 				OptimalValue:    round2(best.DollarValue),

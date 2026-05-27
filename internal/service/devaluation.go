@@ -87,13 +87,15 @@ const (
 //
 // Formula:
 //   value_today    = balance × CPP / 100
-//   exposure       = value_today × burnFraction × hikePercent
+//   exposure       = value_today × burnFraction × (hike / (1 + hike))
 //   value_after    = value_today - exposure
 //
 // Where burnFraction ≈ 0.30 (rough proportion of a typical Aeroplan balance
-// allocated to long-haul biz redemptions) and hikePercent ≈ 0.171 (the actual
-// chart increase). Both are documented assumptions — surfaced in the response
-// so the UI can explain its math.
+// allocated to long-haul biz redemptions) and hike ≈ 0.171 (the actual chart
+// increase). A hike of H in points-required cuts buying power by H/(1+H), not
+// H, so `exposure` is the CAD buying-power lost — not the raw H fraction, which
+// overstated it. Both assumptions are surfaced in the response so the UI can
+// explain its math.
 func (s *DevaluationService) ProjectAeroplanJune2026(ctx context.Context, sessionID string) (*AeroplanProjection, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("session_id required")
@@ -129,7 +131,13 @@ func (s *DevaluationService) ProjectAeroplanJune2026(ctx context.Context, sessio
 	}
 
 	valueToday := float64(balance) * cpp / 100.0
-	exposure := valueToday * aeroplanJune2026BurnFraction * aeroplanJune2026HikePercent
+	// A hike of H in points-required cuts the buying power of the affected
+	// (burned) balance by H/(1+H), not H: the same award now costs (1+H)× the
+	// points, so each point you hold buys 1/(1+H) as much. Using H directly
+	// overstated the loss and made ValueAfter too low. `exposure` is the CAD
+	// buying-power lost on the long-haul-business portion the user would burn.
+	hike := aeroplanJune2026HikePercent
+	exposure := valueToday * aeroplanJune2026BurnFraction * (hike / (1 + hike))
 	exposure = math.Round(exposure*100) / 100 // cents
 	valueToday = math.Round(valueToday*100) / 100
 	valueAfter := math.Round((valueToday-exposure)*100) / 100

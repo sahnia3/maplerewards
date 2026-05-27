@@ -26,10 +26,11 @@ const (
 // also seed the cookie if the caller doesn't have one yet, so the SPA always
 // has a token ready by the time it issues a write.
 //
-// Defense rationale: cookies are SameSite=Lax, which already blocks most
-// cross-origin POST CSRF attempts in modern browsers. This middleware adds
-// belt-and-suspenders coverage for the highest-stakes endpoints (auth,
-// billing, data import) where a Lax-bypass quirk would be catastrophic.
+// Defense rationale: the double-submit header check is the primary defense and
+// holds regardless of SameSite — an attacker on another origin can neither read
+// the cookie nor set the custom header without a CORS-rejected preflight. (In
+// prod the cookies are SameSite=None so they flow to the cross-origin API; in
+// dev they are Lax. The header match, not SameSite, is what enforces CSRF.)
 //
 // CORS preflight bypass: an attacker can't read the cookie from a different
 // origin, and they can't set a custom request header without triggering
@@ -105,19 +106,34 @@ func IssueCSRFTokenHandler(w http.ResponseWriter, r *http.Request) {
 
 func generateCSRFToken() string {
 	b := make([]byte, csrfTokenBytes)
-	_, _ = rand.Read(b) // crypto/rand failures are catastrophic, fall through
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failure is catastrophic and effectively never happens on
+		// a healthy host. Emitting a predictable (all-zero) token would
+		// silently weaken CSRF, so fail loud instead — matching the init-time
+		// posture used elsewhere for security primitives.
+		panic("csrf: crypto/rand unavailable: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }
 
 func setCSRFCookie(w http.ResponseWriter, token string) {
 	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
+	// Cross-origin SPA: the double-submit cookie must reach the API on
+	// cross-site fetches, so in prod it is SameSite=None+Secure (matching the
+	// auth cookies). Dev stays Lax (same-site localhost). The header check
+	// remains the real protection — an attacker can't read this cookie
+	// cross-origin nor set the custom header without a CORS-rejected preflight.
+	sameSite := http.SameSiteLaxMode
+	if prod {
+		sameSite = http.SameSiteNoneMode
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false, // SPA must read it
 		Secure:   prod,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 		MaxAge:   csrfMaxAge,
 		Expires:  time.Now().Add(time.Duration(csrfMaxAge) * time.Second),
 	})

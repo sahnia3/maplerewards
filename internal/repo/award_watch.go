@@ -110,14 +110,23 @@ func (r *AwardWatchRepo) ListActive(ctx context.Context, limit int) ([]model.Awa
 	return out, rows.Err()
 }
 
+// maxConsecutiveCheckFailures is how many back-to-back failed probes disable a
+// watch. A genuinely broken watch (dead route, retired program) otherwise
+// burns paid Apify budget on every sweep forever. The counter resets to 0 on
+// any successful probe (RecordCheck), so only *consecutive* failures count — a
+// transient upstream blip can't disable a healthy watch.
+const maxConsecutiveCheckFailures = 10
+
 // RecordCheck stores the most recent point cost observed for a watch. Called
 // by the cron worker after each Apify probe; nil minPoints means the probe
-// returned no availability.
+// returned no availability. A successful probe also clears the consecutive-
+// failure counter so transient failures never accumulate toward auto-disable.
 func (r *AwardWatchRepo) RecordCheck(ctx context.Context, watchID string, minPoints *int) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE award_watch
 		SET last_checked_at = NOW(),
-		    last_min_points = $2
+		    last_min_points = $2,
+		    check_failures  = 0
 		WHERE id = $1
 	`, watchID, minPoints)
 	return err
@@ -136,15 +145,19 @@ func (r *AwardWatchRepo) RecordAlert(ctx context.Context, watchID, message strin
 	return err
 }
 
-// RecordCheckFailure increments the failure counter; the worker can disable
-// chronically failing watches once the counter passes a threshold.
+// RecordCheckFailure increments the consecutive-failure counter and auto-
+// disables the watch once it reaches maxConsecutiveCheckFailures, so a
+// chronically failing watch drops out of ListActive (which filters
+// is_active = true) and stops consuming paid Apify probes. Previously the
+// counter was incremented but never read, so dead watches were probed forever.
 func (r *AwardWatchRepo) RecordCheckFailure(ctx context.Context, watchID string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE award_watch
-		SET check_failures = check_failures + 1,
-		    last_checked_at = NOW()
+		SET check_failures  = check_failures + 1,
+		    last_checked_at = NOW(),
+		    is_active       = CASE WHEN check_failures + 1 >= $2 THEN false ELSE is_active END
 		WHERE id = $1
-	`, watchID)
+	`, watchID, maxConsecutiveCheckFailures)
 	return err
 }
 

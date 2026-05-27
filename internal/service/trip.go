@@ -274,10 +274,18 @@ func extractPriceFromResults(results []tavilyResult, minPrice float64) float64 {
 		return 0
 	}
 	sort.Float64s(prices)
-	// Use 75th percentile — lower prices tend to be economy fares, sale
-	// prices, or connecting-flight prices that slipped through the filter.
-	// The 75th percentile better represents what a typical direct booking costs.
-	idx := len(prices) * 3 / 4
+	// Use the 75th percentile — lower prices tend to be economy fares, sale
+	// prices, or connecting-flight prices that slipped through the filter, so
+	// the upper quartile better represents a typical direct booking. With fewer
+	// than 4 parsed prices the 75th-percentile index degenerates to the single
+	// most-expensive value (idx → max), inflating the cash price → CPP, so fall
+	// back to the median on thin samples.
+	var idx int
+	if len(prices) < 4 {
+		idx = len(prices) / 2
+	} else {
+		idx = len(prices) * 3 / 4
+	}
 	if idx >= len(prices) {
 		idx = len(prices) - 1
 	}

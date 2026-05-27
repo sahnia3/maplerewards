@@ -150,6 +150,11 @@ func (c *ApifySmokeChecker) runOnce(parent context.Context) {
 		FlexDays:    7,
 		Cabin:       "business",
 		Passengers:  1,
+		// Apify is Pro-gated inside Search; this smoke check exists to catch
+		// Apify schema drift, so it must run the Apify path. Without IsPro it
+		// only exercised Seats.aero/SerpAPI and never detected the drift it
+		// was written to monitor.
+		IsPro: true,
 	}
 
 	results, err := c.awardSvc.Search(ctx, req)

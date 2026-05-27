@@ -347,3 +347,48 @@ func TestMissedRewards_EmptySession_Errors(t *testing.T) {
 		t.Fatal("expected error for empty session")
 	}
 }
+
+// multiRecOptimizer returns a fixed full ranking (all cards), so the
+// missed-rewards replay can locate the actually-used card's score within it.
+type multiRecOptimizer struct{ recs []model.CardRecommendation }
+
+func (m *multiRecOptimizer) GetBestCard(ctx context.Context, req model.OptimizeRequest) ([]model.CardRecommendation, error) {
+	return m.recs, nil
+}
+
+// The "actual" side of the gap must be valued from the SAME current ranking
+// (caps, segment, transfers) as the "optimal" side — not from the stored
+// e.DollarValue, which was computed with a different uncapped/base-CPP/no-
+// transfer formula. Here the stored value is a deliberately stale $99; the
+// ranking scores the actually-used card at $2. The report must use $2 (gap =
+// 12.5 - 2 = 10.5). Pre-fix it used $99, making the gap negative → dropped.
+func TestMissedRewards_ActualValuedFromRanking(t *testing.T) {
+	entries := []model.SpendEntry{{
+		ID: "e1", CardID: "actual", CardName: "Actual Card",
+		CategorySlug: "dining", CategoryName: "Dining",
+		Amount: 100, DollarValue: 99, // stale / wrong stored value
+		SpentAt: todayMinus(1),
+	}}
+	opt := &multiRecOptimizer{recs: []model.CardRecommendation{
+		{CardID: "optimal", CardName: "Optimal", DollarValue: 12.5},
+		{CardID: "actual", CardName: "Actual Card", DollarValue: 2.0},
+	}}
+	svc := NewMissedRewardsService(&mockMissedWalletRepo{}, &mockMissedSpendRepo{entries: entries}, opt)
+
+	r, err := svc.ComputeMissedRewards(context.Background(), "sess", 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.MissedCount != 1 {
+		t.Fatalf("expected 1 missed entry (gap from ranking), got %d", r.MissedCount)
+	}
+	if r.TotalActual < 1.99 || r.TotalActual > 2.01 {
+		t.Fatalf("TotalActual = %.2f, want ~2.0 from ranking (NOT the stored $99)", r.TotalActual)
+	}
+	if r.TotalGap < 10.49 || r.TotalGap > 10.51 {
+		t.Fatalf("TotalGap = %.2f, want ~10.5 (12.5 - 2.0)", r.TotalGap)
+	}
+	if len(r.TopMissed) != 1 || r.TopMissed[0].ActualValue < 1.99 || r.TopMissed[0].ActualValue > 2.01 {
+		t.Fatalf("entry ActualValue must be ~2.0 from ranking, got %+v", r.TopMissed)
+	}
+}

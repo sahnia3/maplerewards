@@ -904,6 +904,15 @@ func extractDate(msg string) string {
 	return now.AddDate(0, 0, 30).Format("2006-01-02")
 }
 
+// titleCabin upper-cases the first letter of a cabin label without panicking
+// on an empty string — `req.Cabin[:1]` panics when Cabin == "".
+func titleCabin(c string) string {
+	if c == "" {
+		return ""
+	}
+	return strings.ToUpper(c[:1]) + c[1:]
+}
+
 // formatAwardResultsForPrompt converts award search results into a structured
 // markdown table that the AI can reference in its response.
 func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.AwardSearchRequest) string {
@@ -911,7 +920,7 @@ func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.A
 
 	sb.WriteString(fmt.Sprintf("\n## 🔍 STRUCTURED AWARD SEARCH RESULTS: %s → %s, %s, %s\n",
 		strings.ToUpper(req.Origin), strings.ToUpper(req.Destination),
-		strings.ToUpper(req.Cabin[:1])+req.Cabin[1:], req.Date))
+		titleCabin(req.Cabin), req.Date))
 	sb.WriteString("These results are from our award search engine — quote exact numbers.\n\n")
 
 	sb.WriteString("| Program | Points Cost | Cash Price (CAD) | CPP (¢/pt) | Value | Source | Booking |\n")
@@ -971,7 +980,7 @@ func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.A
 func formatSerpFlightsForPrompt(flights []FlightResult, req *model.AwardSearchRequest) string {
 	var sb strings.Builder
 
-	cabinLabel := strings.ToUpper(req.Cabin[:1]) + req.Cabin[1:]
+	cabinLabel := titleCabin(req.Cabin)
 
 	sb.WriteString(fmt.Sprintf("\n## ✈️ LIVE FLIGHT PRICES (Google Flights): %s → %s, %s class, %s\n",
 		strings.ToUpper(req.Origin), strings.ToUpper(req.Destination),

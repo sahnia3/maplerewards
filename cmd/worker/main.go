@@ -311,6 +311,12 @@ func probeOne(
 		FlexDays:    w.FlexDays,
 		Cabin:       w.Cabin,
 		Passengers:  1,
+		// Award watches are a Pro feature; the probe MUST run as Pro so the
+		// Apify live-award source (Pro-gated inside Search) actually executes.
+		// Without this every probe skipped Apify, found no availability, and no
+		// alert ever fired — the entire watch feature was silently inert on an
+		// Apify-only worker deployment.
+		IsPro: true,
 		// Worker queries are wallet-agnostic — pass empty SessionID.
 	})
 	if err != nil {

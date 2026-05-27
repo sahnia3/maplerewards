@@ -34,8 +34,8 @@ func (h *SpendHandler) RecordSpend(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.CardID == "" || req.CategorySlug == "" || req.Amount <= 0 {
-		jsonError(w, "card_id, category_slug, and amount > 0 are required", http.StatusBadRequest)
+	if req.CardID == "" || req.CategorySlug == "" || !isValidSpendAmount(req.Amount) {
+		jsonError(w, "card_id, category_slug, and an amount between $0.01 and $1,000,000 are required", http.StatusBadRequest)
 		return
 	}
 

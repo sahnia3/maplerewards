@@ -80,11 +80,15 @@ func (c *Client) Spend(ctx context.Context, provider string) (remaining int, exh
 	if err != nil {
 		return 0, false, fmt.Errorf("quota incr: %w", err)
 	}
-	// Set TTL only on the first hit of the new month.
-	if n == 1 {
-		if err := c.rdb.Expire(ctx, key, CounterTTL).Err(); err != nil {
-			return 0, false, fmt.Errorf("quota expire: %w", err)
-		}
+	// Ensure the key always carries a TTL. ExpireNX sets it only when the key
+	// has none, so it is idempotent on later hits AND self-healing: if the very
+	// first Expire was ever lost (transient Redis error, or a crash between
+	// INCR and EXPIRE), the next Spend repairs the missing TTL. The previous
+	// `if n == 1 { Expire }` left a permanently-TTL-less counter in those cases,
+	// which never rolled over — pinning the provider as falsely "exhausted"
+	// forever once it passed the cap.
+	if err := c.rdb.ExpireNX(ctx, key, CounterTTL).Err(); err != nil {
+		return 0, false, fmt.Errorf("quota expire: %w", err)
 	}
 
 	if limit == 0 {

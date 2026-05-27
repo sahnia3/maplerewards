@@ -58,7 +58,7 @@ type AdminValuationPushResponse struct {
 func (h *AdminValuationHandler) Push(w http.ResponseWriter, r *http.Request) {
 	var items []AdminValuationPushItem
 	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
-		jsonError(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	if len(items) == 0 {

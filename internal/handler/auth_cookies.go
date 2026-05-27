@@ -18,7 +18,7 @@ import (
 // Cookie security profile:
 //   - httpOnly:  true               — XSS can't read the JWT
 //   - Secure:    true in production — only sent over HTTPS
-//   - SameSite:  Lax for production same-origin; None for dev cross-origin
+//   - SameSite:  None+Secure in production (cross-origin SPA); Lax in dev
 //   - Path:      "/"
 //   - MaxAge:    matches the underlying token lifetimes
 func setTokenCookies(w http.ResponseWriter, tokens *model.TokenPair) {
@@ -27,13 +27,19 @@ func setTokenCookies(w http.ResponseWriter, tokens *model.TokenPair) {
 	}
 	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
 
-	// SameSite=None requires Secure. In dev (HTTP) we fall back to
-	// SameSite=Lax + non-Secure so cookies still work on localhost. Cross-
-	// origin dev flows still need the Authorization header fallback.
+	// The frontend is a distinct origin from the API (CORS, no BFF — the SPA
+	// fetches an absolute NEXT_PUBLIC_API_URL). SameSite=Lax cookies are NOT
+	// sent on cross-site subresource (fetch/XHR) requests, so in production the
+	// auth cookies must be SameSite=None to flow at all, paired with Secure
+	// (HTTPS, already enforced) which None requires. Dev stays Lax+non-Secure:
+	// localhost:3000→:8080 is same-site, and None needs Secure that dev HTTP
+	// can't provide. Cross-site exposure is contained by the strict CORS
+	// allow-list + CSRF double-submit on every state-changing route.
 	sameSite := http.SameSiteLaxMode
-	secure := prod
-	if !prod {
-		// keep SameSite Lax + non-Secure for dev simplicity
+	secure := false
+	if prod {
+		sameSite = http.SameSiteNoneMode
+		secure = true
 	}
 
 	access := &http.Cookie{
@@ -69,6 +75,14 @@ func clearTokenCookies(w http.ResponseWriter) {
 	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
 	expired := time.Unix(0, 0)
 
+	// SameSite/Secure must match the attributes used at set-time (above) or the
+	// browser won't match the cookie to delete it — in prod the auth cookies
+	// are None+Secure, so the clear must be too.
+	sameSite := http.SameSiteLaxMode
+	if prod {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	for _, name := range []string{mw.AccessCookieName, mw.RefreshCookieName} {
 		path := "/"
 		if name == mw.RefreshCookieName {
@@ -80,7 +94,7 @@ func clearTokenCookies(w http.ResponseWriter) {
 			Path:     path,
 			HttpOnly: true,
 			Secure:   prod,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: sameSite,
 			Expires:  expired,
 			MaxAge:   -1,
 		})

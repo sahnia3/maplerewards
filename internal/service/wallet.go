@@ -130,6 +130,26 @@ func (s *WalletService) invalidateWallet(ctx context.Context, sessionID string) 
 	}
 }
 
+// cappedPurchaseRate returns the cap-bounded effective earn rate for a single
+// purchase of `amount` in `categoryID` on `cardID`, using per-purchase
+// semantics (prior accumulated spend treated as 0). It mirrors the optimizer's
+// scoreCard switch exactly — shared cap group, then per-multiplier cap, then
+// the unconditional safety guardrail for multipliers with no modelled cap — so
+// a persisted spend entry can never store an uncapped spend×rate, and the
+// stored "actual" value stays consistent with the optimizer's "optimal".
+func (s *WalletService) cappedPurchaseRate(ctx context.Context, cardID, categoryID string, amount float64, m *model.CardMultiplier) float64 {
+	if cg, err := s.spendRepo.GetCapGroupForCard(ctx, cardID, categoryID); err == nil && cg != nil {
+		rate, _, _ := calculateBlendedRate(amount, 0, cg.CapAmount, cg.CapPeriod, m.EarnRate, m.FallbackEarnRate)
+		return rate
+	}
+	if m.CapAmount != nil && *m.CapAmount > 0 {
+		rate, _, _ := calculateBlendedRate(amount, 0, *m.CapAmount, safeStr(m.CapPeriod), m.EarnRate, m.FallbackEarnRate)
+		return rate
+	}
+	rate, _, _ := calculateBlendedRate(amount, 0, defaultUnverifiedAnnualCap, "annual", m.EarnRate, m.FallbackEarnRate)
+	return rate
+}
+
 // LogSpend records a manual spend entry and updates monthly spend tracking for cap enforcement.
 func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req model.SpendLogRequest) (*model.SpendEntry, error) {
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
@@ -163,14 +183,21 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 			multiplier, _ = s.cardRepo.GetEverythingElseMultiplier(ctx, req.CardID)
 		}
 		if multiplier != nil {
-			earnRate := multiplier.EarnRate
+			// Cap-bound the earn for THIS purchase (per-purchase semantics,
+			// prior spend = 0) — identical to how the optimizer scores "best
+			// card for this purchase" and the missed-rewards replay. Without
+			// this, a single large entry persisted an uncapped spend×rate: the
+			// same credibility-destroying over-projection the optimizer
+			// remediation bounded, but on the write path, where the stored
+			// value is shown to the user AND feeds the missed-rewards report.
+			effRate := s.cappedPurchaseRate(ctx, req.CardID, category.ID, req.Amount, multiplier)
 			if multiplier.EarnType == "cashback_pct" {
 				// Cashback card: dollar value is direct %
-				dollarValue = req.Amount * (earnRate / 100)
+				dollarValue = req.Amount * (effRate / 100)
 				pointsEarned = 0
 			} else {
 				// Points / miles card
-				pointsEarned = req.Amount * earnRate
+				pointsEarned = req.Amount * effRate
 				cpp := 1.0 // default 1¢/pt
 				if card.LoyaltyProgram != nil && card.LoyaltyProgram.BaseCPP > 0 {
 					cpp = card.LoyaltyProgram.BaseCPP
