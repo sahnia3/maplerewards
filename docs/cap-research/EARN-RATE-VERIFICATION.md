@@ -23,7 +23,10 @@ optimizer display was a stale-binary artifact, not wrong data.
 | TD Aeroplan Visa Infinite | travel 3.0 | travel 1.5 | 000059 | td.com |
 | Amex Aeroplan Business Reserve | travel 2.0, dining 3.0 | travel 3.0, no dining | 000059 | princeoftravel |
 | Amex Aeroplan Card | (no dining) | +dining 1.5 | 000060 | amex.ca |
-| Amex Cobalt | streaming 5.0, travel 2.0 | streaming 3.0, no travel | 000061 | princeoftravel |
+| Amex Cobalt | streaming 5.0 | streaming 3.0 (travel 2x kept) | 000061/000065 | princeoftravel |
+| CIBC Aventura VIP | travel 2.0, 6-cat 1.5 | travel 3.0, 6-cat 2.0 +entertainment | 000065 | princeoftravel |
+| TD Cash Back VI | (no recurring-bills) | +3% recurring-bills | 000065 | princeoftravel |
+| Scotia Momentum VI | dining 2% | no dining, +4% recurring-bills | 000065 | princeoftravel |
 | Amex Platinum | dining 3.0, travel 3.0 | dining 2.0, travel 2.0 | 000061 | princeoftravel |
 | Amex Gold Rewards | dining 2.0 | no dining | 000061 | princeoftravel |
 | Scotiabank Platinum Amex | 5x dining/ent, 3x travel, 1x base | flat 2x | 000061 | princeoftravel |
@@ -75,8 +78,14 @@ cards.
 
 ## Status
 
-- **6 migrations** (000059–000064), **~42 cards** cited-verified, every confirmed
+- **7 migrations** (000059–000065), **~50 cards** cited-verified, every confirmed
   error fixed + reversible + round-trip tested. Catalog-wide duplicate scan: 0.
+  One self-correction (Cobalt travel 2x, restored in 000065) — the re-verification
+  caught it, which is the point of cited sourcing.
+- Also verified-correct in batch 6: Simplii Cash Back, RBC ION+ (close), CIBC
+  Costco (minor cap nuance, not material).
 - Data fixes are **live on the DB** (no app redeploy needed for data).
-- **Remaining ~62 cards** need the same per-card cited verification to call the
-  catalog fully ratified. The "Higher-risk" list above is the priority queue.
+- **Remaining ~54 cards** still need per-card cited verification to call the
+  catalog FULLY ratified — and given the ~50% error rate found so far, several
+  almost certainly still contain errors. This is genuine continued work; the
+  "Higher-risk" list above is the priority queue. Not yet complete.
