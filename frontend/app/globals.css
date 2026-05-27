@@ -298,6 +298,14 @@
 /* ── Base ────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* Clip horizontal bleed at the scroll-container root. body already sets
+ * overflow-x:hidden (below), but when <html> stays visible it remains the
+ * viewport scroll container, so a decorative hero-fan card bleeding past the
+ * viewport still produced a horizontal page scroll on narrow screens. `clip`
+ * (not `hidden`) prevents the scroll without creating a scroll container, so
+ * position:sticky and scroll-into-view stay intact. Nested overflow-x:auto
+ * carousels are unaffected (they have their own scroll context). */
+html { overflow-x: clip; }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
