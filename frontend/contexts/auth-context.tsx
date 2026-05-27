@@ -57,6 +57,10 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   updateProfile: (displayName: string) => Promise<void>;
   getAccessToken: () => string | null;
+  /** Re-sync the session from the server (re-mints the token from the live
+   *  DB, so plan/is_pro changes — e.g. a just-processed Stripe upgrade —
+   *  reflect immediately). Resolves to the current is_pro. */
+  refreshSession: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -247,6 +251,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getAccessToken = useCallback(() => accessToken, [accessToken]);
 
+  // Re-mint the access token from the live DB and update the in-memory user.
+  // Used after returning from Stripe checkout so a just-processed upgrade
+  // (plan/is_pro flipped by the webhook) reflects without waiting for the
+  // 15-min token to expire. Returns the freshly-read is_pro.
+  const refreshSession = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: await csrfHeaders(),
+        credentials: "include",
+      });
+      if (!res.ok) return false;
+      const data: TokenPair = await res.json();
+      setAccessToken(data.access_token);
+      setUser(data.user);
+      tokenRef.current = data.access_token;
+      return !!data.user?.is_pro;
+    } catch {
+      return false;
+    }
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -261,6 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         updateProfile,
         getAccessToken,
+        refreshSession,
       }}
     >
       {children}

@@ -52,7 +52,7 @@ const PRO_TOOL_PITCH: { kicker: string; title: string; lede: string }[] = [
 type IntervalKey = "pro" | "proPlus" | "lifetime";
 
 function PricingContent() {
-  const { isPro, isAuthenticated } = useAuth();
+  const { isPro, isAuthenticated, refreshSession } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [interval, setInterval] = useState<IntervalKey>("pro");
@@ -67,15 +67,37 @@ function PricingContent() {
       ? PRICING.proPlus
       : PRICING.lifetime;
 
-  // Stripe redirect feedback
+  // Stripe redirect feedback. On success we re-sync the session because the
+  // upgrade is applied by an async webhook that can land a beat after Stripe
+  // redirects the browser here — so we poll /auth/refresh (re-mints the token
+  // from the live DB) until is_pro flips, instead of showing a stale "free".
   useEffect(() => {
-    if (searchParams.get("success") === "true") {
-      setSuccessMsg("Payment received. Pro is active across your wallet.");
-    }
     if (searchParams.get("canceled") === "true") {
       setError("Checkout was canceled. Pick it back up whenever you're ready.");
+      return;
     }
-  }, [searchParams]);
+    if (searchParams.get("success") !== "true") return;
+
+    setSuccessMsg("Payment received — activating Pro…");
+    let cancelled = false;
+    let attempts = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      const pro = await refreshSession();
+      attempts += 1;
+      if (pro) {
+        setSuccessMsg("Payment received. Pro is active across your wallet.");
+      } else if (attempts < 8) {
+        window.setTimeout(poll, 1500);
+      } else {
+        setSuccessMsg("Payment received. Pro will activate shortly — refresh the page if it hasn't updated in a minute.");
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, refreshSession]);
 
   async function handleCheckout() {
     if (!isAuthenticated) {
