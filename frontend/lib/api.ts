@@ -448,7 +448,9 @@ export async function chatStream(
       if (!data) continue;
       try {
         const parsed = JSON.parse(data);
-        onEvent({ type: event, ...parsed } as ChatStreamEvent);
+        // Spread payload first, then force the SSE event name to win — a stray
+        // `type` field in the data payload must not override the event type.
+        onEvent({ ...parsed, type: event } as ChatStreamEvent);
       } catch {
         // Ignore malformed frame
       }

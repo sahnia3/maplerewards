@@ -5,8 +5,19 @@ import type { CSSProperties, ReactNode } from "react";
 /* Shared primitives for pro-tools tiles. Internal — not exported from the
  * pro-tools barrel. */
 
+// Whole-dollar CAD for headline figures (spend, buy cost, net value). Sign-aware
+// so a negative renders "-$180", not "$-180".
 export function fmtCAD(v: number) {
-  return `$${v.toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const sign = v < 0 ? "-" : "";
+  return `${sign}$${Math.abs(v).toLocaleString("en-CA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+// Two-decimal CAD for gap / per-component values, where whole-dollar rounding
+// would make displayed rows fail to sum to the displayed total, or render a real
+// sub-dollar miss (e.g. $0.40) as "$0". Sign-aware like fmtCAD.
+export function fmtCAD2(v: number) {
+  const sign = v < 0 ? "-" : "";
+  return `${sign}$${Math.abs(v).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export const PROGRAM_LABELS: Record<string, string> = {

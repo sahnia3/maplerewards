@@ -386,7 +386,8 @@ function WalletRow({
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="number"
-                inputMode="decimal"
+                inputMode="numeric"
+                step={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}

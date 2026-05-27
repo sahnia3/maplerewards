@@ -6,7 +6,7 @@ import { getMissedRewards } from "@/lib/api";
 import type { MissedRewardsReport } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { Stat, fmtCAD, sectionStyle } from "./_shared";
+import { Stat, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -87,7 +87,7 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
               <div>
                 <span className="eyebrow">Lost in last {sinceDays} days</span>
                 <div className="display" style={{ fontSize: 40, color: report.total_gap > 0 ? "var(--loss)" : "var(--gain)", lineHeight: 1, marginTop: 4 }}>
-                  {fmtCAD(report.total_gap)}
+                  {fmtCAD2(report.total_gap)}
                 </div>
               </div>
               <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
@@ -132,7 +132,7 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <div className="mono" style={{ fontSize: 14, color: "var(--loss)", fontWeight: 600 }}>
-                          −{fmtCAD(c.gap)}
+                          −{fmtCAD2(c.gap)}
                         </div>
                         <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 2 }}>
                           earned {fmtCAD(c.actual_value)} of {fmtCAD(c.optimal_value)}
@@ -231,7 +231,7 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
                       </div>
                       <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <div className="mono" style={{ fontSize: 14, color: "var(--loss)", fontWeight: 600 }}>
-                          −{fmtCAD(m.gap)}
+                          −{fmtCAD2(m.gap)}
                         </div>
                         <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", marginTop: 2, letterSpacing: "0.06em" }}>
                           missed

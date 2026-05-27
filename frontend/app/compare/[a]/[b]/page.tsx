@@ -273,7 +273,7 @@ function CardColumn({
               : "—"
           }
         />
-        <Stat label="Base CPP" value={`${(detail.value_range_low ?? 0).toFixed(2)}¢`} />
+        <Stat label="CPP floor" value={`${(detail.value_range_low ?? 0).toFixed(2)}¢`} />
       </div>
       <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 14 }}>
         <ApplyButton

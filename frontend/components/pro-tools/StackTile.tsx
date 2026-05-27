@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { listMerchants, recommendStack } from "@/lib/api";
 import type { Merchant, StackRecommendation } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
-import { FieldLabel, ctaStyle, fieldStyle, fmtCAD, sectionStyle } from "./_shared";
+import { FieldLabel, ctaStyle, fieldStyle, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -79,7 +79,7 @@ export function StackTile({ sessionId, ensureSession }: Props) {
               <div>
                 <span className="eyebrow">Stack total on {fmtCAD(rec.spend_amount)}</span>
                 <div className="display" style={{ fontSize: 36, color: "var(--accent)", lineHeight: 1, marginTop: 4 }}>
-                  {fmtCAD(rec.total_value_cad)}
+                  {fmtCAD2(rec.total_value_cad)}
                 </div>
               </div>
               <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
@@ -103,7 +103,7 @@ export function StackTile({ sessionId, ensureSession }: Props) {
                     <div className="display" style={{ fontSize: 16, color: "var(--ink)" }}>{c.source}</div>
                     <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>{c.detail}</div>
                   </div>
-                  <div className="mono" style={{ fontSize: 14, color: "var(--gain)", fontWeight: 600 }}>+{fmtCAD(c.value_cad)}</div>
+                  <div className="mono" style={{ fontSize: 14, color: "var(--gain)", fontWeight: 600 }}>+{fmtCAD2(c.value_cad)}</div>
                 </div>
               ))}
             </div>
