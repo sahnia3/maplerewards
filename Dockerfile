@@ -6,6 +6,12 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/api ./cmd/api
+# Build the background worker too (award-watch / issuer-watch / digest sweeps).
+# It ships in the same image; deploy it as a second service that overrides the
+# command to ["./worker"]. Without this the worker — and its Pro features
+# (award alerts, issuer-page diffs, weekly digests) — can never run in prod,
+# since the API image alone contained no worker binary.
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/worker ./cmd/worker
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM alpine:3.19
@@ -15,6 +21,7 @@ RUN apk --no-cache add ca-certificates tzdata wget \
 
 WORKDIR /app
 COPY --from=builder /app/bin/api .
+COPY --from=builder /app/bin/worker .
 # knowledge YAML files are referenced via relative path internal/knowledge/*.yaml
 # in main.go — copy them into the image at the same path so the binary boots.
 COPY --from=builder /app/internal/knowledge ./internal/knowledge
