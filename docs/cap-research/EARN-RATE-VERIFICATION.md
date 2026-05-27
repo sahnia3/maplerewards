@@ -89,17 +89,17 @@ cards.
 Verified-correct batches 7–8: RBC Cash Back MC, Tangerine World, Simplii Cash
 Back, RBC ION+. Neo WE left (variable/tiered rates; DB models reasonable averages).
 
-## Systemic issue discovered (separate value-model fix, NOT rate-data)
+## Systemic value-model issue — FIXED (000068)
 
-**BMO Rewards points cards modelled as `cashback_pct`.** BMO eclipse VI/VIP (and
-likely BMO Ascend / BMO Rewards MC) earn BMO *Rewards points* (~0.67¢/pt via
-travel), but are seeded `earn_type = cashback_pct` with the points count as the
-percent — so the optimizer values "5 points" as "5%" (≈3.3% real), **over-valuing
-~50%**. Rate-data is now correct; the fix here is `earn_type` -> `points` + a
-verified BMO Rewards CPP in `program_valuations`. Deferred as a value-model
-decision (affects several BMO cards + the optimizer's $ output). The real BMO
-*CashBack* series (e.g. BMO CashBack WE/MC) IS genuine cash back — correctly
-`cashback_pct`, no change.
+**BMO Rewards points cards modelled as `cashback_pct`.** BMO eclipse VI/VIP earn
+BMO *Rewards points* (5 pts/$; BMO Rewards CPP = 0.71¢, already set), but were
+seeded `earn_type = cashback_pct`, so the optimizer valued "5 points" as "5%"
+(≈5¢) instead of 5 × 0.71¢ ≈ 3.55¢ — **over-valuing ~40%**. Investigation showed
+the sibling BMO Rewards points cards (Ascend WE, World Elite MC, Rewards MC)
+already correctly use `earn_type = points`. **Migration 000068 aligns eclipse
+VI/VIP to `points`**, so the program CPP is applied — resolved. The genuine BMO
+*CashBack* series (CashBack WE/MC) is real cash back and correctly stays
+`cashback_pct`. (BMO Preferred Rate, 0.5%, negligible impact — left as-is.)
 
 ## Status
 
