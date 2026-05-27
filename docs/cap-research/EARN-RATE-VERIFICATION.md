@@ -187,12 +187,16 @@ scan = 0 after every migration.
 - **MBNA Alaska Airlines World Elite** — Alaska card discontinued in Canada (PoT slug
   now redirects to MBNA Rewards WE). DB rates match no current product. Recommend
   deactivation.
-- **PC Money Account** — this is a chequing/debit account, not a credit card. It earns
-  PC Optimum points (~0.1¢ each); the DB models it as `cashback_pct` 2.5%/1%/0.5%
-  which materially over-values a 0.1¢ currency. Recommend deactivation or re-model.
-- **Desjardins Remises Visa** — "Remises" is the French name of the Cash Back Visa;
-  this looks like a duplicate SKU of "Desjardins Cash Back Visa" (which was corrected
-  in 000072). Recommend dedup. Left at flat 0.5% pending product decision.
+- **PC Money Account** — RESOLVED (000082/000085). Kept: it is a reloadable
+  prepaid/spending account that legitimately earns PC Optimum points, so it belongs in
+  the optimizer. The `cashback_pct` modelling is numerically correct (25 pts/$1 at
+  Shoppers = 2.5%; 10 pts/$1 everywhere = 1% — the 0.1¢/pt is already folded into the
+  %). The only error was the base rate seeded at 0.5% (half the real 10 pts/$1 = 1%) —
+  corrected to 1.0% in 000082; stale note fixed in 000085. src: pcfinancial.ca.
+- **Desjardins Remises Visa** — RESOLVED (000081). Confirmed duplicate: the official
+  Cash Back Visa application URL and card art are both named "remises"; "Remises" is
+  Desjardins' French word for cash back. Deactivated (is_active=false); the corrected
+  "Desjardins Cash Back Visa" (000072) is the canonical row. src: desjardins.com.
 - **Tangerine Money-Back Credit Card (non-World)** — only earns 2% on TWO chosen
   categories (World gets three); DB carries three (grocery/dining/gas). Per-category
   the 2% rate is correct, so the optimizer is correct per-transaction; the 2-vs-3 cap
@@ -211,9 +215,13 @@ scan = 0 after every migration.
 - **CIBC Tim Hortons Visa** — earns Tims Rewards points (15 pts/$ at Tims, 5 pts/$ on
   grocery/gas/transit), not cash back. DB models a 3% dining proxy + 0.5% base. Tims
   points don't map cleanly to the optimizer's value model; left as a proxy, flagged.
-- **Desjardins Odyssey Visa Gold** — sources conflict (milesopedia: 2% dining /
-  ~0.65% grocery; PoT only has the WE variant). DB grocery 2x and 1.5x base both look
-  high but could not be cited cleanly. Left unchanged, flagged for manual review.
+- **Desjardins Odyssey Visa Gold** — RESOLVED (000083/000084) against the official
+  Desjardins terms page (desjardins.com/en/credit-cards/odyssey-gold-visa.html). The DB
+  was fabricated: annual fee $70 (real: **$110**), a phantom **2x grocery** bonus (real:
+  **no grocery bonus**), and **1.5x** base (real: **0.65%**). Corrected to 2% on
+  Restaurants/Entertainment/Alt-transport/Pre-authorized/Travel, 0.65% all-other, with
+  the published $6,000/yr (dining+pre-auth) and $15,000/yr (travel) caps and 0.65%
+  post-cap fallback; phantom grocery removed; fee → $110. Stale notes fixed in 000084.
 - **RBC Rewards+ Visa** (rate fixed in 000070) — additionally, this card's
   `loyalty_program` is "RBC Avion" (base_cpp 1.1¢) but it actually earns RBC *Rewards*
   points (~0.5¢). The shared-program cpp over-values it; changing cpp would affect
@@ -228,6 +236,13 @@ scan = 0 after every migration.
   cash-back cards are `cashback_pct`. The Neo/Tangerine/Rogers/Simplii cosmetic
   "TD Rewards" program mapping is harmless for `cashback_pct` cards (optimizer uses
   the % directly) — noted, not churned.
+- **Stale-note audit (000085):** a catalog-wide check comparing each multiplier's
+  note text against its `earn_rate` found 4 notes left stale after a prior verified
+  rate correction (CIBC Aventura VIP dining/gas/groceries still said "1.5x" after
+  000065 set 2x; PC Money base still said "0.5%" after 000082 set 1%). Display-only —
+  the optimizer math always used the correct `earn_rate`. Fixed. The remaining audit
+  hits are false positives (PC "N pts/$1 (X% value)" notes) and Air Miles miles/$ vs
+  partner-multiplier text — both correct, left as-is.
 - **Defunct-issuer cluster:** HSBC x3, Capital One Aspire/Costco, MBNA Alaska — five
   cards for products no longer issued in Canada. Bundled as a deactivation
   recommendation (product decision).
