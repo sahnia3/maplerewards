@@ -41,9 +41,9 @@ func TestAIBudget_TierNumbers(t *testing.T) {
 		t.Fatalf("tier budgets drifted: free=%d pro=%d proplus=%d lifetime=%d",
 			FreeDailyTokenBudget, ProDailyTokenBudget, ProPlusDailyTokenBudget, LifetimeDailyTokenBudget)
 	}
-	if !(FreeDailyTokenBudget < ProDailyTokenBudget &&
-		ProDailyTokenBudget < LifetimeDailyTokenBudget &&
-		LifetimeDailyTokenBudget < ProPlusDailyTokenBudget) {
+	if FreeDailyTokenBudget >= ProDailyTokenBudget ||
+		ProDailyTokenBudget >= LifetimeDailyTokenBudget ||
+		LifetimeDailyTokenBudget >= ProPlusDailyTokenBudget {
 		t.Fatal("expected ladder Free < Pro < Lifetime < Pro Plus")
 	}
 }

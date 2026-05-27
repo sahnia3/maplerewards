@@ -95,8 +95,9 @@ func TestOptimizer_CapInvariant_Matrix(t *testing.T) {
 				bound := capInvariantBound(spend, r.cap, r.bonus, r.fallback)
 				var projected float64
 				if r.earnType == "cashback_pct" {
-					// dollar value = spend × effRate/100; compare in "rate units"
-					projected = rec.DollarValue / spend * 100 * spend / 100 // == DollarValue
+					// dollar value = spend × effRate/100; compare in "rate units".
+					// rec.DollarValue is already the projected dollar amount, so
+					// we bound it directly (no intermediate `projected` here).
 					bound = capInvariantBound(spend, r.cap, r.bonus, r.fallback) / 100
 					if rec.DollarValue > bound+eps {
 						t.Errorf("spend %.0f: cashback $%.2f exceeds cap bound $%.2f",

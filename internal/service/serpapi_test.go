@@ -64,7 +64,7 @@ func TestSearchFlightsReq_RoundTripParams(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, fakeSerpJSON)
+		fmt.Fprint(w, fakeSerpJSON) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -117,7 +117,7 @@ func TestSearchFlightsReq_OneWayDefaultsNoReturnDate(t *testing.T) {
 	var capturedURL string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
-		fmt.Fprint(w, fakeSerpJSON)
+		fmt.Fprint(w, fakeSerpJSON) //nolint:errcheck
 	}))
 	defer ts.Close()
 

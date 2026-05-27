@@ -93,7 +93,7 @@ func (s *TavilyService) Search(ctx context.Context, query string) ([]tavilyResul
 	if err != nil {
 		return nil, fmt.Errorf("tavily API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -152,7 +152,7 @@ func (s *TavilyService) SearchTravel(ctx context.Context, query string) ([]tavil
 	if err != nil {
 		return nil, fmt.Errorf("tavily API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -187,9 +187,9 @@ func FormatResultsForPrompt(results []tavilyResult) string {
 		if len(content) > 400 {
 			content = content[:400] + "..."
 		}
-		sb.WriteString(fmt.Sprintf("**%d. %s**\n", i+1, r.Title))
-		sb.WriteString(fmt.Sprintf("Source: %s\n", r.URL))
-		sb.WriteString(fmt.Sprintf("%s\n\n", content))
+		fmt.Fprintf(&sb, "**%d. %s**\n", i+1, r.Title)
+		fmt.Fprintf(&sb, "Source: %s\n", r.URL)
+		fmt.Fprintf(&sb, "%s\n\n", content)
 	}
 
 	sb.WriteString("Use the above research to provide current, accurate advice. Cite sources when referencing specific data points.\n\n")
@@ -206,8 +206,8 @@ func FormatTravelResultsForPrompt(results []tavilyResult) string {
 		if i >= 5 {
 			break
 		}
-		sb.WriteString(fmt.Sprintf("### %s\n", r.Title))
-		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
+		fmt.Fprintf(&sb, "### %s\n", r.Title)
+		fmt.Fprintf(&sb, "URL: %s\n", r.URL)
 		if r.Content != "" {
 			content := r.Content
 			if len(content) > 500 {

@@ -199,7 +199,7 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, userID, inte
 	if err != nil {
 		return nil, fmt.Errorf("stripe request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
@@ -278,7 +278,7 @@ func (s *BillingService) CreatePortalSession(ctx context.Context, userID string,
 	if err != nil {
 		return nil, fmt.Errorf("stripe request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {

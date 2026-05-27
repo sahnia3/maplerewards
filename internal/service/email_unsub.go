@@ -39,7 +39,7 @@ func unsubKey() []byte {
 
 func signUnsub(userID string, exp int64) string {
 	mac := hmac.New(sha256.New, unsubKey())
-	fmt.Fprintf(mac, "unsubscribe:%s:%d", userID, exp)
+	fmt.Fprintf(mac, "unsubscribe:%s:%d", userID, exp) //nolint:errcheck // hash.Hash.Write never errors
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

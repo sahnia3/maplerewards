@@ -63,7 +63,7 @@ func (s *OfferExpiryService) RunSweep(ctx context.Context, log *slog.Logger, now
 }
 
 func (s *OfferExpiryService) sendOne(ctx context.Context, o repo.CardOfferReminder) error {
-	when := "soon"
+	var when string
 	switch {
 	case o.DaysToExpiry <= 0:
 		when = "today"

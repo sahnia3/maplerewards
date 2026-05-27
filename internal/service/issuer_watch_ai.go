@@ -52,7 +52,7 @@ func (s *IssuerWatchService) summarizeWithAI(ctx context.Context, pageLabel, dif
 	if err != nil {
 		return "", 0, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if resp.StatusCode >= 400 {
 		return "", 0, fmt.Errorf("anthropic %d: %s", resp.StatusCode, string(respBody))

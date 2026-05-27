@@ -534,7 +534,7 @@ func (s *AwardSearchService) overlayWallet(
 		balances = map[string]walletEntry{}
 	}
 	for i := range cached {
-		wb, _ := balances[cached[i].Program]
+		wb := balances[cached[i].Program]
 		cached[i].PointsAvailable = wb.balance
 		cached[i].CanAfford = wb.balance >= int64(cached[i].PointsCost)
 		cached[i].CardBreakdowns = wb.breakdowns
@@ -555,7 +555,7 @@ func (s *AwardSearchService) buildResult(
 	cpp := computeCPP(cashPriceCAD, totalPoints)
 	valueRating := rateValue(cpp, req.Cabin)
 
-	wb, _ := walletBalances[item.Issuer]
+	wb := walletBalances[item.Issuer]
 	canAfford := wb.balance >= int64(totalPoints)
 
 	// Convert AwardSegment → model.AwardSegmentInfo
@@ -624,7 +624,7 @@ func (s *AwardSearchService) buildYAMLResult(
 	cpp := computeCPP(cashPriceCAD, totalPts)
 	valueRating := rateValue(cpp, req.Cabin)
 
-	wb, _ := walletBalances[prog]
+	wb := walletBalances[prog]
 	canAfford := wb.balance >= int64(totalPts)
 
 	// YAML fallback: we have no upstream tax figure. Leave TaxesCash nil and
@@ -954,9 +954,10 @@ func awardBookingURL(issuer, origin, dest, date, cabin string, passengers int) s
 	case "avios":
 		// British Airways Avios
 		cabinCode := "M"
-		if cabin == "business" {
+		switch cabin {
+		case "business":
 			cabinCode = "J"
-		} else if cabin == "first" {
+		case "first":
 			cabinCode = "F"
 		}
 		url := fmt.Sprintf(

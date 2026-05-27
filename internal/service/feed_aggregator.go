@@ -349,7 +349,7 @@ func (s *FeedAggregatorService) fetchSource(ctx context.Context, src feedSource)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("source %s status %d", src.Name, resp.StatusCode)

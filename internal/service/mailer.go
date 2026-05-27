@@ -127,7 +127,7 @@ func (r *ResendMailer) Send(ctx context.Context, msg MailMessage) error {
 	if err != nil {
 		return fmt.Errorf("mailer: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	if resp.StatusCode >= 300 {
 		// Capped read avoids unbounded memory if Resend returns a huge body.

@@ -148,7 +148,7 @@ func (s *SeatsAeroService) SearchAwards(
 	if err != nil {
 		return nil, fmt.Errorf("seats.aero API call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {

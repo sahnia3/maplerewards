@@ -36,8 +36,6 @@ func NewMissedRewardsDigestService(authRepo *repo.AuthRepo, compute *MissedRewar
 	}
 }
 
-const missedRewardsDigestCadence = 7 * 24 * time.Hour
-
 // RunSweep enumerates Pro users due for a missed-rewards digest, computes
 // each one, and dispatches the ones with non-zero leakage. Returns aggregate
 // counts for the worker log.

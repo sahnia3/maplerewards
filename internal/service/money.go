@@ -31,8 +31,3 @@ import "math"
 func roundMoney(v float64) float64 {
 	return math.Round(v*100) / 100
 }
-
-// roundPct rounds a percentage to 2 dp (e.g. effective-return display).
-func roundPct(v float64) float64 {
-	return math.Round(v*100) / 100
-}

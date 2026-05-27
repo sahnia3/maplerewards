@@ -13,7 +13,14 @@ import (
 	"maplerewards/internal/model"
 	"maplerewards/internal/repo"
 	"maplerewards/internal/service"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
+
+// cabinTitle Title-cases a cabin label (e.g. "business" → "Business").
+// Replaces the deprecated strings.Title.
+var cabinTitle = cases.Title(language.English)
 
 // alertEmailCooldown is the minimum gap between two alert emails for the same
 // watch. The award sweep ticks every 4 hours and an "under-max-points" match
@@ -110,7 +117,7 @@ func awardAlertHTML(w model.AwardWatch, alertMessage, link string) string {
           Award alert
         </td></tr>
         <tr><td style="padding-bottom:20px;font-size:22px;font-weight:600;line-height:1.3;">
-          ` + escapeHTML(w.Origin) + ` &rarr; ` + escapeHTML(w.Destination) + ` &middot; ` + escapeHTML(strings.Title(w.Cabin)) + `
+          ` + escapeHTML(w.Origin) + ` &rarr; ` + escapeHTML(w.Destination) + ` &middot; ` + escapeHTML(cabinTitle.String(w.Cabin)) + `
         </td></tr>
         <tr><td style="padding-bottom:24px;font-size:15px;line-height:1.5;color:#3A3128;">
           ` + escapeHTML(alertMessage) + `
@@ -163,7 +170,7 @@ func sendAwardAlertPush(
 		return // user hasn't subscribed any browser; email is the channel
 	}
 
-	title := fmt.Sprintf("%s → %s: %s", w.Origin, w.Destination, strings.Title(w.Cabin))
+	title := fmt.Sprintf("%s → %s: %s", w.Origin, w.Destination, cabinTitle.String(w.Cabin))
 	link := awardWatchDeepLink(w)
 	payload := service.PushPayload{
 		Title: title,

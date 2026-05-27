@@ -194,7 +194,7 @@ func (s *SerpAPIService) SearchFlightsReq(
 	if err != nil {
 		return nil, fmt.Errorf("serpapi call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	body, _ := readCappedBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
@@ -365,7 +365,7 @@ func (s *SerpAPIService) SearchHotels(
 	if err != nil {
 		return nil, fmt.Errorf("serpapi hotels call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	body, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("serpapi hotels HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 300))

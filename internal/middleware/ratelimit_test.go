@@ -55,7 +55,7 @@ func TestRateLimiter_BlocksOverLimit(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	json.NewDecoder(w.Body).Decode(&resp) //nolint:errcheck
 	if resp["code"] != "RATE_LIMITED" {
 		t.Errorf("expected code RATE_LIMITED, got %q", resp["code"])
 	}

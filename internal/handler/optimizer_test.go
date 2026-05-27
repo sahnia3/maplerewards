@@ -25,7 +25,7 @@ func TestGetBestCard_MissingSessionID(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	json.NewDecoder(w.Body).Decode(&resp) //nolint:errcheck
 	if resp["message"] == "" {
 		t.Error("expected error message in response")
 	}

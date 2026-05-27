@@ -299,14 +299,14 @@ func (s *AIService) buildWalletContext(ctx context.Context, sessionID string) st
 			multiplier = 2.0
 		}
 		highValue := lowValue * multiplier
-		sb.WriteString(fmt.Sprintf("- %s: %s pts (≈ $%.0f–$%.0f value @ %.1f–%.1f¢/pt)\n",
+		fmt.Fprintf(&sb, "- %s: %s pts (≈ $%.0f–$%.0f value @ %.1f–%.1f¢/pt)\n",
 			ps.name,
 			formatPoints(ps.balance),
 			lowValue,
 			highValue,
 			ps.baseCPP,
 			ps.baseCPP*multiplier,
-		))
+		)
 	}
 
 	sb.WriteString("\nCards in wallet:\n")
@@ -322,9 +322,9 @@ func (s *AIService) buildWalletContext(ctx context.Context, sessionID string) st
 		if uc.Card.AnnualFee > 0 {
 			feeStr = fmt.Sprintf("$%.0f/yr", uc.Card.AnnualFee)
 		}
-		sb.WriteString(fmt.Sprintf("- %s (%s, %s)", uc.Card.Name, progName, feeStr))
+		fmt.Fprintf(&sb, "- %s (%s, %s)", uc.Card.Name, progName, feeStr)
 		if uc.PointBalance > 0 {
-			sb.WriteString(fmt.Sprintf(" — %s pts", formatPoints(uc.PointBalance)))
+			fmt.Fprintf(&sb, " — %s pts", formatPoints(uc.PointBalance))
 		}
 		sb.WriteString("\n")
 	}
@@ -398,13 +398,13 @@ func (s *AIService) buildCardCatalogContext(ctx context.Context) string {
 
 	var sb strings.Builder
 	sb.WriteString("## Canadian Card Catalog (summary)\n")
-	sb.WriteString(fmt.Sprintf("We model %d Canadian cards (%d no-fee). ", len(cards), freeCount))
+	fmt.Fprintf(&sb, "We model %d Canadian cards (%d no-fee). ", len(cards), freeCount)
 	sb.WriteString("Issuer breakdown: ")
 	for i, r := range rows {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("%s (%d)", r.name, r.count))
+		fmt.Fprintf(&sb, "%s (%d)", r.name, r.count)
 	}
 	sb.WriteString(".\n\n")
 	sb.WriteString("To pull details for any specific card, use the `lookup_card` tool with a name or issuer query — DO NOT guess card details from memory. The tool returns annual fee, welcome bonus, network, loyalty program, and category multipliers for matching cards.\n")
@@ -917,9 +917,9 @@ func titleCabin(c string) string {
 func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.AwardSearchRequest) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("\n## 🔍 STRUCTURED AWARD SEARCH RESULTS: %s → %s, %s, %s\n",
+	fmt.Fprintf(&sb, "\n## 🔍 STRUCTURED AWARD SEARCH RESULTS: %s → %s, %s, %s\n",
 		strings.ToUpper(req.Origin), strings.ToUpper(req.Destination),
-		titleCabin(req.Cabin), req.Date))
+		titleCabin(req.Cabin), req.Date)
 	sb.WriteString("These results are from our award search engine — quote exact numbers.\n\n")
 
 	sb.WriteString("| Program | Points Cost | Cash Price (CAD) | CPP (¢/pt) | Value | Source | Booking |\n")
@@ -930,7 +930,7 @@ func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.A
 		if r.CanAfford {
 			affordStr = "✅"
 		}
-		sb.WriteString(fmt.Sprintf("| %s | %s pts %s | $%.0f | %.1f¢ | %s | %s | [Book](%s) |\n",
+		fmt.Fprintf(&sb, "| %s | %s pts %s | $%.0f | %.1f¢ | %s | %s | [Book](%s) |\n",
 			r.ProgramName,
 			formatPoints(int64(r.PointsCost)),
 			affordStr,
@@ -939,7 +939,7 @@ func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.A
 			r.ValueRating,
 			r.Source,
 			r.BookingURL,
-		))
+		)
 	}
 
 	// Add wallet summary
@@ -961,12 +961,12 @@ func formatAwardResultsForPrompt(results []model.AwardSearchResult, req *model.A
 				shortfall := int64(r.PointsCost) - r.PointsAvailable
 				status = fmt.Sprintf("❌ Short %s pts", formatPoints(shortfall))
 			}
-			sb.WriteString(fmt.Sprintf("- %s: have %s, need %s — %s\n",
+			fmt.Fprintf(&sb, "- %s: have %s, need %s — %s\n",
 				r.ProgramName,
 				formatPoints(r.PointsAvailable),
 				formatPoints(int64(r.PointsCost)),
 				status,
-			))
+			)
 		}
 	}
 
@@ -981,9 +981,9 @@ func formatSerpFlightsForPrompt(flights []FlightResult, req *model.AwardSearchRe
 
 	cabinLabel := titleCabin(req.Cabin)
 
-	sb.WriteString(fmt.Sprintf("\n## ✈️ LIVE FLIGHT PRICES (Google Flights): %s → %s, %s class, %s\n",
+	fmt.Fprintf(&sb, "\n## ✈️ LIVE FLIGHT PRICES (Google Flights): %s → %s, %s class, %s\n",
 		strings.ToUpper(req.Origin), strings.ToUpper(req.Destination),
-		cabinLabel, req.Date))
+		cabinLabel, req.Date)
 	sb.WriteString("**These are REAL cash prices in CAD from Google Flights — quote these exact numbers.**\n\n")
 
 	sb.WriteString("| Airline | Price (CAD) | Stops | Duration | Flight |\n")
@@ -997,11 +997,11 @@ func formatSerpFlightsForPrompt(flights []FlightResult, req *model.AwardSearchRe
 			stopsStr = fmt.Sprintf("%d stops", f.Stops)
 		}
 		durationStr := fmt.Sprintf("%dh %dm", f.TotalDuration/60, f.TotalDuration%60)
-		sb.WriteString(fmt.Sprintf("| %s | **$%.0f** | %s | %s | %s |\n",
-			f.Airline, f.Price, stopsStr, durationStr, f.FlightNumber))
+		fmt.Fprintf(&sb, "| %s | **$%.0f** | %s | %s | %s |\n",
+			f.Airline, f.Price, stopsStr, durationStr, f.FlightNumber)
 	}
 
-	sb.WriteString(fmt.Sprintf("\n**Cheapest cash option: $%.0f CAD** (%s)\n", flights[0].Price, flights[0].Airline))
+	fmt.Fprintf(&sb, "\n**Cheapest cash option: $%.0f CAD** (%s)\n", flights[0].Price, flights[0].Airline)
 	sb.WriteString("Use these cash prices to calculate CPP: (cash_price / points_cost) × 100\n\n")
 
 	return sb.String()
@@ -1127,7 +1127,7 @@ func (s *AIService) callClaude(ctx context.Context, systemPrompt string, message
 	if err != nil {
 		return "", fmt.Errorf("API call failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	respBody, err := readCappedBody(resp.Body)
 	if err != nil {
@@ -1135,7 +1135,7 @@ func (s *AIService) callClaude(ctx context.Context, systemPrompt string, message
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Claude API error (HTTP %d): %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("claude API error (HTTP %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var claudeResp claudeResponse
@@ -1144,7 +1144,7 @@ func (s *AIService) callClaude(ctx context.Context, systemPrompt string, message
 	}
 
 	if claudeResp.Error != nil {
-		return "", fmt.Errorf("Claude error: %s", claudeResp.Error.Message)
+		return "", fmt.Errorf("claude error: %s", claudeResp.Error.Message)
 	}
 
 	// Extract text from response

@@ -1665,7 +1665,7 @@ func (s *AIService) callClaudeWithTools(
 	if err != nil {
 		return nil, fmt.Errorf("http: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	respBody, err := readCappedBody(resp.Body)
 	if err != nil {

@@ -129,7 +129,7 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 				name, _ := cardMap["name"].(string)
 				fee, _ := cardMap["annual_fee_cad"].(float64)
 				bestFor, _ := cardMap["best_for"].(string)
-				sb.WriteString(fmt.Sprintf("- **%s** ($%.0f/yr): %s\n", name, fee, bestFor))
+				fmt.Fprintf(&sb, "- **%s** ($%.0f/yr): %s\n", name, fee, bestFor)
 				if rates, ok := cardMap["earning_rates"].(map[string]interface{}); ok {
 					for cat, rate := range rates {
 						if rateMap, ok := rate.(map[string]interface{}); ok {
@@ -140,13 +140,13 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 								}
 							}
 							unit, _ := rateMap["unit"].(string)
-							sb.WriteString(fmt.Sprintf("  - %s: %dx (%s)\n", cat, mult, unit))
+							fmt.Fprintf(&sb, "  - %s: %dx (%s)\n", cat, mult, unit)
 						}
 					}
 				}
 				if notes, ok := cardMap["notes"].([]interface{}); ok {
 					for _, n := range notes {
-						sb.WriteString(fmt.Sprintf("  - %v\n", n))
+						fmt.Fprintf(&sb, "  - %v\n", n)
 					}
 				}
 			}
@@ -165,19 +165,19 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 				}
 				name, _ := comboMap["name"].(string)
 				rating, _ := comboMap["rating"].(string)
-				sb.WriteString(fmt.Sprintf("**%s** (%s):\n", name, rating))
+				fmt.Fprintf(&sb, "**%s** (%s):\n", name, rating)
 				if strategy, ok := comboMap["strategy"].(map[string]interface{}); ok {
 					if main, ok := strategy["main_driver"].(string); ok {
-						sb.WriteString(fmt.Sprintf("  - Main driver: %s\n", main))
+						fmt.Fprintf(&sb, "  - Main driver: %s\n", main)
 					}
 					if bene, ok := strategy["benefits_card"].(string); ok {
-						sb.WriteString(fmt.Sprintf("  - Benefits: %s\n", bene))
+						fmt.Fprintf(&sb, "  - Benefits: %s\n", bene)
 					}
 					if back, ok := strategy["backup_card"].(string); ok {
-						sb.WriteString(fmt.Sprintf("  - Backup: %s\n", back))
+						fmt.Fprintf(&sb, "  - Backup: %s\n", back)
 					}
 					if reason, ok := strategy["reasoning"].(string); ok {
-						sb.WriteString(fmt.Sprintf("  - Why: %s\n", reason))
+						fmt.Fprintf(&sb, "  - Why: %s\n", reason)
 					}
 				}
 				sb.WriteString("\n")
@@ -190,14 +190,14 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 		sb.WriteString("### Credit Card Strategy Principles\n")
 		if princMap, ok := principles.(map[string]interface{}); ok {
 			for key, val := range princMap {
-				sb.WriteString(fmt.Sprintf("**%s:**\n", key))
+				fmt.Fprintf(&sb, "**%s:**\n", key)
 				if ruleMap, ok := val.(map[string]interface{}); ok {
 					if desc, ok := ruleMap["rule"].(string); ok {
-						sb.WriteString(fmt.Sprintf("  %s\n", desc))
+						fmt.Fprintf(&sb, "  %s\n", desc)
 					}
 					if details, ok := ruleMap["details"].([]interface{}); ok {
 						for _, d := range details {
-							sb.WriteString(fmt.Sprintf("  - %v\n", d))
+							fmt.Fprintf(&sb, "  - %v\n", d)
 						}
 					}
 				}
@@ -218,10 +218,10 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 				}
 				src, _ := entry["source"].(string)
 				if src != "" {
-					sb.WriteString(fmt.Sprintf("**%s:**\n", src))
+					fmt.Fprintf(&sb, "**%s:**\n", src)
 				}
 				if rule, ok := entry["critical_rule"].(string); ok {
-					sb.WriteString(fmt.Sprintf("  - Rule: %s\n", rule))
+					fmt.Fprintf(&sb, "  - Rule: %s\n", rule)
 				}
 				if partners, ok := entry["partners"].([]interface{}); ok {
 					for _, p := range partners {
@@ -232,7 +232,7 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 						prog, _ := pm["program"].(string)
 						ratio, _ := pm["ratio"].(string)
 						best, _ := pm["best_use"].(string)
-						sb.WriteString(fmt.Sprintf("  - %s (%s): %s\n", prog, ratio, best))
+						fmt.Fprintf(&sb, "  - %s (%s): %s\n", prog, ratio, best)
 					}
 				}
 				sb.WriteString("\n")
@@ -252,10 +252,10 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 					continue
 				}
 				title, _ := wm["title"].(string)
-				sb.WriteString(fmt.Sprintf("**%s:**\n", title))
+				fmt.Fprintf(&sb, "**%s:**\n", title)
 				if steps, ok := wm["steps"].([]interface{}); ok {
 					for i, st := range steps {
-						sb.WriteString(fmt.Sprintf("  %d. %v\n", i+1, st))
+						fmt.Fprintf(&sb, "  %d. %v\n", i+1, st)
 					}
 				}
 				sb.WriteString("\n")
@@ -268,16 +268,16 @@ func (kb *KnowledgeBase) LoadSupplementary(path string) error {
 		sb.WriteString("### Redemption Tips\n")
 		if tipMap, ok := tips.(map[string]interface{}); ok {
 			for prog, val := range tipMap {
-				sb.WriteString(fmt.Sprintf("**%s:**\n", prog))
+				fmt.Fprintf(&sb, "**%s:**\n", prog)
 				if entry, ok := val.(map[string]interface{}); ok {
 					if dos, ok := entry["do"].([]interface{}); ok {
 						for _, d := range dos {
-							sb.WriteString(fmt.Sprintf("  ✅ %v\n", d))
+							fmt.Fprintf(&sb, "  ✅ %v\n", d)
 						}
 					}
 					if donts, ok := entry["do_not"].([]interface{}); ok {
 						for _, d := range donts {
-							sb.WriteString(fmt.Sprintf("  ❌ %v\n", d))
+							fmt.Fprintf(&sb, "  ❌ %v\n", d)
 						}
 					}
 				}
@@ -423,8 +423,8 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("| %s | %.1f–%.1f¢ | %s |\n",
-			prog.Name, prog.CPPRange.Low, prog.CPPRange.High, prog.CPPRange.SweetSpot))
+		fmt.Fprintf(&sb, "| %s | %.1f–%.1f¢ | %s |\n",
+			prog.Name, prog.CPPRange.Low, prog.CPPRange.High, prog.CPPRange.SweetSpot)
 	}
 	sb.WriteString("\n")
 
@@ -437,7 +437,7 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("- **%s →** ", prog.Name))
+		fmt.Fprintf(&sb, "- **%s →** ", prog.Name)
 		parts := make([]string, 0, len(prog.TransfersTo))
 		for _, tp := range prog.TransfersTo {
 			s := fmt.Sprintf("%s (%s)", tp.Program, tp.Ratio)
@@ -460,13 +460,13 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("**%s:**\n", prog.Name))
+		fmt.Fprintf(&sb, "**%s:**\n", prog.Name)
 		for zone, cabins := range prog.AwardChart {
 			parts := []string{}
 			for cabin, pts := range cabins {
 				parts = append(parts, fmt.Sprintf("%s: %dk", cabin, pts/1000))
 			}
-			sb.WriteString(fmt.Sprintf("  %s — %s\n", zone, strings.Join(parts, ", ")))
+			fmt.Fprintf(&sb, "  %s — %s\n", zone, strings.Join(parts, ", "))
 		}
 		sb.WriteString("\n")
 	}
@@ -481,7 +481,7 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 			continue
 		}
 		for _, ss := range prog.SweetSpots {
-			sb.WriteString(fmt.Sprintf("- %s\n", ss))
+			fmt.Fprintf(&sb, "- %s\n", ss)
 		}
 	}
 	sb.WriteString("\n")
@@ -495,34 +495,34 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		if !programInUserSet(key, prog.Name, userPrograms) {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("**%s** (%.1f–%.1f¢/pt):\n", prog.Name, prog.CPPRange.Low, prog.CPPRange.High))
+		fmt.Fprintf(&sb, "**%s** (%.1f–%.1f¢/pt):\n", prog.Name, prog.CPPRange.Low, prog.CPPRange.High)
 		if prog.Note != "" {
-			sb.WriteString(fmt.Sprintf("  Note: %s\n", prog.Note))
+			fmt.Fprintf(&sb, "  Note: %s\n", prog.Note)
 		}
 		if len(prog.CategoryChart) > 0 {
 			parts := []string{}
 			for cat, pts := range prog.CategoryChart {
 				parts = append(parts, fmt.Sprintf("%s: %s", cat, formatPts(pts)))
 			}
-			sb.WriteString(fmt.Sprintf("  Tiers: %s\n", strings.Join(parts, " | ")))
+			fmt.Fprintf(&sb, "  Tiers: %s\n", strings.Join(parts, " | "))
 		}
 		if len(prog.AwardTiers) > 0 {
 			parts := []string{}
 			for tier, pts := range prog.AwardTiers {
 				parts = append(parts, fmt.Sprintf("%s: %s", tier, formatPts(pts)))
 			}
-			sb.WriteString(fmt.Sprintf("  Tiers: %s\n", strings.Join(parts, " | ")))
+			fmt.Fprintf(&sb, "  Tiers: %s\n", strings.Join(parts, " | "))
 		}
 		// Properties
 		for city, props := range prog.Properties {
-			sb.WriteString(fmt.Sprintf("  %s:\n", titleCase(city)))
+			fmt.Fprintf(&sb, "  %s:\n", titleCase(city))
 			for _, p := range props {
-				sb.WriteString(fmt.Sprintf("    - %s: %s pts/nt (~$%.0f CAD)\n", p.Name, formatPts(p.PtsPerNight), p.CashCAD))
+				fmt.Fprintf(&sb, "    - %s: %s pts/nt (~$%.0f CAD)\n", p.Name, formatPts(p.PtsPerNight), p.CashCAD)
 			}
 		}
 		if len(prog.Perks) > 0 {
 			for _, perk := range prog.Perks {
-				sb.WriteString(fmt.Sprintf("  - %s\n", perk))
+				fmt.Fprintf(&sb, "  - %s\n", perk)
 			}
 		}
 		sb.WriteString("\n")
@@ -547,8 +547,8 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 			if f.BusinessPts > 0 {
 				biz = fmt.Sprintf("%dk", f.BusinessPts/1000)
 			}
-			sb.WriteString(fmt.Sprintf("| %s→%s | %s | %s | %s | %s | %s |\n",
-				f.From, f.To, f.Airline, f.Program, econ, biz, f.Duration))
+			fmt.Fprintf(&sb, "| %s→%s | %s | %s | %s | %s | %s |\n",
+				f.From, f.To, f.Airline, f.Program, econ, biz, f.Duration)
 		}
 		sb.WriteString("\n")
 	}
@@ -562,7 +562,7 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 			if !programInUserSet(d.Program, d.Program, userPrograms) {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", d.Date, d.Program, d.Summary))
+			fmt.Fprintf(&sb, "- **%s** (%s): %s\n", d.Date, d.Program, d.Summary)
 			count++
 			if count >= 8 {
 				break
@@ -578,11 +578,11 @@ func (kb *KnowledgeBase) FormatForPrompt(userPrograms []string) string {
 		for _, t := range kb.TransferBonusLog {
 			// Match on either source OR destination — a wallet-holder of MR cares
 			// about MR→Aeroplan bonuses even if they don't "have" Aeroplan yet.
-			if !(programInUserSet(t.Source, t.Source, userPrograms) || programInUserSet(t.Destination, t.Destination, userPrograms)) {
+			if !programInUserSet(t.Source, t.Source, userPrograms) && !programInUserSet(t.Destination, t.Destination, userPrograms) {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("- %s: **%s → %s** %+d%% — %s\n",
-				t.DateRange, t.Source, t.Destination, t.BonusPct, t.Note))
+			fmt.Fprintf(&sb, "- %s: **%s → %s** %+d%% — %s\n",
+				t.DateRange, t.Source, t.Destination, t.BonusPct, t.Note)
 			count++
 			if count >= 8 {
 				break

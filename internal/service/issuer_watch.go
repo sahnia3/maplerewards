@@ -140,7 +140,7 @@ func (s *IssuerWatchService) fetch(ctx context.Context, url string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("http get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("http status %d", resp.StatusCode)
 	}

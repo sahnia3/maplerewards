@@ -23,7 +23,7 @@ const testWebhookSecret = "whsec_test_secret_value"
 // signed payload "ts.payload" using HMAC-SHA256, exactly as Stripe does.
 func stripeSig(ts int64, payload, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(fmt.Sprintf("%d.%s", ts, payload)))
+	fmt.Fprintf(mac, "%d.%s", ts, payload) //nolint:errcheck // hash.Hash.Write never errors
 	return fmt.Sprintf("t=%d,v1=%s", ts, hex.EncodeToString(mac.Sum(nil)))
 }
 
@@ -80,7 +80,7 @@ func TestVerifyStripeSignature_MalformedHeaders_Rejected(t *testing.T) {
 	validTS := time.Now().Unix()
 	goodHMAC := func() string {
 		m := hmac.New(sha256.New, []byte(testWebhookSecret))
-		m.Write([]byte(fmt.Sprintf("%d.%s", validTS, payload)))
+		fmt.Fprintf(m, "%d.%s", validTS, payload) //nolint:errcheck // hash.Hash.Write never errors
 		return hex.EncodeToString(m.Sum(nil))
 	}()
 
@@ -111,7 +111,7 @@ func TestVerifyStripeSignature_MultipleV1_OneValid(t *testing.T) {
 	payload := `{"id":"evt_1"}`
 	ts := time.Now().Unix()
 	m := hmac.New(sha256.New, []byte(testWebhookSecret))
-	m.Write([]byte(fmt.Sprintf("%d.%s", ts, payload)))
+	fmt.Fprintf(m, "%d.%s", ts, payload) //nolint:errcheck // hash.Hash.Write never errors
 	good := hex.EncodeToString(m.Sum(nil))
 	hdr := fmt.Sprintf("t=%d,v1=deadbeefbad,v1=%s", ts, good)
 	if !verifyStripeSignature([]byte(payload), hdr, testWebhookSecret) {

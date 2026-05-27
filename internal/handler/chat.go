@@ -240,7 +240,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			)
 			// Best-effort SSE error frame; if w is already closed this is a no-op.
 			if f, ok := w.(http.Flusher); ok {
-				fmt.Fprintf(w, "event: error\ndata: {\"message\":\"internal error — see server logs\"}\n\n")
+				fmt.Fprintf(w, "event: error\ndata: {\"message\":\"internal error — see server logs\"}\n\n") //nolint:errcheck // best-effort SSE frame; client may already be gone
 				f.Flush()
 			}
 		}
@@ -334,7 +334,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload) //nolint:errcheck // best-effort SSE write; client may have disconnected
 		flusher.Flush()
 	}
 
@@ -370,7 +370,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 					mu.Unlock()
 					return
 				}
-				fmt.Fprint(w, ": keepalive\n\n")
+				fmt.Fprint(w, ": keepalive\n\n") //nolint:errcheck // best-effort SSE keepalive; client may have disconnected
 				flusher.Flush()
 				mu.Unlock()
 			}

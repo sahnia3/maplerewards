@@ -104,7 +104,7 @@ func (p *WebPushSender) Send(ctx context.Context, sub repo.PushSubscription, msg
 	if err != nil {
 		return fmt.Errorf("send push: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	if resp.StatusCode == 404 || resp.StatusCode == 410 {
 		return ErrSubscriptionGone

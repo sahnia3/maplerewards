@@ -280,7 +280,7 @@ Rules:
 	if err != nil {
 		return nil, fmt.Errorf("do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 	if resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 		return nil, fmt.Errorf("anthropic %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
@@ -389,10 +389,7 @@ func credibleSource(rawURL string) bool {
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return false
 	}
-	host := strings.ToLower(u.Host)
-	if strings.HasPrefix(host, "www.") {
-		host = host[4:]
-	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
 	blocked := []string{
 		"threads.com", "threads.net", "x.com", "twitter.com",
 		"facebook.com", "instagram.com", "reddit.com", "tiktok.com",
@@ -445,7 +442,7 @@ func sourceURLLive(ctx context.Context, client *http.Client, rawURL string) bool
 		if err != nil {
 			return 0, err
 		}
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck // close on read-only response body
 		return resp.StatusCode, nil
 	}
 	if code, err := try(http.MethodHead); err == nil && code >= 200 && code < 400 {

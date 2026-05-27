@@ -255,7 +255,7 @@ func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput)
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	respBody, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
@@ -293,7 +293,7 @@ func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, tim
 			continue
 		}
 		body, _ := readCappedBody(resp.Body)
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 		var runResp apifyRunResponse
 		if err := json.Unmarshal(body, &runResp); err != nil {
@@ -340,7 +340,7 @@ func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
 	body, _ := readCappedBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {

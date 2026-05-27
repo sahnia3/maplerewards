@@ -153,7 +153,7 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 	if err != nil {
 		return fmt.Errorf("begin merge tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
 
 	// Transfer wallet cards (skip conflicts where auth user already has that card)
 	_, err = tx.Exec(ctx, `
@@ -462,7 +462,7 @@ func (r *AuthRepo) DeleteUser(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("begin delete tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
 
 	// Read the email before scrambling so we can record it in the audit log.
 	var emailAtDelete *string

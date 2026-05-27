@@ -197,7 +197,7 @@ func (s *OptimizerService) scoreCard(
 	// cards skip cap enforcement entirely and rank on their uncapped headline
 	// rate — e.g. Cobalt winning $10k spend at a flat 5x when its 5x is
 	// capped at $2,500/mo.
-	effectiveRate := multiplier.EarnRate
+	var effectiveRate float64
 	isCapHit := false
 	note := ""
 
