@@ -9,7 +9,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { setAuthTokenAccessor, setAuthRefreshHandler, getCSRFToken, CSRF_HEADER } from "@/lib/api";
+import { setAuthTokenAccessor, setAuthRefreshHandler, getCSRFToken, CSRF_HEADER, resetCSRFToken } from "@/lib/api";
 
 // Small helper: build a headers map for a CSRF-protected auth POST. Mirrors
 // the api.ts request() wrapper for the call sites that bypass it.
@@ -143,6 +143,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleTokenPair = useCallback((data: TokenPair) => {
     setAccessToken(data.access_token);
     setUser(data.user);
+    // The server rotates the CSRF cookie on login/register; that rotated value
+    // isn't readable cross-domain, so drop the cache and re-seed on next use.
+    resetCSRFToken();
   }, []);
 
   // Register with email/password
@@ -221,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setAccessToken(null);
     setUser(null);
+    resetCSRFToken();
     // The httpOnly refresh cookie is cleared server-side by /auth/logout.
   }, [accessToken]);
 

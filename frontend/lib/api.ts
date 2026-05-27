@@ -46,10 +46,14 @@ async function refreshOnce(): Promise<string | null> {
   return inFlightRefresh;
 }
 
-// CSRF token plumbing — double-submit cookie pattern. The backend sets
-// `mr_csrf` (non-httpOnly) on any GET; we read it via document.cookie and
-// echo it back in `X-CSRF-Token` on state-changing requests. The pair must
-// match for the server to allow auth/billing mutations.
+// CSRF token plumbing — double-submit cookie pattern. GET /csrf both sets the
+// `mr_csrf` cookie AND returns the same token in its JSON body. In production
+// the API (Railway) and SPA (Vercel) are on different domains, so the SPA's
+// document.cookie CANNOT read the API-domain cookie — we therefore source the
+// header value from the response BODY and cache it in memory, falling back to
+// document.cookie only for same-origin dev. The browser still replays the
+// SameSite=None cookie on the cross-site write (credentials:include), so the
+// server's header==cookie double-submit check passes.
 const CSRF_COOKIE = "mr_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
 const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -63,16 +67,23 @@ function readCookie(name: string): string {
   return "";
 }
 
+// Token from GET /csrf (body). Authoritative across domains; the cookie is
+// only document.cookie-readable when the API is same-origin (dev).
+let _csrfToken: string | null = null;
 let _csrfSeedInflight: Promise<void> | null = null;
-async function ensureCSRFCookie(): Promise<void> {
+
+async function ensureCSRFCookie(force = false): Promise<void> {
   if (typeof document === "undefined") return;
-  if (readCookie(CSRF_COOKIE)) return;
+  if (_csrfToken && !force) return;
   if (_csrfSeedInflight) return _csrfSeedInflight;
   _csrfSeedInflight = (async () => {
     try {
-      // GET /csrf — backend sets the cookie as a side effect; body is just
-      // a courtesy. We rely on the cookie write, not the response payload.
-      await fetch(`${BASE_URL}/csrf`, { method: "GET", credentials: "include" });
+      // GET /csrf sets the cookie (for the cross-site round-trip) and returns
+      // the token in the body — the value we echo back in the header.
+      const res = await fetch(`${BASE_URL}/csrf`, { method: "GET", credentials: "include" });
+      const data = await res.json().catch(() => null);
+      _csrfToken =
+        data && typeof data.csrf_token === "string" ? data.csrf_token : readCookie(CSRF_COOKIE) || null;
     } finally {
       _csrfSeedInflight = null;
     }
@@ -80,12 +91,22 @@ async function ensureCSRFCookie(): Promise<void> {
   return _csrfSeedInflight;
 }
 
+function currentCSRF(): string {
+  return _csrfToken || readCookie(CSRF_COOKIE);
+}
+
+/** Drop the cached CSRF token so the next call re-seeds it. The server rotates
+ *  the cookie on login/logout/password-change, and that rotated value isn't
+ *  readable cross-domain, so callers must re-fetch after those actions. */
+export function resetCSRFToken(): void {
+  _csrfToken = null;
+}
+
 // Exported for auth-context and other call sites that bypass `request()`
-// but still need to talk to CSRF-protected endpoints (raw fetch, no Auth
-// header yet, etc.). Seeds the cookie if missing, then returns the token.
+// but still need a CSRF token for raw fetches.
 export async function getCSRFToken(): Promise<string> {
   await ensureCSRFCookie();
-  return readCookie(CSRF_COOKIE);
+  return currentCSRF();
 }
 
 export { CSRF_HEADER };
@@ -126,7 +147,7 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
   return new ApiError(`Something went wrong (HTTP ${res.status}). Please try again.`, res.status);
 }
 
-export async function request<T>(path: string, init?: RequestInit, retryOn401 = true): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, retryOn401 = true, retryCSRF = true): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string>),
@@ -143,7 +164,7 @@ export async function request<T>(path: string, init?: RequestInit, retryOn401 = 
   const method = (init?.method ?? "GET").toUpperCase();
   if (STATE_CHANGING.has(method)) {
     await ensureCSRFCookie();
-    const csrf = readCookie(CSRF_COOKIE);
+    const csrf = currentCSRF();
     if (csrf) headers[CSRF_HEADER] = csrf;
   }
 
@@ -153,13 +174,24 @@ export async function request<T>(path: string, init?: RequestInit, retryOn401 = 
     credentials: init?.credentials ?? "include",
   });
 
+  // Self-heal CSRF: the server rotates the token on login/logout/password
+  // change; cross-domain we can't read the rotated cookie, so a stale cached
+  // token yields 403 CSRF_FAILED. Re-seed from /csrf and replay once.
+  if (res.status === 403 && retryCSRF && STATE_CHANGING.has(method)) {
+    const j = await res.clone().json().catch(() => null);
+    if (j && j.code === "CSRF_FAILED") {
+      await ensureCSRFCookie(true);
+      return request<T>(path, init, retryOn401, false);
+    }
+  }
+
   // Transparent refresh on 401 — try once, then replay the original request.
   // Endpoints that don't need auth still return 401 here when they're behind
   // RequireSessionOwner / RequirePro, so the same handling applies.
   if (res.status === 401 && retryOn401 && _refreshAccessToken) {
     const newToken = await refreshOnce();
     if (newToken) {
-      return request<T>(path, init, false);
+      return request<T>(path, init, false, retryCSRF);
     }
   }
 
