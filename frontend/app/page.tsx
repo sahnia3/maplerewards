@@ -376,7 +376,7 @@ export default function HomePage() {
            * Single coherent stat surface (folded into the masthead) + the
            * real "best move today". No duplicated grids, no fabricated cards. */}
         <motion.section
-          className="mr-hero home-hero"
+          className={`mr-hero home-hero${recentSpend.length === 0 ? " home-hero--solo" : ""}`}
           variants={heroContainer}
           initial={reduceMotion ? false : "hidden"}
           animate="show"

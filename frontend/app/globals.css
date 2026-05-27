@@ -678,8 +678,9 @@ input[type="number"]::-webkit-inner-spin-button {
   z-index: 1;
   pointer-events: auto;
   --fan-scale: 1.0;
+  --fan-shift-x: 0px;
 }
-.mr-hero-art > div { transform: scale(var(--fan-scale)); transform-origin: center; }
+.mr-hero-art > div { transform: translateX(var(--fan-shift-x, 0px)) scale(var(--fan-scale)); transform-origin: center; }
 
 .mr-hero-copy {
   position: relative;
@@ -881,18 +882,30 @@ input[type="number"]::-webkit-inner-spin-button {
 @media (min-width: 1121px) {
   .mr-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) min(46%, 560px);
-    gap: 36px;
+    grid-template-columns: minmax(0, 1fr) min(44%, 540px);
+    gap: 32px;
     align-items: start;
   }
   .mr-hero-copy { grid-column: 1; grid-row: 1; }
   .mr-hero-art {
     grid-column: 2;
     grid-row: 1;
-    align-self: start;
+    /* Centre the fan vertically against the (taller) copy column so it sits at
+     * a natural mid-level instead of clinging to the top-right, and nudge it
+     * left so it isn't crammed into the right margin. */
+    align-self: center;
+    --fan-shift-x: -54px;
     /* Bounded box: the fan lives here and cannot extend past the hero into
      * the ledger no matter how tall the copy column grows. */
     height: clamp(330px, 30vw, 430px);
+  }
+
+  /* Solo hero (new/empty wallet — no ledger below): fill the viewport and
+   * vertically centre the whole hero so the screen reads as a composed first
+   * surface instead of content clinging to the top with a void beneath. */
+  .mr-hero.home-hero--solo {
+    min-height: calc(100vh - 120px);
+    align-content: center;
   }
 }
 

@@ -227,6 +227,7 @@ export default function ChatPage() {
               >
                 <div
                   style={{
+                    minWidth: 0,
                     maxWidth: m.role === "user" ? "min(560px, 80%)" : "100%",
                     padding: m.role === "user" ? "12px 16px" : "0",
                     borderRadius: m.role === "user" ? 14 : 0,
@@ -248,27 +249,25 @@ export default function ChatPage() {
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>
                   ) : (
-                    <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: "#fff" }}>{m.content}</p>
+                    <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: "#fff", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{m.content}</p>
                   )}
                 </div>
               </div>
             ))}
 
             {loading && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 0", borderLeft: "2px solid var(--accent)", paddingLeft: 18 }}>
-                {pills.length === 0 ? (
-                  searching ? (
-                    <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                      Searching live sources…
-                    </span>
-                  ) : (
-                    <span style={{ display: "inline-flex", gap: 5 }}>
-                      <Dot delay="0ms" /><Dot delay="150ms" /><Dot delay="300ms" />
-                    </span>
-                  )
-                ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 0", borderLeft: "2px solid var(--accent)", paddingLeft: 18 }}>
+                {/* Always-present, animated "thinking" line so the wait reads as
+                   alive motion rather than a static stack of pills. */}
+                <ThinkingIndicator searching={searching} />
+                {/* Tool-call pills (when the model is using tools) fade in below. */}
+                {pills.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {pills.map((p) => <ToolStatusPill key={p.id} pill={p} />)}
+                    {pills.map((p) => (
+                      <div key={p.id} className="maple-pill-in">
+                        <ToolStatusPill pill={p} />
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -427,6 +426,8 @@ export default function ChatPage() {
               className="serif"
               style={{
                 flex: 1,
+                minWidth: 0,
+                width: "100%",
                 background: "transparent",
                 resize: "none",
                 outline: "none",
@@ -437,6 +438,9 @@ export default function ChatPage() {
                 maxHeight: 120,
                 padding: 0,
                 lineHeight: 1.4,
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+                wordBreak: "break-word",
               }}
             />
             <button
@@ -485,7 +489,53 @@ export default function ChatPage() {
         .chat-message th { color: var(--ink-3); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
         .chat-message hr { border: 0; border-top: 1px solid var(--rule); margin: 16px 0; }
         .chat-message pre { background: var(--card-fill); padding: 12px; border-radius: 8px; overflow-x: auto; }
+
+        /* Maple "thinking" indicator — a soft pulsing orb + a phrase that
+           cross-fades, so the wait feels like live motion. */
+        @keyframes maple-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.95; box-shadow: 0 0 0 0 var(--accent-soft); }
+          50%      { transform: scale(1.35); opacity: 0.5; box-shadow: 0 0 0 6px transparent; }
+        }
+        @keyframes maple-fade-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .maple-thinking-orb {
+          width: 9px; height: 9px; border-radius: 50%;
+          background: var(--accent);
+          box-shadow: 0 0 0 4px var(--accent-soft);
+          animation: maple-pulse 1.5s ease-in-out infinite;
+          flex-shrink: 0;
+        }
+        .maple-thinking-text { display: inline-block; animation: maple-fade-in 420ms ease both; }
+        .maple-pill-in { animation: maple-fade-in 320ms ease both; }
       `}</style>
+    </div>
+  );
+}
+
+function ThinkingIndicator({ searching }: { searching: boolean }) {
+  // Phrases cross-fade every couple seconds so the wait reads as live motion.
+  const phrases = searching
+    ? ["Searching live sources…", "Reading the latest fares…", "Cross-checking award space…"]
+    : ["Brewing your answer…", "Thinking it through…", "Checking your wallet…", "Weighing transfer partners…", "Crunching the points math…"];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    setIdx(0);
+    const t = setInterval(() => setIdx((i) => (i + 1) % phrases.length), 2200);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searching]);
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 11 }} role="status" aria-live="polite">
+      <span className="maple-thinking-orb" aria-hidden />
+      <span
+        key={idx}
+        className="serif maple-thinking-text"
+        style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-2)" }}
+      >
+        {phrases[idx]}
+      </span>
     </div>
   );
 }
