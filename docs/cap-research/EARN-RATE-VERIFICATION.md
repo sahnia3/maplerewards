@@ -76,16 +76,40 @@ cards.
 
 ---
 
+## Batches 7–8 corrections (000066–000067)
+
+| Card | Fix | Migration |
+|---|---|---|
+| BMO CashBack WE | "2% streaming" -> recurring-bills (mislabelled) | 000066 |
+| CIBC Aventura Gold | removed bogus 2x dining; +1.5x gas/drugstore/grocery | 000066 |
+| CIBC Dividend Platinum | gas/grocery 2% -> 3% | 000066 |
+| RBC Avion VIP | removed bogus 1.5x travel/dining (flat 1.25x) | 000066 |
+| BMO eclipse VIP | gas 4->5, dining 3->5, +5x travel/drugstore | 000067 |
+
+Verified-correct batches 7–8: RBC Cash Back MC, Tangerine World, Simplii Cash
+Back, RBC ION+. Neo WE left (variable/tiered rates; DB models reasonable averages).
+
+## Systemic issue discovered (separate value-model fix, NOT rate-data)
+
+**BMO Rewards points cards modelled as `cashback_pct`.** BMO eclipse VI/VIP (and
+likely BMO Ascend / BMO Rewards MC) earn BMO *Rewards points* (~0.67¢/pt via
+travel), but are seeded `earn_type = cashback_pct` with the points count as the
+percent — so the optimizer values "5 points" as "5%" (≈3.3% real), **over-valuing
+~50%**. Rate-data is now correct; the fix here is `earn_type` -> `points` + a
+verified BMO Rewards CPP in `program_valuations`. Deferred as a value-model
+decision (affects several BMO cards + the optimizer's $ output). The real BMO
+*CashBack* series (e.g. BMO CashBack WE/MC) IS genuine cash back — correctly
+`cashback_pct`, no change.
+
 ## Status
 
-- **7 migrations** (000059–000065), **~50 cards** cited-verified, every confirmed
-  error fixed + reversible + round-trip tested. Catalog-wide duplicate scan: 0.
-  One self-correction (Cobalt travel 2x, restored in 000065) — the re-verification
-  caught it, which is the point of cited sourcing.
-- Also verified-correct in batch 6: Simplii Cash Back, RBC ION+ (close), CIBC
-  Costco (minor cap nuance, not material).
+- **9 migrations** (000059–000067), **~62 cards** cited-verified, ~20 cards' rates
+  corrected, every fix reversible + round-trip tested. Catalog duplicate scan: 0.
+  One self-correction (Cobalt travel 2x) — caught by re-verification.
 - Data fixes are **live on the DB** (no app redeploy needed for data).
-- **Remaining ~54 cards** still need per-card cited verification to call the
-  catalog FULLY ratified — and given the ~50% error rate found so far, several
-  almost certainly still contain errors. This is genuine continued work; the
-  "Higher-risk" list above is the priority queue. Not yet complete.
+- **Remaining ~42 cards** are mostly flat / single-category / low-traffic
+  (lower error risk) plus a few category cards (BMO Ascend streaming, BMO World
+  Elite MC, RBC WestJet WE, NBC Allure/Platinum/Syncro, Capital One Costco,
+  Desjardins Odyssey x2, TD Platinum Travel, TD FCT VIP, TD Aeroplan Platinum,
+  MBNA Alaska/Smart Cash, CIBC Tim Hortons, HSBC x3 [defunct issuer]) + the BMO
+  value-model fix above. All highest- and medium-traffic cards are done.
