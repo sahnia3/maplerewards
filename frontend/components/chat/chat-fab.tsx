@@ -45,19 +45,22 @@ export function ChatFab() {
           }
         }
 
-        /* Ambient halo — diffuse glow that breathes around the sphere. */
+        /* Ambient halo — cool blue glow that breathes around the sphere. The
+         * cool palette gives the orb separation from the warm accent-red
+         * gradients and dark-red surfaces it lives over, so it reads as a
+         * deliberate object instead of camouflaging into the background. */
         .maple-orb-halo {
           position: absolute;
-          inset: -14px;
+          inset: -16px;
           border-radius: 50%;
           background: radial-gradient(
             closest-side,
-            rgba(165, 31, 45, 0.55),
-            rgba(165, 31, 45, 0.18) 55%,
-            rgba(165, 31, 45, 0) 78%
+            rgba(96, 165, 255, 0.58),
+            rgba(80, 140, 255, 0.22) 55%,
+            rgba(60, 120, 240, 0) 78%
           );
-          filter: blur(6px);
-          opacity: 0.9;
+          filter: blur(7px);
+          opacity: 0.92;
           animation: maple-orb-halo 3.6s ease-in-out infinite;
           z-index: 0;
           pointer-events: none;
@@ -78,16 +81,16 @@ export function ChatFab() {
           background:
             radial-gradient(
               circle at 32% 30%,
-              rgba(255, 235, 240, 0.18) 0%,
-              rgba(220, 60, 80, 0.35) 28%,
-              rgba(130, 18, 32, 0.92) 70%,
-              rgba(48, 6, 12, 1) 100%
+              rgba(220, 240, 255, 0.22) 0%,
+              rgba(80, 150, 240, 0.40) 28%,
+              rgba(22, 60, 150, 0.94) 70%,
+              rgba(8, 18, 50, 1) 100%
             );
           box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.22),
-            inset 0 -3px 10px rgba(0, 0, 0, 0.48),
-            0 10px 28px rgba(0, 0, 0, 0.55),
-            0 0 0 1px rgba(255, 255, 255, 0.05);
+            inset 0 1px 0 rgba(255, 255, 255, 0.24),
+            inset 0 -3px 10px rgba(0, 0, 0, 0.50),
+            0 10px 28px rgba(20, 40, 90, 0.55),
+            0 0 0 1px rgba(255, 255, 255, 0.06);
           overflow: hidden;
           z-index: 1;
         }
@@ -103,10 +106,10 @@ export function ChatFab() {
           transform: translate(-50%, -50%);
           background: radial-gradient(
             circle at 50% 50%,
-            rgba(255, 245, 235, 0.98) 0%,
-            rgba(255, 170, 175, 0.72) 30%,
-            rgba(220, 60, 80, 0.42) 62%,
-            rgba(220, 60, 80, 0) 100%
+            rgba(245, 252, 255, 0.98) 0%,
+            rgba(165, 215, 255, 0.78) 30%,
+            rgba(70, 145, 235, 0.45) 62%,
+            rgba(70, 145, 235, 0) 100%
           );
           filter: blur(4px);
           animation: maple-orb-core 2.8s ease-in-out infinite;
@@ -170,7 +173,7 @@ export function ChatFab() {
           opacity: 1;
         }
         .maple-orb-fab:focus-visible {
-          outline: 2px solid var(--accent, #a51f2d);
+          outline: 2px solid #60a5ff;
           outline-offset: 4px;
           border-radius: 50%;
         }
