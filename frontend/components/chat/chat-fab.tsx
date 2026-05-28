@@ -4,20 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Floating "Ask Maple" orb — Siri-style multi-colour blobs swirling inside a
- * glass sphere, with an atomic twist: a bright bloom-y nucleus + two electron
- * particles orbiting on elliptical paths, plus outward pulse-waves that ride
- * around the orb. Hover speeds everything up and fires a wider burst.
+ * Floating "Ask Maple" orb — Siri-style. A translucent glass sphere with
+ * coloured blobs swirling inside and a bright bloomy epicentre that reads as
+ * a small sun behind the glass. The blobs and the bloom do everything — no
+ * extra orbiting particles or broadcast rings; light just emanates from the
+ * centre.
  *   - outer ambient halo (breathes),
- *   - two staggered pulse-wave rings expanding outward (3s + 6s staggered),
- *   - glass sphere shell (mostly transparent center, dark navy rim),
- *   - 4 colour blobs (teal, magenta, blue, soft white) — each drifts on its
- *     own slow keyframe and screen-blends so they overlap into iridescent
- *     swirls,
- *   - 2 electron particles orbiting on elliptical paths at different rates,
- *   - a hot white-yellow nucleus core that pulses (the "soul"),
- *   - a glass rim highlight ring.
- * Routes to /chat; hidden on /chat itself.
+ *   - glass sphere shell (mostly transparent middle, dark navy rim),
+ *   - 4 colour blobs (teal, magenta, blue, soft white) drifting + scaling
+ *     + rotating, screen-blended so they overlap into iridescent swirls,
+ *   - the bright EPICENTRE: a big bloom of warm white-yellow light at the
+ *     middle with a tiny hot pinpoint inside — the "soul",
+ *   - faint cross-flare lines so the bright centre reads as truly luminous,
+ *   - a glass rim highlight.
+ * On hover everything wakes up and the epicentre flares. Routes to /chat.
  */
 export function ChatFab() {
   const pathname = usePathname();
@@ -25,16 +25,14 @@ export function ChatFab() {
 
   return (
     <Link href="/chat" aria-label="Ask Maple — your rewards advisor" className="maple-orb-fab">
-      <span className="maple-orb-pulse pulse-1" aria-hidden />
-      <span className="maple-orb-pulse pulse-2" aria-hidden />
       <span className="maple-orb-halo" aria-hidden />
       <span className="maple-orb-sphere" aria-hidden>
         <span className="maple-orb-blob blob-green" />
         <span className="maple-orb-blob blob-magenta" />
         <span className="maple-orb-blob blob-blue" />
         <span className="maple-orb-blob blob-white" />
-        <span className="maple-orb-electron electron-a" />
-        <span className="maple-orb-electron electron-b" />
+        <span className="maple-orb-flare" />
+        <span className="maple-orb-bloom" />
         <span className="maple-orb-core" />
         <span className="maple-orb-rim" />
       </span>
@@ -61,26 +59,6 @@ export function ChatFab() {
             bottom: 28px;
             right: 28px;
           }
-        }
-
-        /* ── Outward pulse rings ────────────────────────────────────────── */
-        .maple-orb-pulse {
-          position: absolute;
-          inset: 8px;
-          border-radius: 50%;
-          border: 1.5px solid rgba(140, 195, 255, 0.55);
-          opacity: 0;
-          pointer-events: none;
-          z-index: 0;
-          animation: maple-orb-pulse 5.4s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
-        }
-        .pulse-2 {
-          animation-delay: 2.7s;
-        }
-        @keyframes maple-orb-pulse {
-          0%   { transform: scale(0.92); opacity: 0; border-width: 1.5px; }
-          12%  { opacity: 0.55; }
-          100% { transform: scale(2.0); opacity: 0; border-width: 0.5px; }
         }
 
         /* ── Ambient halo ───────────────────────────────────────────────── */
@@ -128,7 +106,7 @@ export function ChatFab() {
           z-index: 1;
         }
 
-        /* ── Inner colour blobs ─────────────────────────────────────────── */
+        /* ── Inner colour blobs (swirl around the epicentre) ───────────── */
         .maple-orb-blob {
           position: absolute;
           border-radius: 50%;
@@ -164,11 +142,11 @@ export function ChatFab() {
           animation: maple-blob-c 8.8s ease-in-out infinite alternate;
         }
         .blob-white {
-          width: 30px; height: 30px;
-          top: 32%; left: 38%;
+          width: 28px; height: 28px;
+          top: 56%; left: 38%;
           background: radial-gradient(circle at 50% 50%,
-            rgba(255, 255, 255, 0.85) 0%,
-            rgba(255, 255, 255, 0.25) 50%,
+            rgba(255, 255, 255, 0.78) 0%,
+            rgba(255, 255, 255, 0.22) 50%,
             rgba(255, 255, 255, 0) 100%);
           animation: maple-blob-d 5.6s ease-in-out infinite alternate;
         }
@@ -189,69 +167,95 @@ export function ChatFab() {
           to   { transform: translate(-4px, -6px) scale(1.24) rotate(-50deg); }
         }
 
-        /* ── Orbital electrons ──────────────────────────────────────────── */
-        /* Two bright particles tracing elliptical orbits inside the sphere,
-         * different radii / speeds / phases — atomic feel. The translate-then-
-         * translate trick centres the keyframes on the orb middle. */
-        .maple-orb-electron {
+        /* ── Cross flare — subtle 4-point light streaks ──────────────────
+         * Two crossed soft gradient lines through the centre make the
+         * bright bloom read as a true point source of light (the lens-flare
+         * read in the Siri reference). Faint, slow rotation. */
+        .maple-orb-flare {
           position: absolute;
           top: 50%;
           left: 50%;
-          width: 4px;
-          height: 4px;
-          margin: -2px 0 0 -2px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.95);
-          box-shadow:
-            0 0 4px 1px rgba(180, 220, 255, 0.90),
-            0 0 10px 2px rgba(120, 180, 255, 0.55);
+          width: 80px;
+          height: 80px;
+          transform: translate(-50%, -50%);
+          background:
+            linear-gradient(
+              90deg,
+              transparent 36%,
+              rgba(255, 250, 230, 0.30) 49%,
+              rgba(255, 255, 245, 0.55) 50%,
+              rgba(255, 250, 230, 0.30) 51%,
+              transparent 64%
+            ),
+            linear-gradient(
+              0deg,
+              transparent 36%,
+              rgba(255, 250, 230, 0.30) 49%,
+              rgba(255, 255, 245, 0.55) 50%,
+              rgba(255, 250, 230, 0.30) 51%,
+              transparent 64%
+            );
+          filter: blur(1.6px);
+          mix-blend-mode: screen;
           pointer-events: none;
           z-index: 2;
+          animation: maple-orb-flare 4.4s ease-in-out infinite;
         }
-        .electron-a {
-          animation: maple-electron-a 3.2s linear infinite;
-        }
-        .electron-b {
-          animation: maple-electron-b 4.4s linear infinite reverse;
-        }
-        /* Ellipse 26×13, tilted via the 25%/75% peaks. */
-        @keyframes maple-electron-a {
-          0%   { transform: translate(26px,  0)   scale(1); }
-          25%  { transform: translate(0,    -13px) scale(0.7); }
-          50%  { transform: translate(-26px, 0)   scale(1); }
-          75%  { transform: translate(0,     13px) scale(1.2); }
-          100% { transform: translate(26px,  0)   scale(1); }
-        }
-        /* Ellipse 14×26, perpendicular tilt. */
-        @keyframes maple-electron-b {
-          0%   { transform: translate(0,    -26px) scale(1.1); }
-          25%  { transform: translate(14px,  0)   scale(0.7); }
-          50%  { transform: translate(0,     26px) scale(1.1); }
-          75%  { transform: translate(-14px, 0)   scale(1.3); }
-          100% { transform: translate(0,    -26px) scale(1.1); }
+        @keyframes maple-orb-flare {
+          0%, 100% { opacity: 0.60; transform: translate(-50%, -50%) rotate(0deg)  scale(0.95); }
+          50%      { opacity: 1.00; transform: translate(-50%, -50%) rotate(22deg) scale(1.06); }
         }
 
-        /* ── Hot core (nucleus) ─────────────────────────────────────────── */
-        .maple-orb-core {
+        /* ── Epicentre bloom — a soft bright sun at the middle ──────────
+         * Big enough to dominate the centre; mix-blend screen so it
+         * over-brightens the blobs and reads as the light source. */
+        .maple-orb-bloom {
           position: absolute;
-          top: 50%; left: 50%;
-          width: 18px; height: 18px;
+          top: 50%;
+          left: 50%;
+          width: 36px;
+          height: 36px;
           border-radius: 50%;
           transform: translate(-50%, -50%);
-          background: radial-gradient(circle at 50% 50%,
-            rgba(255, 255, 245, 1) 0%,
-            rgba(255, 248, 210, 0.92) 25%,
-            rgba(255, 230, 170, 0.55) 55%,
-            rgba(255, 220, 160, 0) 100%);
-          filter: blur(2.5px);
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(255, 255, 248, 0.98) 0%,
+            rgba(255, 248, 210, 0.78) 22%,
+            rgba(255, 230, 165, 0.40) 50%,
+            rgba(255, 220, 160, 0.10) 78%,
+            rgba(255, 220, 160, 0) 100%
+          );
+          filter: blur(4px);
           mix-blend-mode: screen;
-          animation: maple-orb-core 2.4s ease-in-out infinite;
+          animation: maple-orb-bloom 3.2s ease-in-out infinite;
           z-index: 3;
           pointer-events: none;
         }
+        @keyframes maple-orb-bloom {
+          0%, 100% { transform: translate(-50%, -50%) scale(0.9);  opacity: 0.92; }
+          50%      { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+        }
+
+        /* ── Hot pinpoint at the very centre ───────────────────────────── */
+        .maple-orb-core {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(255, 255, 248, 1);
+          box-shadow:
+            0 0 6px 2px rgba(255, 250, 220, 0.95),
+            0 0 14px 4px rgba(255, 240, 200, 0.55);
+          animation: maple-orb-core 2.2s ease-in-out infinite;
+          z-index: 4;
+          pointer-events: none;
+        }
         @keyframes maple-orb-core {
-          0%, 100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.95; }
-          50%      { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
+          0%, 100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.92; }
+          50%      { transform: translate(-50%, -50%) scale(1.20); opacity: 1; }
         }
 
         /* ── Glass rim ──────────────────────────────────────────────────── */
@@ -268,7 +272,7 @@ export function ChatFab() {
             rgba(0, 0, 0, 0.18) 100%
           );
           mix-blend-mode: overlay;
-          z-index: 4;
+          z-index: 5;
         }
 
         /* ── Tooltip ────────────────────────────────────────────────────── */
@@ -298,29 +302,23 @@ export function ChatFab() {
           transform: translateY(-50%) translateX(0);
         }
 
-        /* ── Hover — everything wakes up ────────────────────────────────── */
+        /* ── Hover — the epicentre flares ───────────────────────────────── */
         .maple-orb-fab:hover {
-          transform: scale(1.1);
+          transform: scale(1.08);
         }
         .maple-orb-fab:hover .maple-orb-core {
           animation-duration: 1.2s;
-          filter: blur(2px) brightness(1.25);
+        }
+        .maple-orb-fab:hover .maple-orb-bloom {
+          animation-duration: 1.8s;
+          filter: blur(3px) brightness(1.2);
+        }
+        .maple-orb-fab:hover .maple-orb-flare {
+          animation-duration: 2.4s;
         }
         .maple-orb-fab:hover .maple-orb-halo {
           opacity: 1;
           animation-duration: 2.4s;
-        }
-        .maple-orb-fab:hover .maple-orb-pulse {
-          animation-duration: 2.4s;
-        }
-        .maple-orb-fab:hover .pulse-2 {
-          animation-delay: 1.2s;
-        }
-        .maple-orb-fab:hover .electron-a {
-          animation-duration: 1.6s;
-        }
-        .maple-orb-fab:hover .electron-b {
-          animation-duration: 2.2s;
         }
         .maple-orb-fab:hover .blob-green   { animation-duration: 3.2s; }
         .maple-orb-fab:hover .blob-magenta { animation-duration: 3.9s; }
@@ -336,9 +334,9 @@ export function ChatFab() {
         @media (prefers-reduced-motion: reduce) {
           .maple-orb-halo,
           .maple-orb-core,
-          .maple-orb-blob,
-          .maple-orb-electron,
-          .maple-orb-pulse {
+          .maple-orb-bloom,
+          .maple-orb-flare,
+          .maple-orb-blob {
             animation: none;
           }
         }
