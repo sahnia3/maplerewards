@@ -229,14 +229,16 @@ export default function ChatPage() {
                   style={{
                     minWidth: 0,
                     maxWidth: m.role === "user" ? "min(560px, 80%)" : "100%",
-                    padding: m.role === "user" ? "12px 16px" : "0",
+                    // Padding in one shorthand per role — prior code combined a
+                    // shorthand with `paddingLeft/Top: undefined` for non-assistant,
+                    // which React serialised to "" and reset those longhands to 0,
+                    // so user bubbles ended up flush-left against the rounded edge.
+                    padding: m.role === "user" ? "12px 16px" : "14px 0 0 18px",
                     borderRadius: m.role === "user" ? 14 : 0,
                     background: m.role === "user" ? "var(--accent)" : "transparent",
                     color: m.role === "user" ? "#fff" : "var(--ink)",
                     borderTop: m.role === "assistant" ? "1px solid var(--rule)" : "none",
                     borderLeft: m.role === "assistant" ? "2px solid var(--accent)" : "none",
-                    paddingLeft: m.role === "assistant" ? 18 : undefined,
-                    paddingTop: m.role === "assistant" ? 14 : undefined,
                     overflowWrap: "anywhere",
                     wordBreak: "break-word",
                   }}
