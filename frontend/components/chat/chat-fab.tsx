@@ -4,15 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Floating "Ask Maple" orb — a polished 3D sphere built from layered CSS:
- *   - a luminous halo that breathes around the orb,
- *   - a sphere base shaded as a proper lit object (light from upper-left,
- *     shadow on bottom-right, thin bright rim where the edge refracts),
- *   - a slow iridescent conic gradient that turns inside for life,
- *   - a soft "soul" core that pulses gently,
- *   - a crisp specular crescent reading as glass.
- * Routes to the full /chat page; hidden on /chat itself. No icon — the orb is
- * the affordance; a tooltip slides in on hover/focus.
+ * Floating "Ask Maple" orb — modelled on Siri's translucent glass sphere with
+ * coloured blobs swirling inside and a hot bloomy core. Structure:
+ *   - outer ambient halo (breathes),
+ *   - glass sphere shell (mostly transparent inside, dark rim, glass highlight),
+ *   - 4 colour blobs (green, magenta, blue, white) — each a blurred radial
+ *     gradient drifting on its own slow keyframe with screen blending so they
+ *     mix into iridescent swirls,
+ *   - a hot white-yellow core that pulses (the "soul"),
+ *   - a glossy rim highlight ring.
+ * Routes to /chat; hidden on /chat itself.
  */
 export function ChatFab() {
   const pathname = usePathname();
@@ -22,9 +23,12 @@ export function ChatFab() {
     <Link href="/chat" aria-label="Ask Maple — your rewards advisor" className="maple-orb-fab">
       <span className="maple-orb-halo" aria-hidden />
       <span className="maple-orb-sphere" aria-hidden>
-        <span className="maple-orb-iris" aria-hidden />
-        <span className="maple-orb-core" aria-hidden />
-        <span className="maple-orb-glint" aria-hidden />
+        <span className="maple-orb-blob blob-green" />
+        <span className="maple-orb-blob blob-magenta" />
+        <span className="maple-orb-blob blob-blue" />
+        <span className="maple-orb-blob blob-white" />
+        <span className="maple-orb-core" />
+        <span className="maple-orb-rim" />
       </span>
       <span className="maple-orb-tooltip">Ask Maple</span>
 
@@ -34,8 +38,8 @@ export function ChatFab() {
           z-index: 50;
           bottom: 80px;
           right: 20px;
-          width: 80px;
-          height: 80px;
+          width: 84px;
+          height: 84px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -51,142 +55,185 @@ export function ChatFab() {
           }
         }
 
-        /* ── Halo ──────────────────────────────────────────────────────────
-         * Diffuse cool glow around the sphere, slowly breathing. Tight enough
-         * to read as the sphere's own luminance, not a generic blur. */
+        /* ── Ambient halo ───────────────────────────────────────────────── */
         .maple-orb-halo {
           position: absolute;
           inset: -10px;
           border-radius: 50%;
           background: radial-gradient(
             closest-side,
-            rgba(130, 195, 255, 0.55),
-            rgba(160, 130, 240, 0.22) 50%,
-            rgba(120, 180, 255, 0) 78%
+            rgba(140, 195, 255, 0.45),
+            rgba(180, 130, 255, 0.20) 50%,
+            rgba(100, 160, 240, 0) 78%
           );
-          filter: blur(9px);
+          filter: blur(10px);
           opacity: 0.85;
-          animation: maple-orb-halo 4.2s ease-in-out infinite;
+          animation: maple-orb-halo 4.6s ease-in-out infinite;
           z-index: 0;
           pointer-events: none;
         }
         @keyframes maple-orb-halo {
-          0%, 100% { opacity: 0.7; transform: scale(1); }
-          50%      { opacity: 1;   transform: scale(1.05); }
+          0%, 100% { opacity: 0.65; transform: scale(1); }
+          50%      { opacity: 1;    transform: scale(1.05); }
         }
 
-        /* ── Sphere base ──────────────────────────────────────────────────
-         * The 3D form. A radial gradient places a bright lit area at upper-
-         * left and a deep shadow at bottom-right. Box-shadows add a thin
-         * bright rim + a soft contact shadow + a touch of outer glow. */
+        /* ── Glass sphere ───────────────────────────────────────────────── */
         .maple-orb-sphere {
           position: relative;
-          width: 64px;
-          height: 64px;
+          width: 68px;
+          height: 68px;
           border-radius: 50%;
-          background:
-            radial-gradient(
-              circle at 30% 26%,
-              rgba(220, 240, 255, 0.95) 0%,
-              rgba(140, 195, 255, 0.55) 16%,
-              rgba(60, 115, 220, 0.65) 38%,
-              rgba(25, 55, 140, 0.95) 70%,
-              rgba(8, 18, 60, 1) 100%
-            );
+          /* Mostly transparent in the middle so the colour blobs read through
+           * the glass; deep navy ring at the very edge. */
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(15, 25, 55, 0.05) 0%,
+            rgba(12, 22, 50, 0.18) 55%,
+            rgba(10, 20, 50, 0.78) 88%,
+            rgba(5, 12, 38, 1) 100%
+          );
           box-shadow:
-            /* bright top edge — the lit hemisphere catches light */
-            inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
-            /* darker bottom — the shaded hemisphere */
-            inset 0 -10px 22px rgba(6, 14, 50, 0.72),
-            /* bottom-right shaded curve, sells the 3D form */
-            inset -8px -10px 24px rgba(0, 0, 0, 0.45),
-            /* thin bright rim where the light refracts around the edge */
-            inset 0 0 0 0.5px rgba(180, 215, 255, 0.30),
-            /* contact shadow under the orb */
-            0 18px 36px rgba(10, 20, 70, 0.55),
-            /* gentle ambient glow */
-            0 0 22px rgba(120, 180, 255, 0.28);
+            inset 0 1.5px 0 rgba(255, 255, 255, 0.40),
+            inset 0 -10px 22px rgba(0, 0, 0, 0.55),
+            inset 0 0 0 1px rgba(150, 190, 240, 0.18),
+            0 16px 36px rgba(10, 20, 70, 0.55),
+            0 0 22px rgba(120, 180, 255, 0.25);
           overflow: hidden;
           z-index: 1;
         }
 
-        /* ── Iridescence ──────────────────────────────────────────────────
-         * A slow-rotating conic gradient inside the sphere adds a subtle
-         * shifting iridescence (blue↔cyan↔violet) — the "alive" quality
-         * without being garish. screen blend lifts the colors over the base. */
-        .maple-orb-iris {
+        /* ── Inner colour blobs ─────────────────────────────────────────── */
+        .maple-orb-blob {
           position: absolute;
-          inset: 6px;
           border-radius: 50%;
-          background: conic-gradient(
-            from 0deg,
-            rgba(120, 200, 255, 0.55),
-            rgba(170, 140, 255, 0.42) 22%,
-            rgba(80, 130, 240, 0.25) 50%,
-            rgba(145, 220, 255, 0.50) 76%,
-            rgba(120, 200, 255, 0.55)
-          );
           mix-blend-mode: screen;
-          opacity: 0.7;
-          filter: blur(8px);
-          animation: maple-orb-iris 22s linear infinite;
+          filter: blur(7px);
           pointer-events: none;
         }
-        @keyframes maple-orb-iris {
-          to { transform: rotate(360deg); }
+
+        /* teal / green — top-left quadrant */
+        .blob-green {
+          width: 44px;
+          height: 44px;
+          top: 6%;
+          left: 4%;
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(40, 235, 195, 0.95) 0%,
+            rgba(40, 235, 195, 0.45) 50%,
+            rgba(40, 235, 195, 0) 100%
+          );
+          animation: maple-blob-a 7s ease-in-out infinite alternate;
         }
 
-        /* ── Core ──────────────────────────────────────────────────────────
-         * The soul. A soft cyan-white inner light, gentle 3.2s breathing.
-         * screen blend keeps it luminous over the sphere instead of muddy. */
+        /* magenta / pink — bottom-left quadrant */
+        .blob-magenta {
+          width: 46px;
+          height: 46px;
+          top: 50%;
+          left: 0;
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(255, 80, 130, 0.95) 0%,
+            rgba(255, 80, 130, 0.45) 50%,
+            rgba(255, 80, 130, 0) 100%
+          );
+          animation: maple-blob-b 8.5s ease-in-out infinite alternate;
+        }
+
+        /* electric blue — right side */
+        .blob-blue {
+          width: 50px;
+          height: 50px;
+          top: 26%;
+          right: -4%;
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(70, 150, 255, 0.95) 0%,
+            rgba(70, 150, 255, 0.45) 50%,
+            rgba(70, 150, 255, 0) 100%
+          );
+          animation: maple-blob-c 9.5s ease-in-out infinite alternate;
+        }
+
+        /* soft white wash — drifts across the middle for that bloomy feel */
+        .blob-white {
+          width: 30px;
+          height: 30px;
+          top: 32%;
+          left: 38%;
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(255, 255, 255, 0.85) 0%,
+            rgba(255, 255, 255, 0.25) 50%,
+            rgba(255, 255, 255, 0) 100%
+          );
+          animation: maple-blob-d 6.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes maple-blob-a {
+          from { transform: translate(0, 0)     scale(1);    }
+          to   { transform: translate(8px, 6px) scale(1.18); }
+        }
+        @keyframes maple-blob-b {
+          from { transform: translate(0, 0)      scale(1);    }
+          to   { transform: translate(10px, -8px) scale(1.12); }
+        }
+        @keyframes maple-blob-c {
+          from { transform: translate(0, 0)      scale(1);    }
+          to   { transform: translate(-9px, 6px) scale(0.88); }
+        }
+        @keyframes maple-blob-d {
+          from { transform: translate(0, 0)      scale(1);    }
+          to   { transform: translate(-4px, -5px) scale(1.22); }
+        }
+
+        /* ── Hot white-yellow core (the "soul") ─────────────────────────── */
         .maple-orb-core {
           position: absolute;
-          top: 48%;
-          left: 47%;
-          width: 32px;
-          height: 32px;
+          top: 50%;
+          left: 50%;
+          width: 18px;
+          height: 18px;
           border-radius: 50%;
           transform: translate(-50%, -50%);
           background: radial-gradient(
             circle at 50% 50%,
-            rgba(252, 254, 255, 0.95) 0%,
-            rgba(190, 225, 255, 0.70) 28%,
-            rgba(110, 165, 240, 0.35) 60%,
-            rgba(110, 165, 240, 0) 100%
+            rgba(255, 255, 245, 1) 0%,
+            rgba(255, 248, 210, 0.92) 25%,
+            rgba(255, 230, 170, 0.55) 55%,
+            rgba(255, 220, 160, 0) 100%
           );
-          filter: blur(4px);
+          filter: blur(2.5px);
           mix-blend-mode: screen;
-          animation: maple-orb-core 3.2s ease-in-out infinite;
+          animation: maple-orb-core 2.4s ease-in-out infinite;
+          z-index: 3;
           pointer-events: none;
         }
         @keyframes maple-orb-core {
-          0%, 100% { transform: translate(-50%, -50%) scale(0.88); opacity: 0.88; }
-          50%      { transform: translate(-50%, -50%) scale(1.10); opacity: 1; }
+          0%, 100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.95; }
+          50%      { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
         }
 
-        /* ── Glint ────────────────────────────────────────────────────────
-         * Crisp specular crescent at upper-left where the light source
-         * reflects off the glass. Sells the sphere read. */
-        .maple-orb-glint {
+        /* ── Glass rim — subtle highlight at the top of the sphere ─────── */
+        .maple-orb-rim {
           position: absolute;
-          top: 9px;
-          left: 13px;
-          width: 24px;
-          height: 13px;
+          inset: 0;
           border-radius: 50%;
-          background: radial-gradient(
-            closest-side,
-            rgba(255, 255, 255, 0.85),
-            rgba(255, 255, 255, 0.20) 60%,
-            rgba(255, 255, 255, 0) 100%
-          );
-          filter: blur(1.4px);
           pointer-events: none;
-          transform: rotate(-22deg);
+          background:
+            linear-gradient(
+              to bottom,
+              rgba(255, 255, 255, 0.22) 0%,
+              rgba(255, 255, 255, 0) 30%,
+              rgba(255, 255, 255, 0) 70%,
+              rgba(0, 0, 0, 0.18) 100%
+            );
+          mix-blend-mode: overlay;
+          z-index: 4;
         }
 
-        /* ── Tooltip ──────────────────────────────────────────────────────
-         * "ASK MAPLE" pill slides in from the right on hover/focus. */
+        /* ── Tooltip ────────────────────────────────────────────────────── */
         .maple-orb-tooltip {
           position: absolute;
           right: calc(100% + 10px);
@@ -218,7 +265,7 @@ export function ChatFab() {
           transform: scale(1.06);
         }
         .maple-orb-fab:hover .maple-orb-core {
-          animation-duration: 2.1s;
+          animation-duration: 1.6s;
         }
         .maple-orb-fab:hover .maple-orb-halo {
           opacity: 1;
@@ -232,7 +279,7 @@ export function ChatFab() {
         @media (prefers-reduced-motion: reduce) {
           .maple-orb-halo,
           .maple-orb-core,
-          .maple-orb-iris {
+          .maple-orb-blob {
             animation: none;
           }
         }
