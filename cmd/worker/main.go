@@ -262,12 +262,20 @@ func safely(log *slog.Logger, name string, fn func()) {
 const workerApifyReservePct = 30
 
 // awardSweepAllowed reports whether the worker may run its paid award sweep
-// this cycle. Fails OPEN on a quota read error (a Redis blip must not silently
-// disable the Pro saved-trip feature) and treats unlimited (-1) as allowed.
+// this cycle. Unlike the user-facing path (which fails OPEN on a Redis error to
+// keep chat/search available), this BACKGROUND sweep fails CLOSED when the
+// quota is unreadable: with no way to verify remaining budget, skipping is the
+// safe choice — it protects against blind paid spend during a Redis outage,
+// and the sweep simply resumes next cycle once Redis recovers (alerts are
+// delayed, never lost). Unlimited (-1) is allowed.
 func awardSweepAllowed(ctx context.Context, log *slog.Logger, q *quota.Client) bool {
 	rem, err := q.Remaining(ctx, "apify")
-	if err != nil || rem < 0 {
-		return true
+	if err != nil {
+		log.Warn("award sweep skipped — quota unreadable; failing closed to protect paid spend", "err", err)
+		return false
+	}
+	if rem < 0 {
+		return true // unlimited provider
 	}
 	reserve := quota.FreeTierLimits["apify"] * workerApifyReservePct / 100
 	if rem <= reserve {
