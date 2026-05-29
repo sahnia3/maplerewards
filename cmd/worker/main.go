@@ -188,7 +188,7 @@ func main() {
 	// Every sweep is panic-isolated: a panic in one (e.g. a nil deref on a
 	// scrubbed recipient) must not take down award-watch + digests +
 	// cleanup together and stop all crons until a manual restart.
-	if awardWatchEnabled {
+	if awardWatchEnabled && awardSweepAllowed(ctx, log, workerQuota) {
 		safely(log, "award", func() {
 			runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
 		})
@@ -218,7 +218,7 @@ func main() {
 			log.Info("shutdown signal received, stopping worker")
 			return
 		case <-awardTicker.C:
-			if awardWatchEnabled {
+			if awardWatchEnabled && awardSweepAllowed(ctx, log, workerQuota) {
 				safely(log, "award", func() {
 					runAwardSweep(ctx, log, watchRepo, pushRepo, cardRepo, awardSearch, mailer, pusher, awardBatchSize, gapThreshold)
 				})
@@ -253,6 +253,29 @@ func safely(log *slog.Logger, name string, fn func()) {
 		}
 	}()
 	fn()
+}
+
+// workerApifyReservePct of the monthly Apify budget is reserved for
+// interactive user-facing searches; the worker's bulk award sweep yields when
+// remaining quota drops to/below it, so a large award_watch table can't
+// black out live availability for paying users.
+const workerApifyReservePct = 30
+
+// awardSweepAllowed reports whether the worker may run its paid award sweep
+// this cycle. Fails OPEN on a quota read error (a Redis blip must not silently
+// disable the Pro saved-trip feature) and treats unlimited (-1) as allowed.
+func awardSweepAllowed(ctx context.Context, log *slog.Logger, q *quota.Client) bool {
+	rem, err := q.Remaining(ctx, "apify")
+	if err != nil || rem < 0 {
+		return true
+	}
+	reserve := quota.FreeTierLimits["apify"] * workerApifyReservePct / 100
+	if rem <= reserve {
+		log.Warn("award sweep skipped — reserving Apify quota for interactive users",
+			"remaining", rem, "reserve", reserve)
+		return false
+	}
+	return true
 }
 
 // runIssuerSweep delegates to the IssuerWatchService and logs the rollup.

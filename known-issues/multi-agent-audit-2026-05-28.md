@@ -20,12 +20,12 @@ ResearchMode Pro gate.
 
 ## Deferred — design / infra decisions (need founder input)
 
-- **Worker shares the API's Apify/SerpAPI monthly quota** (HIGH, audit-2 #6).
-  Worker award sweeps debit the same counter as user-facing searches, so a
-  large `award_watch` table can exhaust the cap paying users need. Fix options
-  are a tradeoff: a separate worker quota namespace (users never starved, but up
-  to ~2× total paid spend) vs. a worker sub-budget (caps cost, may still starve).
-  Needs a cost decision. Not changed.
+- ~~**Worker shares the API's Apify/SerpAPI monthly quota** (HIGH, audit-2 #6).~~
+  **FIXED** with a no-cost default: the worker now *reserves headroom* —
+  `awardSweepAllowed` skips the bulk award sweep when remaining Apify quota is
+  ≤30% of the monthly cap (`workerApifyReservePct`), so interactive user-facing
+  searches always have budget. No extra spend, no starvation; interactive >
+  background. Fails open on a quota read error.
 - **Worker crons sequential-dispatch latency** (MED, audit-2 #10). Panic
   isolation is ALREADY present (`safely()` wraps every sweep, so one panicking
   cron can't kill the process). What remains is bounded scheduling latency: the
