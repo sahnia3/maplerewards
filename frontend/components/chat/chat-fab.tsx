@@ -4,20 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Floating "Ask Maple" orb — Siri-style. A translucent glass sphere with
- * coloured blobs swirling inside and a bright bloomy epicentre that reads as
- * a small sun behind the glass. The blobs and the bloom do everything — no
- * extra orbiting particles or broadcast rings; light just emanates from the
- * centre.
- *   - outer ambient halo (breathes),
- *   - glass sphere shell (mostly transparent middle, dark navy rim),
- *   - 4 colour blobs (teal, magenta, blue, soft white) drifting + scaling
- *     + rotating, screen-blended so they overlap into iridescent swirls,
- *   - the bright EPICENTRE: a big bloom of warm white-yellow light at the
- *     middle with a tiny hot pinpoint inside — the "soul",
- *   - faint cross-flare lines so the bright centre reads as truly luminous,
- *   - a glass rim highlight.
- * On hover everything wakes up and the epicentre flares. Routes to /chat.
+ * Floating "Ask Maple" orb — Siri-style liquid-light sphere. Layered, all CSS:
+ *   - outer multi-hue halo that breathes,
+ *   - dark glass body (so the colours pop via screen-blend) with a specular
+ *     glass highlight + a shaded rim for real sphere depth,
+ *   - a slowly ROTATING iridescent conic base (the shifting-colour sheen),
+ *   - FOUR saturated colour lobes (teal, magenta, blue, violet) that drift,
+ *     scale and rotate on distinct timings so the interior visibly swirls,
+ *   - a soft bright core that gently pulses.
+ * No straight light-streaks — the motion + overlap do the work. Hover speeds
+ * the swirl and brightens the core. Routes to /chat; hidden on /chat.
  */
 export function ChatFab() {
   const pathname = usePathname();
@@ -27,13 +23,13 @@ export function ChatFab() {
     <Link href="/chat" aria-label="Ask Maple — your rewards advisor" className="maple-orb-fab">
       <span className="maple-orb-halo" aria-hidden />
       <span className="maple-orb-sphere" aria-hidden>
-        <span className="maple-orb-blob blob-green" />
-        <span className="maple-orb-blob blob-magenta" />
-        <span className="maple-orb-blob blob-blue" />
-        <span className="maple-orb-blob blob-white" />
-        <span className="maple-orb-flare" />
-        <span className="maple-orb-bloom" />
+        <span className="maple-orb-iris" />
+        <span className="maple-orb-lobe lobe-teal" />
+        <span className="maple-orb-lobe lobe-magenta" />
+        <span className="maple-orb-lobe lobe-blue" />
+        <span className="maple-orb-lobe lobe-violet" />
         <span className="maple-orb-core" />
+        <span className="maple-orb-gloss" />
         <span className="maple-orb-rim" />
       </span>
       <span className="maple-orb-tooltip">Ask Maple</span>
@@ -55,223 +51,165 @@ export function ChatFab() {
           transition: transform 380ms cubic-bezier(0.2, 0.7, 0.2, 1);
         }
         @media (min-width: 1024px) {
-          .maple-orb-fab {
-            bottom: 28px;
-            right: 28px;
-          }
+          .maple-orb-fab { bottom: 28px; right: 28px; }
         }
 
-        /* ── Ambient halo ───────────────────────────────────────────────── */
+        /* ── Ambient multi-hue halo ─────────────────────────────────────── */
         .maple-orb-halo {
           position: absolute;
-          inset: -10px;
+          inset: -12px;
           border-radius: 50%;
-          background: radial-gradient(
-            closest-side,
-            rgba(140, 195, 255, 0.45),
-            rgba(180, 130, 255, 0.20) 50%,
-            rgba(100, 160, 240, 0) 78%
-          );
-          filter: blur(10px);
-          opacity: 0.85;
+          background: radial-gradient(closest-side,
+            rgba(120, 210, 255, 0.50),
+            rgba(180, 120, 255, 0.26) 48%,
+            rgba(255, 90, 150, 0.12) 68%,
+            rgba(120, 180, 255, 0) 80%);
+          filter: blur(11px);
+          opacity: 0.9;
           animation: maple-orb-halo 4.6s ease-in-out infinite;
           z-index: 0;
           pointer-events: none;
         }
         @keyframes maple-orb-halo {
-          0%, 100% { opacity: 0.65; transform: scale(1); }
-          50%      { opacity: 1;    transform: scale(1.05); }
+          0%, 100% { opacity: 0.7; transform: scale(1) rotate(0deg); }
+          50%      { opacity: 1;   transform: scale(1.06) rotate(8deg); }
         }
 
-        /* ── Glass sphere ───────────────────────────────────────────────── */
+        /* ── Glass body ─────────────────────────────────────────────────── */
         .maple-orb-sphere {
           position: relative;
-          width: 68px;
-          height: 68px;
+          width: 70px;
+          height: 70px;
           border-radius: 50%;
-          background: radial-gradient(
-            circle at 50% 50%,
-            rgba(15, 25, 55, 0.05) 0%,
-            rgba(12, 22, 50, 0.18) 55%,
-            rgba(10, 20, 50, 0.78) 88%,
-            rgba(5, 12, 38, 1) 100%
-          );
+          background: radial-gradient(circle at 50% 42%,
+            rgba(20, 30, 60, 0.30) 0%,
+            rgba(12, 20, 46, 0.55) 58%,
+            rgba(7, 12, 34, 0.92) 86%,
+            rgba(4, 8, 24, 1) 100%);
           box-shadow:
-            inset 0 1.5px 0 rgba(255, 255, 255, 0.40),
-            inset 0 -10px 22px rgba(0, 0, 0, 0.55),
-            inset 0 0 0 1px rgba(150, 190, 240, 0.18),
-            0 16px 36px rgba(10, 20, 70, 0.55),
-            0 0 22px rgba(120, 180, 255, 0.25);
+            inset 0 2px 1px rgba(255, 255, 255, 0.45),
+            inset 0 -12px 26px rgba(0, 0, 0, 0.62),
+            inset -7px -9px 22px rgba(0, 0, 0, 0.45),
+            inset 0 0 0 1px rgba(150, 195, 255, 0.22),
+            0 16px 38px rgba(8, 16, 60, 0.6),
+            0 0 26px rgba(120, 180, 255, 0.30);
           overflow: hidden;
           z-index: 1;
         }
 
-        /* ── Inner colour blobs (swirl around the epicentre) ───────────── */
-        .maple-orb-blob {
+        /* ── Iridescent rotating base (the colour sheen) ────────────────── */
+        .maple-orb-iris {
+          position: absolute;
+          inset: -20%;
+          border-radius: 50%;
+          background: conic-gradient(from 0deg,
+            rgba(40, 235, 195, 0.55),
+            rgba(70, 150, 255, 0.55) 25%,
+            rgba(160, 90, 255, 0.50) 50%,
+            rgba(255, 80, 140, 0.55) 72%,
+            rgba(40, 235, 195, 0.55) 100%);
+          filter: blur(9px);
+          mix-blend-mode: screen;
+          opacity: 0.7;
+          animation: maple-orb-spin 14s linear infinite;
+          pointer-events: none;
+        }
+        @keyframes maple-orb-spin { to { transform: rotate(360deg); } }
+
+        /* ── Colour lobes ───────────────────────────────────────────────── */
+        .maple-orb-lobe {
           position: absolute;
           border-radius: 50%;
           mix-blend-mode: screen;
-          filter: blur(7px);
+          filter: blur(8px);
           pointer-events: none;
         }
-        .blob-green {
-          width: 44px; height: 44px;
-          top: 6%; left: 4%;
+        .lobe-teal {
+          width: 52px; height: 52px; top: -2%; left: -2%;
           background: radial-gradient(circle at 50% 50%,
-            rgba(40, 235, 195, 0.95) 0%,
-            rgba(40, 235, 195, 0.45) 50%,
-            rgba(40, 235, 195, 0) 100%);
-          animation: maple-blob-a 6.5s ease-in-out infinite alternate;
+            rgba(40, 240, 200, 1) 0%, rgba(40, 240, 200, 0.5) 48%, rgba(40, 240, 200, 0) 100%);
+          animation: maple-lobe-a 6s ease-in-out infinite alternate;
         }
-        .blob-magenta {
-          width: 46px; height: 46px;
-          top: 50%; left: 0;
+        .lobe-magenta {
+          width: 56px; height: 56px; top: 44%; left: -6%;
           background: radial-gradient(circle at 50% 50%,
-            rgba(255, 80, 130, 0.95) 0%,
-            rgba(255, 80, 130, 0.45) 50%,
-            rgba(255, 80, 130, 0) 100%);
-          animation: maple-blob-b 7.8s ease-in-out infinite alternate;
+            rgba(255, 70, 140, 1) 0%, rgba(255, 70, 140, 0.5) 48%, rgba(255, 70, 140, 0) 100%);
+          animation: maple-lobe-b 7.4s ease-in-out infinite alternate;
         }
-        .blob-blue {
-          width: 50px; height: 50px;
-          top: 26%; right: -4%;
+        .lobe-blue {
+          width: 58px; height: 58px; top: 18%; right: -8%;
           background: radial-gradient(circle at 50% 50%,
-            rgba(70, 150, 255, 0.95) 0%,
-            rgba(70, 150, 255, 0.45) 50%,
-            rgba(70, 150, 255, 0) 100%);
-          animation: maple-blob-c 8.8s ease-in-out infinite alternate;
+            rgba(55, 135, 255, 1) 0%, rgba(55, 135, 255, 0.5) 48%, rgba(55, 135, 255, 0) 100%);
+          animation: maple-lobe-c 8.6s ease-in-out infinite alternate;
         }
-        .blob-white {
-          width: 28px; height: 28px;
-          top: 56%; left: 38%;
+        .lobe-violet {
+          width: 46px; height: 46px; top: 40%; left: 36%;
           background: radial-gradient(circle at 50% 50%,
-            rgba(255, 255, 255, 0.78) 0%,
-            rgba(255, 255, 255, 0.22) 50%,
-            rgba(255, 255, 255, 0) 100%);
-          animation: maple-blob-d 5.6s ease-in-out infinite alternate;
+            rgba(165, 95, 255, 0.95) 0%, rgba(165, 95, 255, 0.45) 48%, rgba(165, 95, 255, 0) 100%);
+          animation: maple-lobe-d 5.4s ease-in-out infinite alternate;
         }
-        @keyframes maple-blob-a {
-          from { transform: translate(0, 0)     scale(1)    rotate(0deg);   }
-          to   { transform: translate(9px, 7px) scale(1.18) rotate(45deg);  }
+        @keyframes maple-lobe-a {
+          from { transform: translate(0,0) scale(1) rotate(0deg); }
+          to   { transform: translate(12px, 10px) scale(1.22) rotate(60deg); }
         }
-        @keyframes maple-blob-b {
-          from { transform: translate(0, 0)       scale(1)    rotate(0deg);   }
-          to   { transform: translate(11px, -9px) scale(1.12) rotate(-35deg); }
+        @keyframes maple-lobe-b {
+          from { transform: translate(0,0) scale(1) rotate(0deg); }
+          to   { transform: translate(14px, -12px) scale(1.15) rotate(-50deg); }
         }
-        @keyframes maple-blob-c {
-          from { transform: translate(0, 0)      scale(1)    rotate(0deg);  }
-          to   { transform: translate(-10px, 7px) scale(0.86) rotate(40deg); }
+        @keyframes maple-lobe-c {
+          from { transform: translate(0,0) scale(1) rotate(0deg); }
+          to   { transform: translate(-13px, 11px) scale(0.82) rotate(55deg); }
         }
-        @keyframes maple-blob-d {
-          from { transform: translate(0, 0)      scale(1)    rotate(0deg);   }
-          to   { transform: translate(-4px, -6px) scale(1.24) rotate(-50deg); }
+        @keyframes maple-lobe-d {
+          from { transform: translate(0,0) scale(0.9) rotate(0deg); }
+          to   { transform: translate(-9px, -10px) scale(1.3) rotate(-65deg); }
         }
 
-        /* ── Cross flare — subtle 4-point light streaks ──────────────────
-         * Two crossed soft gradient lines through the centre make the
-         * bright bloom read as a true point source of light (the lens-flare
-         * read in the Siri reference). Faint, slow rotation. */
-        .maple-orb-flare {
+        /* ── Soft bright core ───────────────────────────────────────────── */
+        .maple-orb-core {
           position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 80px;
-          height: 80px;
-          transform: translate(-50%, -50%);
-          background:
-            linear-gradient(
-              90deg,
-              transparent 36%,
-              rgba(255, 250, 230, 0.30) 49%,
-              rgba(255, 255, 245, 0.55) 50%,
-              rgba(255, 250, 230, 0.30) 51%,
-              transparent 64%
-            ),
-            linear-gradient(
-              0deg,
-              transparent 36%,
-              rgba(255, 250, 230, 0.30) 49%,
-              rgba(255, 255, 245, 0.55) 50%,
-              rgba(255, 250, 230, 0.30) 51%,
-              transparent 64%
-            );
-          filter: blur(1.6px);
-          mix-blend-mode: screen;
-          pointer-events: none;
-          z-index: 2;
-          animation: maple-orb-flare 4.4s ease-in-out infinite;
-        }
-        @keyframes maple-orb-flare {
-          0%, 100% { opacity: 0.60; transform: translate(-50%, -50%) rotate(0deg)  scale(0.95); }
-          50%      { opacity: 1.00; transform: translate(-50%, -50%) rotate(22deg) scale(1.06); }
-        }
-
-        /* ── Epicentre bloom — a soft bright sun at the middle ──────────
-         * Big enough to dominate the centre; mix-blend screen so it
-         * over-brightens the blobs and reads as the light source. */
-        .maple-orb-bloom {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 36px;
-          height: 36px;
+          top: 50%; left: 50%;
+          width: 30px; height: 30px;
           border-radius: 50%;
           transform: translate(-50%, -50%);
-          background: radial-gradient(
-            circle at 50% 50%,
-            rgba(255, 255, 248, 0.98) 0%,
-            rgba(255, 248, 210, 0.78) 22%,
-            rgba(255, 230, 165, 0.40) 50%,
-            rgba(255, 220, 160, 0.10) 78%,
-            rgba(255, 220, 160, 0) 100%
-          );
+          background: radial-gradient(circle at 50% 50%,
+            rgba(255, 255, 252, 0.95) 0%,
+            rgba(245, 250, 255, 0.6) 30%,
+            rgba(220, 235, 255, 0.22) 60%,
+            rgba(220, 235, 255, 0) 100%);
           filter: blur(4px);
           mix-blend-mode: screen;
-          animation: maple-orb-bloom 3.2s ease-in-out infinite;
+          animation: maple-orb-core 3s ease-in-out infinite;
           z-index: 3;
           pointer-events: none;
         }
-        @keyframes maple-orb-bloom {
-          0%, 100% { transform: translate(-50%, -50%) scale(0.9);  opacity: 0.92; }
-          50%      { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+        @keyframes maple-orb-core {
+          0%, 100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.85; }
+          50%      { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
         }
 
-        /* ── Hot pinpoint at the very centre ───────────────────────────── */
-        .maple-orb-core {
+        /* ── Specular glass highlight (top-left) ────────────────────────── */
+        .maple-orb-gloss {
           position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 8px;
-          height: 8px;
+          top: 9px; left: 14px;
+          width: 26px; height: 16px;
           border-radius: 50%;
-          transform: translate(-50%, -50%);
-          background: rgba(255, 255, 248, 1);
-          box-shadow:
-            0 0 6px 2px rgba(255, 250, 220, 0.95),
-            0 0 14px 4px rgba(255, 240, 200, 0.55);
-          animation: maple-orb-core 2.2s ease-in-out infinite;
+          background: radial-gradient(closest-side,
+            rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.12) 60%, rgba(255, 255, 255, 0) 100%);
+          transform: rotate(-24deg);
+          filter: blur(1px);
           z-index: 4;
           pointer-events: none;
         }
-        @keyframes maple-orb-core {
-          0%, 100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.92; }
-          50%      { transform: translate(-50%, -50%) scale(1.20); opacity: 1; }
-        }
 
-        /* ── Glass rim ──────────────────────────────────────────────────── */
+        /* ── Rim shading for sphere depth ───────────────────────────────── */
         .maple-orb-rim {
           position: absolute;
           inset: 0;
           border-radius: 50%;
           pointer-events: none;
-          background: linear-gradient(
-            to bottom,
-            rgba(255, 255, 255, 0.22) 0%,
-            rgba(255, 255, 255, 0) 30%,
-            rgba(255, 255, 255, 0) 70%,
-            rgba(0, 0, 0, 0.18) 100%
-          );
-          mix-blend-mode: overlay;
+          background: radial-gradient(circle at 50% 120%,
+            rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 55%);
           z-index: 5;
         }
 
@@ -302,28 +240,15 @@ export function ChatFab() {
           transform: translateY(-50%) translateX(0);
         }
 
-        /* ── Hover — the epicentre flares ───────────────────────────────── */
-        .maple-orb-fab:hover {
-          transform: scale(1.08);
-        }
-        .maple-orb-fab:hover .maple-orb-core {
-          animation-duration: 1.2s;
-        }
-        .maple-orb-fab:hover .maple-orb-bloom {
-          animation-duration: 1.8s;
-          filter: blur(3px) brightness(1.2);
-        }
-        .maple-orb-fab:hover .maple-orb-flare {
-          animation-duration: 2.4s;
-        }
-        .maple-orb-fab:hover .maple-orb-halo {
-          opacity: 1;
-          animation-duration: 2.4s;
-        }
-        .maple-orb-fab:hover .blob-green   { animation-duration: 3.2s; }
-        .maple-orb-fab:hover .blob-magenta { animation-duration: 3.9s; }
-        .maple-orb-fab:hover .blob-blue    { animation-duration: 4.4s; }
-        .maple-orb-fab:hover .blob-white   { animation-duration: 2.8s; }
+        /* ── Hover — the swirl wakes up ─────────────────────────────────── */
+        .maple-orb-fab:hover { transform: scale(1.08); }
+        .maple-orb-fab:hover .maple-orb-iris   { animation-duration: 7s; }
+        .maple-orb-fab:hover .maple-orb-core   { animation-duration: 1.6s; filter: blur(3px) brightness(1.2); }
+        .maple-orb-fab:hover .maple-orb-halo   { opacity: 1; animation-duration: 2.6s; }
+        .maple-orb-fab:hover .lobe-teal    { animation-duration: 3s; }
+        .maple-orb-fab:hover .lobe-magenta { animation-duration: 3.7s; }
+        .maple-orb-fab:hover .lobe-blue    { animation-duration: 4.3s; }
+        .maple-orb-fab:hover .lobe-violet  { animation-duration: 2.7s; }
 
         .maple-orb-fab:focus-visible {
           outline: 2px solid #7fb7ff;
@@ -332,11 +257,7 @@ export function ChatFab() {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .maple-orb-halo,
-          .maple-orb-core,
-          .maple-orb-bloom,
-          .maple-orb-flare,
-          .maple-orb-blob {
+          .maple-orb-halo, .maple-orb-iris, .maple-orb-core, .maple-orb-lobe {
             animation: none;
           }
         }
