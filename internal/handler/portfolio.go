@@ -11,11 +11,21 @@ import (
 	"maplerewards/internal/repo"
 )
 
+// optimizerForPortfolio is the subset of OptimizerService the portfolio
+// analysis needs. Routing the dollar-gap valuation through the optimizer
+// (instead of the handler's own inline math) means candidate AND baseline
+// card values are computed under the SAME cap-blended model — preventing the
+// uncapped accelerated-earn over-projection that inflated opportunity cost.
+type optimizerForPortfolio interface {
+	GetBestCard(ctx context.Context, req model.OptimizeRequest) ([]model.CardRecommendation, error)
+}
+
 type PortfolioHandler struct {
 	walletRepo   *repo.WalletRepo
 	cardRepo     *repo.CardRepo
 	spendRepo    *repo.SpendRepo
 	transferRepo *repo.TransferRepo
+	optimizer    optimizerForPortfolio
 }
 
 func NewPortfolioHandler(
@@ -23,12 +33,14 @@ func NewPortfolioHandler(
 	cardRepo *repo.CardRepo,
 	spendRepo *repo.SpendRepo,
 	transferRepo *repo.TransferRepo,
+	optimizer optimizerForPortfolio,
 ) *PortfolioHandler {
 	return &PortfolioHandler{
 		walletRepo:   walletRepo,
 		cardRepo:     cardRepo,
 		spendRepo:    spendRepo,
 		transferRepo: transferRepo,
+		optimizer:    optimizer,
 	}
 }
 
@@ -67,7 +79,7 @@ func (h *PortfolioHandler) GetAnalysis(w http.ResponseWriter, r *http.Request) {
 	entries, _ := h.spendRepo.ListSpendEntries(ctx, user.ID, 200, 0)
 
 	feeROI := h.computeFeeROI(ctx, userCards, stats)
-	dollarGap := h.computeDollarGap(ctx, userCards, entries)
+	dollarGap := h.computeDollarGap(ctx, sessionID, entries)
 	utilization := h.computeUtilization(ctx, userCards)
 
 	jsonOK(w, model.PortfolioAnalysis{
@@ -148,7 +160,7 @@ func (h *PortfolioHandler) estimateReturn(ctx context.Context, uc model.UserCard
 
 // ── Dollar Gap (Opportunity Cost) ────────────────────────────────────────────
 
-func (h *PortfolioHandler) computeDollarGap(ctx context.Context, userCards []model.UserCard, entries []model.SpendEntry) model.DollarGapAnalysis {
+func (h *PortfolioHandler) computeDollarGap(ctx context.Context, sessionID string, entries []model.SpendEntry) model.DollarGapAnalysis {
 	if len(entries) == 0 {
 		return model.DollarGapAnalysis{Entries: []model.GapEntry{}}
 	}
@@ -176,12 +188,25 @@ func (h *PortfolioHandler) computeDollarGap(ctx context.Context, userCards []mod
 		g.cardSpend[e.CardName] += e.Amount
 	}
 
-	// For each category, find the optimal card in wallet
+	// Category ID → slug, so we can ask the optimizer per category.
+	slugByCat := make(map[string]string)
+	if cats, err := h.cardRepo.ListCategories(ctx); err == nil {
+		for _, c := range cats {
+			slugByCat[c.ID] = c.Slug
+		}
+	}
+
+	// For each category, value EVERY wallet card on the category's spend via
+	// the optimizer (cap-blended, transfer-aware), then take the best as the
+	// optimum and the actually-used card's value from the SAME ranking as the
+	// baseline. Both sides share one cap-aware model — so an accelerated card
+	// can never be projected above its cap, and a card never reports a gap
+	// against itself (PerPurchase scores this category's spend as one swipe).
 	var gapEntries []model.GapEntry
 	var totalActual, totalOptimal float64
 
 	for catID, g := range groups {
-		// Find the card that was used most in this category
+		// Find the card that was used most in this category.
 		var maxCardSpend float64
 		primaryCard := ""
 		for name, spend := range g.cardSpend {
@@ -191,59 +216,50 @@ func (h *PortfolioHandler) computeDollarGap(ctx context.Context, userCards []mod
 			}
 		}
 
-		// Find optimal card: compute what each wallet card would earn
+		slug := slugByCat[catID]
+		if slug == "" {
+			slug = "everything-else"
+		}
+
+		recs, err := h.optimizer.GetBestCard(ctx, model.OptimizeRequest{
+			SessionID:    sessionID,
+			CategorySlug: slug,
+			SpendAmount:  g.totalSpend,
+			PerPurchase:  true,
+		})
+
+		// Default to the true earned value if the optimizer can't rank
+		// (e.g. transient error) — never fabricate a gap on failure.
 		bestCard := primaryCard
-		bestValue := g.actualValue
-
-		for _, uc := range userCards {
-			if uc.Card == nil || uc.Card.LoyaltyProgram == nil {
-				continue
-			}
-			mult, err := h.cardRepo.GetMultiplierForCard(ctx, uc.CardID, catID)
-			if err != nil {
-				mult, err = h.cardRepo.GetEverythingElseMultiplier(ctx, uc.CardID)
-				if err != nil {
-					continue
+		optimalValue := g.actualValue
+		actualValue := g.actualValue
+		if err == nil && len(recs) > 0 {
+			best := recs[0]
+			bestCard = best.CardName
+			optimalValue = best.DollarValue
+			// Baseline = the actually-used card valued under the same model.
+			actualValue = best.DollarValue // fallback if primary not in ranking
+			for _, rc := range recs {
+				if rc.CardName == primaryCard {
+					actualValue = rc.DollarValue
+					break
 				}
-			}
-
-			var cardValue float64
-			if mult.EarnType == "cashback_pct" {
-				cardValue = g.totalSpend * (mult.EarnRate / 100)
-			} else {
-				cpp := uc.Card.LoyaltyProgram.BaseCPP
-
-				// Check transfer partners for better CPP
-				routes, _ := h.transferRepo.GetTransferRoutes(ctx, uc.Card.LoyaltyProgramID)
-				for _, route := range routes {
-					if route.ToProgram != nil {
-						effectiveCPP := route.ToProgram.BaseCPP * route.TransferRatio
-						if effectiveCPP > cpp {
-							cpp = effectiveCPP
-						}
-					}
-				}
-
-				points := g.totalSpend * mult.EarnRate
-				cardValue = points * cpp / 100
-			}
-
-			if cardValue > bestValue {
-				bestValue = cardValue
-				bestCard = uc.Card.Name
 			}
 		}
 
-		gap := bestValue - g.actualValue
-		totalActual += g.actualValue
-		totalOptimal += bestValue
+		gap := optimalValue - actualValue
+		if gap < 0 {
+			gap = 0
+		}
+		totalActual += actualValue
+		totalOptimal += optimalValue
 
 		gapEntries = append(gapEntries, model.GapEntry{
 			CategoryName: g.categoryName,
 			CardUsed:     primaryCard,
 			OptimalCard:  bestCard,
-			ActualValue:  round2(g.actualValue),
-			OptimalValue: round2(bestValue),
+			ActualValue:  round2(actualValue),
+			OptimalValue: round2(optimalValue),
 			Gap:          round2(gap),
 			TotalSpend:   round2(g.totalSpend),
 		})

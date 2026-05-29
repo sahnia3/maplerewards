@@ -2,16 +2,33 @@ package repo
 
 import (
 	"context"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"maplerewards/internal/model"
 )
+
+// defaultUnverifiedAnnualCapCAD bounds an accelerated bonus category that has
+// no published cap, mirroring the optimizer's guardrail of the same value so
+// the card-value EV can't over-project unbounded accelerated earn.
+const defaultUnverifiedAnnualCapCAD = 20000.0
 
 type CardValueRepo struct {
 	db *pgxpool.Pool
 }
 
 func NewCardValueRepo(db *pgxpool.Pool) *CardValueRepo { return &CardValueRepo{db: db} }
+
+// cappedRateUnits returns rate-weighted spend (spend×rate) blended against an
+// annual-equivalent cap: spend up to the cap earns the bonus rate, the
+// remainder earns the fallback rate. annualCap<=0 means uncapped. Mirrors the
+// optimizer's calculateBlendedRate. Caller applies the cpp/100 or /100 factor.
+func cappedRateUnits(spend, bonusRate, fallbackRate, annualCap float64) float64 {
+	if annualCap <= 0 || spend <= annualCap {
+		return spend * bonusRate
+	}
+	return annualCap*bonusRate + (spend-annualCap)*fallbackRate
+}
 
 // standardAnnualSpend is a transparent, conservative Canadian household
 // distribution (~$24k/yr) used ONLY when the user has not logged enough real
@@ -163,18 +180,32 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 
 			rateBySlug := map[string]float64{}
 			typeBySlug := map[string]string{}
+			fallbackBySlug := map[string]float64{}
+			capBySlug := map[string]float64{} // annual-equivalent cap in CAD spend; 0 = none
 			if mrows, err := r.db.Query(ctx, `
-				SELECT cat.slug, cm.earn_rate, cm.earn_type
+				SELECT cat.slug, cm.earn_rate, cm.earn_type,
+				       COALESCE(cm.fallback_earn_rate, 1.0), cm.cap_amount, cm.cap_period
 				FROM card_multipliers cm
 				JOIN categories cat ON cat.id = cm.category_id
 				WHERE cm.card_id = $1 AND cm.effective_to IS NULL
 			`, k.id); err == nil {
 				for mrows.Next() {
 					var slug, et string
-					var rate float64
-					if err := mrows.Scan(&slug, &rate, &et); err == nil {
+					var rate, fallback float64
+					var capAmount *float64
+					var capPeriod *string
+					if err := mrows.Scan(&slug, &rate, &et, &fallback, &capAmount, &capPeriod); err == nil {
 						rateBySlug[slug] = rate
 						typeBySlug[slug] = et
+						fallbackBySlug[slug] = fallback
+						annualCap := 0.0
+						if capAmount != nil && *capAmount > 0 {
+							annualCap = *capAmount
+							if capPeriod != nil && *capPeriod == "monthly" {
+								annualCap *= 12
+							}
+						}
+						capBySlug[slug] = annualCap
 					}
 				}
 				mrows.Close()
@@ -194,13 +225,28 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 				if et == "" {
 					et = globalType
 				}
+				fallback := fallbackBySlug[slug]
+				if fallback <= 0 {
+					fallback = 1.0
+				}
+				// Cap-bound the bonus so a lumpy annualised spend can't project
+				// an accelerated rate on the full amount (the over-projection
+				// the optimizer was remediated to prevent). Published per-mult
+				// caps apply directly; an explicit bonus category with no cap is
+				// bounded by the same default guardrail the optimizer uses. The
+				// card's flat base/everything-else rate is never capped here.
+				annualCap := capBySlug[slug]
+				if annualCap <= 0 && ok && slug != "everything-else" && rate > fallback {
+					annualCap = defaultUnverifiedAnnualCapCAD
+				}
+				units := cappedRateUnits(spend, rate, fallback, annualCap)
 				if et == "cashback_pct" {
-					ev += spend * rate / 100
+					ev += units / 100
 				} else {
-					ev += spend * rate * (baseCPP / 100)
+					ev += units * baseCPP / 100
 				}
 			}
-			ev = float64(int(ev*100+0.5)) / 100 // round to cents
+			ev = math.Round(ev*100) / 100 // round to cents
 
 			basis := "a transparent standard ~$24k/yr Canadian basket"
 			if realSpend {

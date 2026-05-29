@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +94,7 @@ func (s *TavilyService) Search(ctx context.Context, query string) ([]tavilyResul
 	}
 	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readCappedBody(resp.Body) // 16 MiB cap — guard against a huge/malicious upstream body
 	if err != nil {
 		return nil, fmt.Errorf("read tavily response: %w", err)
 	}
@@ -154,7 +153,7 @@ func (s *TavilyService) SearchTravel(ctx context.Context, query string) ([]tavil
 	}
 	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readCappedBody(resp.Body) // 16 MiB cap — guard against a huge/malicious upstream body
 	if err != nil {
 		return nil, fmt.Errorf("read tavily response: %w", err)
 	}

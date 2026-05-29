@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -149,7 +148,7 @@ func (s *SeatsAeroService) SearchAwards(
 		return nil, fmt.Errorf("seats.aero API call: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := readCappedBody(resp.Body) // 16 MiB cap — guard against a huge/malicious upstream body
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("[seats.aero] API error",

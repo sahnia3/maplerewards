@@ -97,10 +97,17 @@ func (h *BillingHandler) CreatePortal(w http.ResponseWriter, r *http.Request) {
 // Webhook handles POST /billing/webhook (public, no auth).
 // Receives Stripe webhook events and updates user Pro status.
 func (h *BillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
-	// Read body (Stripe recommends max 65536 bytes)
-	body, err := io.ReadAll(io.LimitReader(r.Body, 65536))
+	// Bound the body, but ERROR on overflow rather than silently truncate.
+	// io.LimitReader returns EOF at the cap with err==nil, so a >cap Stripe
+	// event (rich subscription/invoice payloads can exceed 64KB) would be read
+	// truncated, then HMAC-verified against Stripe's signature over the FULL
+	// payload — a guaranteed 401 on every retry until the event is lost
+	// (Pro never granted / never revoked). http.MaxBytesReader surfaces an
+	// explicit error instead. 1 MiB is far above any real Stripe event.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		jsonError(w, "failed to read body", http.StatusBadRequest)
+		jsonError(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 

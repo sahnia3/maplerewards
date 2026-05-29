@@ -29,6 +29,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -80,7 +81,17 @@ func main() {
 	valuationRepo := repo.NewValuationRepo(pool)
 	transferRepo := repo.NewTransferRepo(pool)
 	redisCache := cache.New(rdb)
-	kb, _ := knowledge.Load("internal/knowledge/rewards.yaml")
+	// Honor KB_DIR like the API does, so the worker can run outside the repo
+	// root, and log (don't silently swallow) a load failure — a nil KB silently
+	// disables the award-watch static-chart fallback otherwise.
+	kbDir := os.Getenv("KB_DIR")
+	if kbDir == "" {
+		kbDir = "internal/knowledge"
+	}
+	kb, kbErr := knowledge.Load(filepath.Join(kbDir, "rewards.yaml"))
+	if kbErr != nil {
+		log.Warn("could not load knowledge base — award-watch static fallback disabled", "err", kbErr, "kb_dir", kbDir)
+	}
 
 	// Worker shares the same monthly free-tier budgets as the API; using the
 	// same Redis-backed quota counter keeps both processes honest (the Apify

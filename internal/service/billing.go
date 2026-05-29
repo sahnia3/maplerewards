@@ -312,11 +312,64 @@ func (s *BillingService) HandleWebhookEvent(ctx context.Context, eventType strin
 		return s.handleSubscriptionUpdated(ctx, eventData)
 	case "customer.subscription.deleted":
 		return s.handleSubscriptionDeleted(ctx, eventData)
+	case "charge.refunded":
+		// One-time (Lifetime) purchases have NO subscription, so
+		// customer.subscription.deleted never fires for them — a refunded
+		// Lifetime buyer would otherwise keep Pro forever. A full charge
+		// refund reverts to free. (Subscription refunds are also covered here
+		// in addition to subscription.deleted; reverting twice is idempotent.)
+		return s.handleChargeRefunded(ctx, eventData)
 	default:
 		// Ignore other event types
 		slog.Debug("ignoring stripe event", "type", eventType)
 		return nil
 	}
+}
+
+// handleChargeRefunded reverts a user to free when a charge is FULLY refunded.
+// Closes the one-time/Lifetime revocation gap (no subscription object → no
+// subscription.deleted). Partial refunds leave entitlement intact.
+func (s *BillingService) handleChargeRefunded(ctx context.Context, data json.RawMessage) error {
+	var charge struct {
+		Customer       string `json:"customer"`
+		Refunded       bool   `json:"refunded"`
+		Amount         int64  `json:"amount"`
+		AmountRefunded int64  `json:"amount_refunded"`
+	}
+	if err := json.Unmarshal(data, &charge); err != nil {
+		return fmt.Errorf("parse charge: %w", err)
+	}
+	// Act only on a FULL refund: Stripe sets refunded=true when the entire
+	// charge is refunded; a partial refund (amount_refunded < amount) must NOT
+	// revoke a still-largely-paid entitlement.
+	if !charge.Refunded || (charge.Amount > 0 && charge.AmountRefunded < charge.Amount) {
+		slog.Info("charge refund not full — entitlement unchanged",
+			"customer", charge.Customer, "amount", charge.Amount, "refunded", charge.AmountRefunded)
+		return nil
+	}
+	if charge.Customer == "" {
+		slog.Warn("charge.refunded without customer — cannot map to user")
+		return nil
+	}
+	user, err := s.repo.GetUserByStripeCustomerID(ctx, charge.Customer)
+	if err != nil {
+		return fmt.Errorf("find user by customer: %w", err)
+	}
+	if user == nil {
+		slog.Warn("charge.refunded for unknown customer", "customer", charge.Customer)
+		return nil
+	}
+	if user.Plan == "free" {
+		return nil // nothing to revoke
+	}
+	if err := s.repo.SetUserPlan(ctx, user.ID, "free"); err != nil {
+		return fmt.Errorf("revert plan to free after refund for user %s: %w", user.ID, err)
+	}
+	if err := s.repo.RevokeAllUserTokens(ctx, user.ID); err != nil {
+		slog.Warn("failed to revoke tokens after refund", "user_id", user.ID, "err", err)
+	}
+	slog.Info("plan reverted to free after full refund", "user_id", user.ID, "customer", charge.Customer)
+	return nil
 }
 
 func (s *BillingService) handleCheckoutCompleted(ctx context.Context, data json.RawMessage) error {
@@ -464,11 +517,15 @@ func (s *BillingService) handleSubscriptionUpdated(ctx context.Context, data jso
 			plan = "pro"
 		}
 		if plan != "" && plan != user.Plan {
+			// Return the error (don't swallow): a transient SetUserPlan failure
+			// must make the webhook fail so Stripe retries — otherwise the user
+			// is left on the OLD tier permanently while is_pro (set above) stays
+			// correct, masking the drift. SetUserPlan re-sets is_pro atomically,
+			// so a retry is safe.
 			if err := s.repo.SetUserPlan(ctx, user.ID, plan); err != nil {
-				slog.Warn("failed to sync plan on subscription update", "user_id", user.ID, "plan", plan, "err", err)
-			} else {
-				slog.Info("plan synced from subscription price", "user_id", user.ID, "from", user.Plan, "to", plan)
+				return fmt.Errorf("sync plan %q for user %s: %w", plan, user.ID, err)
 			}
+			slog.Info("plan synced from subscription price", "user_id", user.ID, "from", user.Plan, "to", plan)
 		}
 	}
 

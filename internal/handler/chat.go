@@ -387,7 +387,15 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			"user_id", userID,
 			"ctx_err", r.Context().Err(),
 		)
-		emit("error", map[string]any{"message": err.Error()})
+		// P0: do NOT leak the raw service error (Anthropic response bodies,
+		// tool-call internals, internal paths) into the SSE frame — mirror the
+		// non-streaming handler above. Log the full error server-side; emit a
+		// stable, generic message with the same timeout hint.
+		hint := "the AI assistant is having trouble right now — please try again"
+		if strings.Contains(err.Error(), "context deadline") || strings.Contains(err.Error(), "timeout") {
+			hint = "the AI assistant took too long to respond — please try again with a shorter question"
+		}
+		emit("error", map[string]any{"message": hint})
 		return
 	}
 

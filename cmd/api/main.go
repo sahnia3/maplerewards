@@ -286,7 +286,7 @@ func main() {
 	tripH := handler.NewTripHandler(tripSvc, walletRepo)
 	awardH := handler.NewAwardSearchHandler(awardSearchSvc, walletRepo)
 	bonusH := handler.NewBonusHandler(walletRepo, bonusRepo)
-	portfolioH := handler.NewPortfolioHandler(walletRepo, cardRepo, spendRepo, transferRepo)
+	portfolioH := handler.NewPortfolioHandler(walletRepo, cardRepo, spendRepo, transferRepo, optimizerSvc)
 	missedH := handler.NewMissedRewardsHandler(missedRewardsSvc)
 	creditsH := handler.NewCreditsHandler(creditsSvc)
 	sqcH := handler.NewSQCHandler(sqcSvc)

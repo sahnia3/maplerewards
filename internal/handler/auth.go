@@ -320,6 +320,14 @@ func verifyGoogleIDToken(ctx context.Context, token string) (googleID, email, di
 	if !verified {
 		return "", "", "", fmt.Errorf("google account email is not verified")
 	}
+	// FAIL CLOSED on an empty email. A verified-but-emailless token would
+	// otherwise persist a users row with email='' which the ownership guards
+	// (RequireSessionOwner / requireBodySessionOwner treat empty email as an
+	// anonymous wallet) would misclassify — silently disabling the JWT-owner
+	// IDOR check for that account. An email is also our unique account key.
+	if email == "" {
+		return "", "", "", fmt.Errorf("google token missing email claim")
+	}
 	return googleID, email, displayName, nil
 }
 

@@ -97,7 +97,7 @@ func (r *AuthRepo) UpsertGoogleUser(ctx context.Context, googleID, email, displa
 	var u model.User
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO users (google_id, email, display_name, session_id, auth_provider, updated_at)
-		VALUES ($1, $2, $3, $4, 'google', NOW())
+		VALUES ($1, NULLIF($2, ''), $3, $4, 'google', NOW())
 		ON CONFLICT (google_id) DO UPDATE SET
 			email = COALESCE(EXCLUDED.email, users.email),
 			display_name = COALESCE(EXCLUDED.display_name, users.display_name),
