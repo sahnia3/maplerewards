@@ -141,6 +141,17 @@ func isIATACode(s string) bool {
 	return true
 }
 
+// isValidFlightDate accepts a YYYY-MM-DD date within a sane window, so the LLM
+// can't burn paid flight-search quota on a malformed or absurd date.
+func isValidFlightDate(s string) bool {
+	t, err := time.Parse("2006-01-02", strings.TrimSpace(s))
+	if err != nil {
+		return false
+	}
+	y := t.Year()
+	return y >= 2020 && y <= 2100
+}
+
 // mustJSON marshals a tool result, falling back to a JSON error object so a
 // handler can never return malformed bytes to the model.
 func mustJSON(v any) json.RawMessage {
@@ -480,10 +491,23 @@ func (s *AIService) registerTools() {
 			if args.Cabin == "" {
 				args.Cabin = "economy"
 			}
-			if args.Passengers == 0 {
+			// Validate LLM-supplied args before the PAID SerpAPI call so garbage
+			// codes/dates don't burn the shared quota (mirrors search_award_space).
+			origin := strings.ToUpper(strings.TrimSpace(args.Origin))
+			dest := strings.ToUpper(strings.TrimSpace(args.Destination))
+			if !isIATACode(origin) || !isIATACode(dest) {
+				return errResultJSON("invalid_args", "origin and destination must be 3-letter IATA airport codes"), nil
+			}
+			if !isValidFlightDate(args.Date) {
+				return errResultJSON("invalid_args", "date must be a valid future-ish YYYY-MM-DD"), nil
+			}
+			if args.Passengers < 1 {
 				args.Passengers = 1
 			}
-			results, err := s.serpSvc.SearchFlights(ctx, strings.ToUpper(args.Origin), strings.ToUpper(args.Destination),
+			if args.Passengers > 9 {
+				args.Passengers = 9
+			}
+			results, err := s.serpSvc.SearchFlights(ctx, origin, dest,
 				args.Date, args.Cabin, args.Passengers)
 			if err != nil {
 				return errResultJSON("search_failed", err.Error()), nil
@@ -841,6 +865,17 @@ func (s *AIService) registerTools() {
 				if t, err := time.Parse("2006-01-02", args.CheckIn); err == nil {
 					args.CheckOut = t.AddDate(0, 0, 3).Format("2006-01-02")
 				}
+			}
+			// Validate LLM-supplied dates + bound guests before the PAID SerpAPI
+			// hotel call, so a garbage date can't burn the shared quota.
+			if !isValidFlightDate(args.CheckIn) || !isValidFlightDate(args.CheckOut) {
+				return mustJSON(map[string]any{"error": "checkin_date and checkout_date must be valid YYYY-MM-DD"}), nil
+			}
+			if args.Adults < 1 {
+				args.Adults = 1
+			}
+			if args.Adults > 9 {
+				args.Adults = 9
 			}
 			if s.serpSvc == nil || !s.serpSvc.IsAvailable() {
 				return mustJSON(map[string]any{
@@ -1393,11 +1428,13 @@ var complexChatSignals = []string{
 // model. Defaults to cheap; escalates to strong on any complexity signal:
 // research mode, a long ask, or award/trip/points keywords. This is the
 // primary chat-cost lever — most turns are simple and run on Haiku.
-func (s *AIService) selectChatModel(req ChatRequest) string {
+func (s *AIService) selectChatModel(req ChatRequest, isPro bool) string {
 	if s.fastModelID == "" || s.fastModelID == s.modelID {
 		return s.modelID // routing disabled
 	}
-	if req.ResearchMode {
+	// ResearchMode is a client-controlled flag; only let it force the expensive
+	// model for Pro users so a free user can't toggle unlimited Sonnet spend.
+	if req.ResearchMode && isPro {
 		return s.modelID
 	}
 	msg := strings.ToLower(req.Message)
@@ -1460,7 +1497,7 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	})
 
 	// Pick the model once for the whole turn (consistent across tool rounds).
-	turnModel := s.selectChatModel(req)
+	turnModel := s.selectChatModel(req, isPro)
 
 	// 5-round budget. Each round = one LLM call. After round 5, we force a final
 	// synthesis with no tools available so the model must answer.

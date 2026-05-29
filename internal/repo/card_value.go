@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -208,7 +209,13 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 						capBySlug[slug] = annualCap
 					}
 				}
+				rowsErr := mrows.Err()
 				mrows.Close()
+				if rowsErr != nil {
+					// A mid-iteration read error would otherwise silently yield a
+					// partial multiplier set and an under-stated EV. Surface it.
+					return nil, fmt.Errorf("card-value multipliers for %s: %w", k.id, rowsErr)
+				}
 			}
 			baseRate := rateBySlug["everything-else"]
 			if baseRate == 0 {
