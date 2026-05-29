@@ -1166,3 +1166,54 @@ export async function exportSpendCSV(sessionId: string): Promise<Blob> {
   return res.blob();
 }
 
+// ── Admin (gated server-side by RequireAdmin; 403 for non-admins) ─────────────
+
+export interface AdminUserListItem {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  plan: string;
+  is_pro: boolean;
+  auth_provider: string;
+  created_at: string;
+  card_count: number;
+  entry_count: number;
+  last_spend: string | null;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUserListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function adminListUsers(opts?: { limit?: number; offset?: number; q?: string }): Promise<AdminUsersResponse> {
+  const p = new URLSearchParams();
+  if (opts?.limit) p.set("limit", String(opts.limit));
+  if (opts?.offset) p.set("offset", String(opts.offset));
+  if (opts?.q) p.set("q", opts.q);
+  const qs = p.toString();
+  return request<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`);
+}
+
+// AdminUserDetail mirrors the backend ExportPayload (profile + every
+// user-keyed table). Loosely typed — the panel renders sections generically.
+export interface AdminUserDetail {
+  user_id: string;
+  generated_at: string;
+  profile: Record<string, unknown>;
+  wallet: Array<Record<string, unknown>>;
+  spend_history: Array<Record<string, unknown>>;
+  card_applications: Array<Record<string, unknown>>;
+  welcome_bonuses: Array<Record<string, unknown>>;
+  loyalty_accounts: Array<Record<string, unknown>>;
+  award_watches: Array<Record<string, unknown>>;
+  chat_conversations: Array<Record<string, unknown>>;
+  note?: string;
+}
+
+export async function adminUserDetail(id: string): Promise<AdminUserDetail> {
+  return request<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`);
+}
+

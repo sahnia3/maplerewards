@@ -24,6 +24,15 @@ async function csrfHeaders(extra?: Record<string, string>): Promise<Record<strin
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 
+// Cosmetic admin gate — mirrors the backend ADMIN_EMAILS allow-list. Set
+// NEXT_PUBLIC_ADMIN_EMAILS (comma-separated) on the frontend to the same list.
+// Authorization is still enforced server-side; this only shows/hides the nav.
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "")
+  .toLowerCase()
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface AuthUser {
@@ -49,6 +58,10 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isPro: boolean;
+  /** Cosmetic gate for the admin nav/page only — derived from the public
+   *  NEXT_PUBLIC_ADMIN_EMAILS allow-list. Real authorization is enforced
+   *  server-side by RequireAdmin (every /admin route 403s a non-admin). */
+  isAdmin: boolean;
   plan: string;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -279,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated: !!user,
         isPro: user?.is_pro ?? false,
+        isAdmin: !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()),
         plan: user?.plan ?? "free",
         isLoading,
         login,

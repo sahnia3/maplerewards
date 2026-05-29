@@ -27,6 +27,7 @@ import {
   Wrench,
   Flame,
   Trophy,
+  Shield,
   ClipboardList,
 } from "lucide-react";
 import { useWallet } from "@/contexts/wallet-context";
@@ -109,7 +110,7 @@ const BOTTOM_NAV: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { totalPoints, wallet, summary } = useWallet();
-  const { isAuthenticated, isPro, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isPro, isAdmin, isLoading: authLoading } = useAuth();
   const { isCollapsed, toggleSidebar, isMobileOpen, setMobileOpen } = useSidebar();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -292,6 +293,18 @@ export function Sidebar() {
               </div>
             </div>
           ))}
+          {isAdmin && (
+            <div className="mb-4">
+              {!collapsed && (
+                <div className="eyebrow" style={{ paddingLeft: 10, marginBottom: 8 }}>
+                  Admin
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {renderNavItem({ href: "/admin", label: "Users", icon: Shield }, isMobile)}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Upgrade CTA — shown when not Pro */}

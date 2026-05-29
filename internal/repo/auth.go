@@ -79,6 +79,66 @@ func (r *AuthRepo) GetUserByID(ctx context.Context, id string) (*model.User, err
 	return &u, nil
 }
 
+// AdminUserListItem is one row of the admin user-activity list: profile basics
+// plus cheap activity aggregates. No secrets (password_hash) ever included.
+type AdminUserListItem struct {
+	ID           string     `json:"id"`
+	Email        *string    `json:"email"`
+	DisplayName  *string    `json:"display_name"`
+	Plan         string     `json:"plan"`
+	IsPro        bool       `json:"is_pro"`
+	AuthProvider string     `json:"auth_provider"`
+	CreatedAt    time.Time  `json:"created_at"`
+	CardCount    int        `json:"card_count"`
+	EntryCount   int        `json:"entry_count"`
+	LastSpend    *time.Time `json:"last_spend"`
+}
+
+// ListUsers returns a paginated slice of non-deleted users (newest first) with
+// activity counts, plus the total matching count for pagination. search (if
+// non-empty) ILIKE-matches email or display_name. Admin-only — callers gate
+// with RequireAdmin.
+func (r *AuthRepo) ListUsers(ctx context.Context, limit, offset int, search string) ([]AdminUserListItem, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM users
+		WHERE deleted_at IS NULL
+		  AND ($1 = '' OR email ILIKE '%'||$1||'%' OR display_name ILIKE '%'||$1||'%')
+	`, search).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id, u.email, u.display_name, u.plan, u.is_pro, u.auth_provider, u.created_at,
+		       (SELECT count(*) FROM user_cards uc WHERE uc.user_id = u.id)        AS card_count,
+		       (SELECT count(*) FROM spend_entries se WHERE se.user_id = u.id)     AS entry_count,
+		       (SELECT max(se.spent_at) FROM spend_entries se WHERE se.user_id = u.id) AS last_spend
+		FROM users u
+		WHERE u.deleted_at IS NULL
+		  AND ($3 = '' OR u.email ILIKE '%'||$3||'%' OR u.display_name ILIKE '%'||$3||'%')
+		ORDER BY u.created_at DESC
+		LIMIT $1 OFFSET $2
+	`, limit, offset, search)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]AdminUserListItem, 0, limit)
+	for rows.Next() {
+		var it AdminUserListItem
+		if err := rows.Scan(&it.ID, &it.Email, &it.DisplayName, &it.Plan, &it.IsPro,
+			&it.AuthProvider, &it.CreatedAt, &it.CardCount, &it.EntryCount, &it.LastSpend); err != nil {
+			return nil, 0, fmt.Errorf("scan user row: %w", err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list users rows: %w", err)
+	}
+	return items, total, nil
+}
+
 func (r *AuthRepo) CreateAuthUser(ctx context.Context, email, passwordHash, displayName, sessionID string) (*model.User, error) {
 	var u model.User
 	err := r.pool.QueryRow(ctx, `

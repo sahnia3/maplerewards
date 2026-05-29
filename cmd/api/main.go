@@ -277,6 +277,7 @@ func main() {
 	adminValuationH := handler.NewAdminValuationHandler(valuationRepo, redisCache)
 	adminQuotaH := handler.NewAdminQuotaHandler(quotaClient)
 	adminMetricsH := handler.NewAdminMetricsHandler()
+	adminUsersH := handler.NewAdminUsersHandler(authRepo, dataExportSvc)
 	summaryH := handler.NewSummaryHandler(walletRepo, transferRepo)
 	programH := handler.NewProgramHandler(cardRepo, transferRepo)
 	cardDetailH := handler.NewCardDetailHandler(cardRepo, transferRepo)
@@ -689,6 +690,8 @@ func main() {
 			r.Post("/admin/valuations", adminValuationH.Push)
 			r.Get("/admin/quota", adminQuotaH.Get)
 			r.Get("/admin/metrics", adminMetricsH.Get)
+			r.Get("/admin/users", adminUsersH.List)
+			r.Get("/admin/users/{id}", adminUsersH.Get)
 		})
 	})
 
