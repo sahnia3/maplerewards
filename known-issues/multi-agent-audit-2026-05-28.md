@@ -26,25 +26,31 @@ ResearchMode Pro gate.
   are a tradeoff: a separate worker quota namespace (users never starved, but up
   to ~2× total paid spend) vs. a worker sub-budget (caps cost, may still starve).
   Needs a cost decision. Not changed.
-- **Worker crons run sequentially on one goroutine** (MED, audit-2 #10). A slow
-  daily sweep stalls the award/promo tickers. Recommend per-cron goroutine +
-  panic isolation; deferred (concurrency redesign, overlap-guard needed).
+- **Worker crons sequential-dispatch latency** (MED, audit-2 #10). Panic
+  isolation is ALREADY present (`safely()` wraps every sweep, so one panicking
+  cron can't kill the process). What remains is bounded scheduling latency: the
+  select loop runs the daily-slot sweeps sequentially, so a long daily batch can
+  delay the next award/promo tick. Tickers are hours apart and each sweep is
+  bounded, so this is a low-severity latency, not a safety bug. Concurrent
+  per-ticker dispatch deferred (trades the bounded delay for DB/Redis contention
+  + needs an overlap guard).
 - **Quota/budget gates fail OPEN on a Redis error** (LOW, audit-2 #12). By
   design (availability > strict enforcement); a Redis outage removes all
   denial-of-wallet backstops at once. Flagged as an accepted tradeoff.
+- **CSV Commit full single-tx batching** (audit-2-reaudit, HIGH — mitigated).
+  Mitigated: maxCSVRows lowered 5000→1000 and imports serialized per session, so
+  one user can't fan out concurrent pool-churning imports. The complete fix
+  (resolve per-import invariants once + one batched tx / `CopyFrom` so an import
+  holds a single connection) is a LogSpend/RecordSpend refactor, deferred.
 
-## Deferred — needs a new migration / non-trivial change
+## Deferred — genuine tradeoff / perf
 
-- **`affiliate_clicks` uses `ON DELETE SET NULL`** (LOW, audit-2 #14): click
-  metadata (referrer/UA/timestamp) survives a user hard-delete. Needs a forward
-  migration to CASCADE for full PIPEDA purge.
-- **AI daily token budget undercounts tool-loop spend** (MED, audit-2 #8):
-  estimate excludes the growing multi-round Claude round-trips. Recommend
-  summing `resp.Usage` across rounds.
+- **`affiliate_clicks` uses `ON DELETE SET NULL`** (LOW, audit-2 #14): purge vs.
+  revenue-attribution tradeoff — SET NULL already de-links the user; CASCADE
+  would delete the click rows (losing deleted users' commission history). Left
+  for a product call rather than unilaterally deleting revenue data.
 - **N+1 query in `card_value.SummaryForUserCards`** (LOW perf, audit-2 #15):
   per-card queries, uncached. Optimization, not correctness.
-- **Apify token in URL query string** (LOW, audit-1 critic): move to an
-  Authorization header to avoid credential leakage into logs.
 
 ## Cannot fix — edit-protected
 
@@ -53,9 +59,14 @@ ResearchMode Pro gate.
   edited (project rule). The FORWARD data state is already correct (058/076
   cleaned the dups); these are rollback-only hazards past v40/v58.
 
-## Unverified
+## Fixed since first draft (round 2 — re-audit + follow-ups)
 
-- The second audit's **csv-import** and **general-correctness** dimensions
-  failed to return structured output (agent error), so the first audit's
-  flagged **CSV import memory amplification** (ReadAll before the row cap) and a
-  general correctness sweep remain unverified. Re-run recommended.
+- AI token budget now debits ACTUAL multi-round usage (audit-2 #8) — FIXED.
+- CSV parse streams row-by-row (memory amplification) — FIXED.
+- CSV Commit pool-exhaustion (HIGH) — MITIGATED (cap + per-session lock).
+- Categorizer telecom→gas mislabel — FIXED (carrier rules added).
+- Award-search median upward bias — FIXED (true median).
+- Apify token moved to Authorization header (audit-1 critic) — FIXED.
+- The two previously-unverified dimensions (csv-import, general) were re-run:
+  3 confirmed (CSV-commit, categorizer, median — all addressed above), 2
+  dismissed. No longer unverified.
