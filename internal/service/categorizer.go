@@ -46,6 +46,18 @@ var merchantRules = []merchantRule{
 	{"rogers ", "recurring-bills"}, // trailing space avoids matching "rogers cinema" etc.
 	{"telus", "recurring-bills"},
 	{"freedom mobile", "recurring-bills"},
+	// Mobile carriers MUST sit above the "mobil" (Exxon/Mobil gas) rule —
+	// first-match-wins, so "BELL MOBILITY"/"VIRGIN MOBILE"/etc. categorize as a
+	// phone bill, not gas (which would value the entry at a card's gas
+	// multiplier and inflate the persisted reward).
+	{"bell mobility", "recurring-bills"},
+	{"virgin mobile", "recurring-bills"},
+	{"virgin plus", "recurring-bills"},
+	{"public mobile", "recurring-bills"},
+	{"lucky mobile", "recurring-bills"},
+	{"fido", "recurring-bills"},
+	{"chatr", "recurring-bills"},
+	{"t-mobile", "recurring-bills"},
 	{"koodo", "recurring-bills"},
 	{"insurance", "recurring-bills"},
 

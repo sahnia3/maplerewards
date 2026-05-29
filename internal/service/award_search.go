@@ -749,7 +749,15 @@ func (s *AwardSearchService) pickCashPrice(
 		}
 		if len(prices) > 0 {
 			sort.Float64s(prices)
-			return prices[len(prices)/2] * float64(passengers)
+			// True median: average the two middle values on an even sample so a
+			// thin/even set doesn't bias the price (and thus the CPP/value
+			// rating) upward by always taking the higher midpoint.
+			mid := len(prices) / 2
+			med := prices[mid]
+			if len(prices)%2 == 0 {
+				med = (prices[mid-1] + prices[mid]) / 2
+			}
+			return med * float64(passengers)
 		}
 	}
 

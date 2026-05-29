@@ -182,16 +182,20 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Consume daily token budget. Estimate-based until we plumb the
-	// Anthropic usage block all the way through the service — input is the
-	// user message + system-prompt overhead (~3K), output is the reply length
-	// at ~1.3 chars/token. Errors are warn-and-continue: under-counting is
-	// preferable to failing the response.
+	// Consume daily token budget by ACTUAL usage when the service reports it
+	// (sum of input+output across all tool-loop rounds) — the message+reply
+	// estimate badly under-counts a multi-round tool turn, letting a heavy
+	// chatter exceed the daily Anthropic budget. Fall back to the estimate
+	// only when usage is unavailable. Errors are warn-and-continue.
 	if h.budget != nil {
 		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
 		metrics.AddAnthropicTokens(inTok, outTok)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, inTok+outTok); berr != nil {
-			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
+		tokens := resp.TokensUsed
+		if tokens <= 0 {
+			tokens = inTok + outTok
+		}
+		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, tokens); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "tokens", tokens)
 		}
 	}
 
@@ -411,12 +415,17 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Consume daily token budget on success.
+	// Consume daily token budget on success — by ACTUAL multi-round usage when
+	// reported, else the message+reply estimate (which under-counts tool turns).
 	if h.budget != nil {
 		inTok, outTok := estimateTokenSplit(req.Message, resp.Reply)
 		metrics.AddAnthropicTokens(inTok, outTok)
-		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, inTok+outTok); berr != nil {
-			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "estimate", inTok+outTok)
+		tokens := resp.TokensUsed
+		if tokens <= 0 {
+			tokens = inTok + outTok
+		}
+		if _, _, berr := h.budget.Consume(r.Context(), userID, plan, isPro, tokens); berr != nil {
+			slog.Warn("aibudget consume failed", "err", berr, "user_id", userID, "tokens", tokens)
 		}
 	}
 

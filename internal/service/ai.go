@@ -112,6 +112,10 @@ type ChatRequest struct {
 type ChatResponse struct {
 	Reply   string              `json:"reply"`
 	History []model.ChatMessage `json:"history"`
+	// TokensUsed is the actual input+output tokens summed across all tool-loop
+	// rounds (0 if unknown). Internal — lets the handler debit the daily AI
+	// budget by real spend instead of a message+reply estimate. Not exposed.
+	TokensUsed int `json:"-"`
 }
 
 // Chat processes a user message with their wallet context and returns AI advice.

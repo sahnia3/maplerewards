@@ -1516,6 +1516,7 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		"web_search":          true,
 	}
 	paidToolsUsed := 0
+	totalTokens := 0 // actual input+output across all rounds — debits the real budget
 	finalText := strings.Builder{}
 
 	for round := 0; round < maxRounds; round++ {
@@ -1567,6 +1568,7 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 			"cache_read", resp.Usage.CacheReadTokens,
 			"cache_create", resp.Usage.CacheCreationTokens,
 		)
+		totalTokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
 
 		// Done if no tool calls or end_turn.
 		if len(toolCalls) == 0 || resp.StopReason == "end_turn" {
@@ -1699,8 +1701,9 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	}
 
 	return &ChatResponse{
-		Reply:   reply,
-		History: history,
+		Reply:      reply,
+		History:    history,
+		TokensUsed: totalTokens,
 	}, nil
 }
 

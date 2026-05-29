@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"maplerewards/internal/model"
@@ -23,6 +24,10 @@ import (
 // "withdrawals" / "debits", and "description" / "merchant" / "details".
 type CSVImportService struct {
 	walletSvc *WalletService
+	// importing serializes Commit per session so one user can't launch many
+	// concurrent imports that collectively pin the connection pool. Holds the
+	// session ID while a commit is in flight.
+	importing sync.Map
 }
 
 func NewCSVImportService(walletSvc *WalletService) *CSVImportService {
@@ -34,7 +39,13 @@ func NewCSVImportService(walletSvc *WalletService) *CSVImportService {
 // per row — a handful of concurrent max-size imports would exhaust the
 // connection pool and take the whole API down. A real bank statement is well
 // under this; legitimate users are unaffected.
-const maxCSVRows = 5000
+// Lowered from 5000: Commit calls LogSpend (≈6-8 queries + a short tx) per row,
+// so the row count directly drives DB/connection-pool load. A real bank
+// statement is well under 1000 rows; this bounds a single import's query
+// volume. Combined with the per-session import lock below + the route's 30s
+// timeout, it bounds connection-pool blast radius. (Full fix = one batched tx
+// per import; see known-issues.)
+const maxCSVRows = 1000
 
 // CSVImportPreview is what the API returns to the frontend before commit:
 // detected columns, parsed row count, sample rows, plus any per-row warnings
@@ -213,6 +224,13 @@ func (s *CSVImportService) Commit(ctx context.Context, sessionID, cardID, fallba
 	if fallbackCategorySlug == "" {
 		fallbackCategorySlug = "everything-else"
 	}
+
+	// Serialize imports per session: one user cannot run concurrent commits
+	// that each churn ~6-8 queries/row and collectively saturate the pool.
+	if _, busy := s.importing.LoadOrStore(sessionID, true); busy {
+		return 0, fmt.Errorf("an import is already in progress for this session")
+	}
+	defer s.importing.Delete(sessionID)
 
 	// Verify cardID is in the session's wallet.
 	cards, err := s.walletSvc.GetWallet(ctx, sessionID)
