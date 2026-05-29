@@ -37,7 +37,7 @@ function Section({ title, count, children }: { title: string; count?: number; ch
 export default function AdminUserDetailPage() {
   const params = useParams();
   const id = String(params?.id ?? "");
-  const { isAdmin, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const [data, setData] = useState<AdminUserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export default function AdminUserDetailPage() {
     </div>
   );
 
-  if (forbidden || (!authLoading && !isAdmin)) {
+  if (forbidden) {
     return shell(<PageMasthead eyebrow="Admin" title="Restricted" lede="Administrators only." />);
   }
   if (notFound) return shell(<PageMasthead eyebrow="Admin" title="User not found" lede="No account with that id." />);

@@ -88,12 +88,19 @@ func (s *DataExportService) Export(ctx context.Context, userID string) (*ExportP
 	payload.Wallet = cards
 
 	payload.Spend = collectRows(ctx, s.pool, `
-		SELECT id, card_id, category_id, amount, spent_at, note, created_at
-		FROM spend_entries WHERE user_id = $1 ORDER BY spent_at DESC
+		SELECT se.id, se.card_id, c.name AS card_name, se.category_id,
+		       cat.name AS category_name, se.amount, se.points_earned,
+		       se.dollar_value, se.spent_at, se.note, se.created_at
+		FROM spend_entries se
+		LEFT JOIN cards c ON c.id = se.card_id
+		LEFT JOIN categories cat ON cat.id = se.category_id
+		WHERE se.user_id = $1 ORDER BY se.spent_at DESC
 	`, userID)
 	payload.Applications = collectRows(ctx, s.pool, `
-		SELECT id, card_id, applied_at, status, notes, created_at
-		FROM card_applications WHERE user_id = $1 ORDER BY applied_at DESC
+		SELECT a.id, a.card_id, c.name AS card_name, a.applied_at, a.status, a.notes, a.created_at
+		FROM card_applications a
+		LEFT JOIN cards c ON c.id = a.card_id
+		WHERE a.user_id = $1 ORDER BY a.applied_at DESC
 	`, userID)
 	payload.WelcomeBonuses = collectRows(ctx, s.pool, `
 		SELECT id, card_id, target_points, target_spend, deadline_at, activated_at, created_at

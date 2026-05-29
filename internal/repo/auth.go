@@ -94,17 +94,28 @@ type AdminUserListItem struct {
 	LastSpend    *time.Time `json:"last_spend"`
 }
 
+// escapeLike escapes LIKE/ILIKE wildcards so a user-typed % or _ matches
+// literally (paired with ESCAPE '\' in the query). Empty stays empty so the
+// "$n = ''" short-circuit still returns all rows.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return s
+}
+
 // ListUsers returns a paginated slice of non-deleted users (newest first) with
 // activity counts, plus the total matching count for pagination. search (if
 // non-empty) ILIKE-matches email or display_name. Admin-only — callers gate
 // with RequireAdmin.
 func (r *AuthRepo) ListUsers(ctx context.Context, limit, offset int, search string) ([]AdminUserListItem, int, error) {
+	like := escapeLike(search) // treat % and _ in the search term as literals
 	var total int
 	if err := r.pool.QueryRow(ctx, `
 		SELECT count(*) FROM users
 		WHERE deleted_at IS NULL
-		  AND ($1 = '' OR email ILIKE '%'||$1||'%' OR display_name ILIKE '%'||$1||'%')
-	`, search).Scan(&total); err != nil {
+		  AND ($1 = '' OR email ILIKE '%'||$1||'%' ESCAPE '\' OR display_name ILIKE '%'||$1||'%' ESCAPE '\')
+	`, like).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count users: %w", err)
 	}
 
@@ -115,10 +126,10 @@ func (r *AuthRepo) ListUsers(ctx context.Context, limit, offset int, search stri
 		       (SELECT max(se.spent_at) FROM spend_entries se WHERE se.user_id = u.id) AS last_spend
 		FROM users u
 		WHERE u.deleted_at IS NULL
-		  AND ($3 = '' OR u.email ILIKE '%'||$3||'%' OR u.display_name ILIKE '%'||$3||'%')
+		  AND ($3 = '' OR u.email ILIKE '%'||$3||'%' ESCAPE '\' OR u.display_name ILIKE '%'||$3||'%' ESCAPE '\')
 		ORDER BY u.created_at DESC
 		LIMIT $1 OFFSET $2
-	`, limit, offset, search)
+	`, limit, offset, like)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list users: %w", err)
 	}

@@ -9,7 +9,7 @@ import { PageMasthead } from "@/components/editorial/page-masthead";
 const PAGE_SIZE = 50;
 
 export default function AdminUsersPage() {
-  const { isAdmin, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const [rows, setRows] = useState<AdminUserListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -42,8 +42,10 @@ export default function AdminUsersPage() {
     load();
   }, [authLoading, load]);
 
-  // Cosmetic gate; the API 403 (handled in load()) is the real enforcement.
-  if (forbidden || (!authLoading && !isAdmin)) {
+  // Gate on the real server enforcement only (the API 403 → forbidden). The
+  // public NEXT_PUBLIC_ADMIN_EMAILS list only hides the nav link; never block a
+  // genuine admin here just because that env var is unset/mismatched.
+  if (forbidden) {
     return (
       <div className="reveal" style={{ maxWidth: 880, margin: "0 auto", padding: "32px clamp(20px,3vw,40px)" }}>
         <PageMasthead eyebrow="Admin" title="Restricted" lede="This area is for administrators only." />

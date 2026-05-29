@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,11 @@ import (
 	"maplerewards/internal/repo"
 	"maplerewards/internal/service"
 )
+
+// uuidRe validates the {id} path param before it hits a UUID column — a
+// non-UUID value would otherwise make Postgres error (22P02) and surface as a
+// 500 instead of a clean 404.
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // userLister is the admin user-list query (satisfied by *repo.AuthRepo).
 type userLister interface {
@@ -70,8 +76,9 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 // wallet, spend history, applications, …) via the shared export aggregator.
 func (h *AdminUsersHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if id == "" {
-		jsonError(w, "user id required", http.StatusBadRequest)
+	if !uuidRe.MatchString(id) {
+		// Not a valid UUID → no such user (avoids a Postgres 22P02 → 500).
+		jsonError(w, "user not found", http.StatusNotFound)
 		return
 	}
 	payload, err := h.exporter.Export(r.Context(), id)
