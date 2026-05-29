@@ -242,14 +242,17 @@ func (s *ApifyAwardService) SearchAwards(
 func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput) (string, string, error) {
 	body, _ := json.Marshal(input)
 
-	url := fmt.Sprintf("https://api.apify.com/v2/acts/%s/runs?token=%s",
-		s.actorID, s.apiToken)
+	url := fmt.Sprintf("https://api.apify.com/v2/acts/%s/runs", s.actorID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 	if err != nil {
 		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Token in the Authorization header, not the URL query — URLs are the most
+	// commonly logged/traced string, so a query-string token risks leaking a
+	// live paid credential into access logs / error wrappers.
+	req.Header.Set("Authorization", "Bearer "+s.apiToken)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -273,7 +276,7 @@ func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput)
 // pollUntilDone polls the run status until SUCCEEDED, FAILED, or timeout.
 func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	url := fmt.Sprintf("https://api.apify.com/v2/actor-runs/%s?token=%s", runID, s.apiToken)
+	url := fmt.Sprintf("https://api.apify.com/v2/actor-runs/%s", runID)
 
 	for time.Now().Before(deadline) {
 		select {
@@ -286,6 +289,7 @@ func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, tim
 		if err != nil {
 			return err
 		}
+		req.Header.Set("Authorization", "Bearer "+s.apiToken) // token in header, not URL
 
 		resp, err := s.client.Do(req)
 		if err != nil {
@@ -328,13 +332,13 @@ func readCappedBody(r io.Reader) ([]byte, error) {
 
 // fetchDataset retrieves the result items from the actor's default dataset.
 func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) ([]apifyAwardResult, error) {
-	url := fmt.Sprintf("https://api.apify.com/v2/datasets/%s/items?token=%s&format=json",
-		datasetID, s.apiToken)
+	url := fmt.Sprintf("https://api.apify.com/v2/datasets/%s/items?format=json", datasetID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+s.apiToken) // token in header, not URL
 
 	resp, err := s.client.Do(req)
 	if err != nil {

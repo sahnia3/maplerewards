@@ -63,15 +63,26 @@ func (s *CSVImportService) Parse(r io.Reader) (*CSVImportPreview, []ParsedTxn, e
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1 // tolerate inconsistent column counts
 
-	rows, err := cr.ReadAll()
-	if err != nil {
-		return nil, nil, fmt.Errorf("read csv: %w", err)
+	// Read row-by-row and STOP at the cap, instead of ReadAll() which would
+	// materialize the entire upload (a 5 MB body is ~100k+ rows) into memory
+	// before the row-count check. This bounds peak memory to ~maxCSVRows rows,
+	// so concurrent max-size uploads can't blow up the heap.
+	rows := make([][]string, 0, 256)
+	for {
+		rec, rerr := cr.Read()
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return nil, nil, fmt.Errorf("read csv: %w", rerr)
+		}
+		rows = append(rows, rec)
+		if len(rows) > maxCSVRows+1 { // +1 for the header row
+			return nil, nil, fmt.Errorf("csv has too many rows; maximum is %d", maxCSVRows)
+		}
 	}
 	if len(rows) < 2 {
 		return nil, nil, fmt.Errorf("csv has no data rows")
-	}
-	if len(rows) > maxCSVRows+1 { // +1 for the header row
-		return nil, nil, fmt.Errorf("csv has too many rows (%d); maximum is %d", len(rows)-1, maxCSVRows)
 	}
 
 	cols := detectColumns(rows[0])
