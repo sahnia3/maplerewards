@@ -49,7 +49,9 @@ func NewPromoSentinelService(tavily *TavilyService, bonusRepo *repo.TransferBonu
 		repo:      bonusRepo,
 		apiKey:    anthropicAPIKey,
 		model:     model,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		// SSRF-safe: sourceURLLive fetches LLM-extracted promo URLs, so the
+		// client must refuse to connect to private/internal/metadata addresses.
+		httpClient: newSSRFSafeClient(60 * time.Second),
 	}
 }
 

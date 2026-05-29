@@ -458,6 +458,9 @@ func main() {
 		// process for the global 5-min server WriteTimeout.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Timeout(30 * time.Second))
+			// These cookie-auth-capable mutations carry no CSRF token; the
+			// application/json gate (+ strict CORS) blocks cross-origin forgery.
+			r.Use(mw.RequireJSONContentType)
 			r.Post("/wallet", walletH.Create)
 			r.Post("/optimize", optimizerH.GetBestCard)
 			r.Post("/recommend", recommendH.Recommend)
@@ -468,10 +471,15 @@ func main() {
 		// tool calls). They inherit the server WriteTimeout of 5 minutes.
 		// IDOR for these is enforced by requireBodySessionOwner in the
 		// handlers themselves; rate limit + body-size limit still apply.
-		r.Post("/trip/evaluate", tripH.Evaluate)
-		r.Post("/trip/award-search", awardH.Search)
-		r.Post("/chat", chatH.Chat)
-		r.Post("/chat/stream", chatH.ChatStream) // SSE — tool status pills + progressive events
+		// application/json gate (+ strict CORS) is the CSRF defense for these
+		// cookie-auth-capable, cost-incurring mutations that carry no CSRF token.
+		r.Group(func(r chi.Router) {
+			r.Use(mw.RequireJSONContentType)
+			r.Post("/trip/evaluate", tripH.Evaluate)
+			r.Post("/trip/award-search", awardH.Search)
+			r.Post("/chat", chatH.Chat)
+			r.Post("/chat/stream", chatH.ChatStream) // SSE — tool status pills + progressive events
+		})
 
 		// ── CSRF token issuer ───────────────────────────────────────────
 		// The SPA hits this on first load (or whenever its cookie is gone)

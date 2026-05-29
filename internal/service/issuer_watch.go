@@ -32,9 +32,9 @@ type IssuerWatchService struct {
 func NewIssuerWatchService(r *repo.IssuerPageRepo, anthropicKey string) *IssuerWatchService {
 	return &IssuerWatchService{
 		repo: r,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF-safe: refuse to connect to private/internal/metadata addresses
+		// even though issuer URLs are admin-seeded (defense in depth).
+		httpClient:   newSSRFSafeClient(30 * time.Second),
 		anthropicKey: anthropicKey,
 	}
 }

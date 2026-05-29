@@ -2,7 +2,10 @@ package repo
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -464,7 +467,11 @@ func (r *AuthRepo) DeleteUser(ctx context.Context, userID string) error {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
 
-	// Read the email before scrambling so we can record it in the audit log.
+	// Read the email before scrambling. We record only a SHA-256 HASH of it in
+	// the audit log — never the plaintext. Retaining the raw email forever
+	// defeats the 30-day "fully purged" PIPEDA promise; a hash still lets us
+	// prove a given address was deleted / detect re-signup abuse without
+	// holding recoverable PII past the retention window.
 	var emailAtDelete *string
 	if err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, userID).Scan(&emailAtDelete); err != nil {
 		if err == pgx.ErrNoRows {
@@ -496,10 +503,17 @@ func (r *AuthRepo) DeleteUser(ctx context.Context, userID string) error {
 	}
 
 	// Audit log row — `user_id` is not FK so the log survives hard-delete.
+	// Store a hash of the email, not the plaintext (PIPEDA purge).
+	var emailHash *string
+	if emailAtDelete != nil && *emailAtDelete != "" {
+		sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(*emailAtDelete))))
+		h := "sha256:" + hex.EncodeToString(sum[:])
+		emailHash = &h
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO user_deletions_log (user_id, email_at_delete, requested_by)
 		VALUES ($1, $2, 'user')
-	`, userID, emailAtDelete); err != nil {
+	`, userID, emailHash); err != nil {
 		return fmt.Errorf("write deletion audit log: %w", err)
 	}
 
