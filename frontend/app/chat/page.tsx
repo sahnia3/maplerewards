@@ -502,6 +502,12 @@ export default function ChatPage() {
           from { opacity: 0; transform: translateY(4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        /* Loading dots inside in-flight tool-status pills. Was referenced by
+           the Dot component but never defined — the dots sat motionless. */
+        @keyframes chat-bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+          40%           { transform: translateY(-4px); opacity: 1; }
+        }
         .maple-thinking-orb {
           width: 9px; height: 9px; border-radius: 50%;
           background: var(--accent);

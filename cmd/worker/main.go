@@ -143,7 +143,7 @@ func main() {
 	// for active transfer-bonus promotions, extracts (from, to, %, expires)
 	// via Claude, upserts into transfer_bonus_events. No-op when either
 	// TAVILY_API_KEY or ANTHROPIC_API_KEY is absent.
-	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""))
+	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""), workerQuota)
 	promoSvc := service.NewPromoSentinelService(tavilySvc, transferBonusRepo, getEnv("ANTHROPIC_API_KEY", ""))
 
 	// Account cleanup — hard-deletes users whose deleted_at is older than the

@@ -4,26 +4,54 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 )
 
+// ErrTavilyQuotaExhausted is returned when the shared monthly Tavily budget is
+// spent, so callers skip the paid HTTP call (denial-of-wallet backstop).
+var ErrTavilyQuotaExhausted = errors.New("tavily monthly quota exhausted")
+
 // TavilyService provides web search capabilities via the Tavily API.
 type TavilyService struct {
 	apiKey     string
 	httpClient *http.Client
+	quota      QuotaSpender // shared monthly cap; nil = unmetered (tests)
 }
 
-// NewTavilyService creates a new Tavily web search service.
-func NewTavilyService(apiKey string) *TavilyService {
+// NewTavilyService creates a new Tavily web search service. quotaClient meters
+// the shared monthly "tavily" budget; may be nil in tests (treated unlimited).
+func NewTavilyService(apiKey string, quotaClient QuotaSpender) *TavilyService {
 	return &TavilyService{
 		apiKey: apiKey,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		quota: quotaClient,
 	}
+}
+
+// debitQuota charges one Tavily call against the shared monthly budget.
+// Fails open on an infra error (matches SerpAPI), closed when exhausted.
+func (s *TavilyService) debitQuota(ctx context.Context) error {
+	if s.quota == nil {
+		return nil
+	}
+	remaining, exhausted, err := s.quota.Spend(ctx, "tavily")
+	if err != nil {
+		slog.Warn("[tavily] quota check failed; allowing request", "err", err)
+		return nil
+	}
+	if exhausted {
+		slog.Warn("[tavily] monthly quota exhausted; skipping HTTP call")
+		return ErrTavilyQuotaExhausted
+	}
+	slog.Info("[tavily] quota debited", "remaining", remaining)
+	return nil
 }
 
 // IsAvailable returns true if the Tavily API key is configured.
@@ -56,6 +84,9 @@ type tavilyResult struct {
 func (s *TavilyService) Search(ctx context.Context, query string) ([]tavilyResult, error) {
 	if s.apiKey == "" {
 		return nil, fmt.Errorf("TAVILY_API_KEY not configured")
+	}
+	if err := s.debitQuota(ctx); err != nil {
+		return nil, err
 	}
 
 	reqBody := tavilyRequest{
@@ -118,6 +149,9 @@ func (s *TavilyService) Search(ctx context.Context, query string) ([]tavilyResul
 func (s *TavilyService) SearchTravel(ctx context.Context, query string) ([]tavilyResult, error) {
 	if s.apiKey == "" {
 		return nil, fmt.Errorf("TAVILY_API_KEY not configured")
+	}
+	if err := s.debitQuota(ctx); err != nil {
+		return nil, err
 	}
 
 	// Build a travel-optimised query — append pricing keywords so Tavily

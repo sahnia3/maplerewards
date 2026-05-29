@@ -1465,6 +1465,20 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	// 5-round budget. Each round = one LLM call. After round 5, we force a final
 	// synthesis with no tools available so the model must answer.
 	const maxRounds = 5
+	// Denial-of-wallet bounds. Without these, one attacker-controlled message
+	// can induce the model to emit dozens of tool calls per round across 4
+	// rounds, each paid tool fanning out to Apify/SerpAPI/Tavily — exhausting
+	// the SHARED monthly quota and DoS-ing every user. Cap parallel fan-out per
+	// round, and budget the paid (external-API) tools across the whole request.
+	const maxToolCallsPerRound = 6
+	const maxPaidToolCalls = 8
+	paidTools := map[string]bool{
+		"search_award_space":  true,
+		"search_cash_flights": true,
+		"search_hotels":       true,
+		"web_search":          true,
+	}
+	paidToolsUsed := 0
 	finalText := strings.Builder{}
 
 	for round := 0; round < maxRounds; round++ {
@@ -1542,8 +1556,40 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		// dispatcher cap. Faster tools (postgres, SerpAPI) finish in <2s and
 		// release their goroutine, so the wait is bounded by the slowest tool.
 		results := make([]claudeBlock, len(toolCalls))
+		// Decide execution synchronously (before launching goroutines) so the
+		// paid-budget counter isn't raced. Calls beyond the per-round cap, or
+		// paid calls beyond the per-request budget, get an error tool_result so
+		// the model can react instead of silently fanning out unbounded work.
+		execute := make([]bool, len(toolCalls))
+		for i, tc := range toolCalls {
+			reason := ""
+			switch {
+			case i >= maxToolCallsPerRound:
+				reason = "too_many_tool_calls_this_round"
+			case paidTools[tc.Name] && paidToolsUsed >= maxPaidToolCalls:
+				reason = "paid_tool_budget_exhausted_for_this_request"
+			}
+			if reason != "" {
+				results[i] = claudeBlock{
+					Type:      "tool_result",
+					ToolUseID: tc.ID,
+					Content:   fmt.Sprintf(`{"error":%q}`, reason),
+				}
+				if emit != nil {
+					emit("tool_done", map[string]any{"id": tc.ID, "name": tc.Name, "summary": reason})
+				}
+				continue
+			}
+			if paidTools[tc.Name] {
+				paidToolsUsed++
+			}
+			execute[i] = true
+		}
 		var wg sync.WaitGroup
 		for i, tc := range toolCalls {
+			if !execute[i] {
+				continue
+			}
 			wg.Add(1)
 			go func(i int, tc claudeBlock) {
 				defer wg.Done()

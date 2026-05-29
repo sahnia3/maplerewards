@@ -169,7 +169,7 @@ func main() {
 
 	walletSvc := service.NewWalletService(walletRepo, cardRepo, spendRepo, bonusRepo, redisCache)
 	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache)
-	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""))
+	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""), quotaClient)
 
 	// Load YAML knowledge base; fall back to hardcoded data on error.
 	// KB_DIR overrides the default location so the binary can run outside
