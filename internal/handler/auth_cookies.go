@@ -21,31 +21,42 @@ import (
 //   - SameSite:  None+Secure in production (cross-origin SPA); Lax in dev
 //   - Path:      "/"
 //   - MaxAge:    matches the underlying token lifetimes
+// cookieProfile returns the SameSite mode, Secure flag, and Domain for the auth
+// + CSRF cookies, in one place so set and clear always agree.
+//
+//   - COOKIE_DOMAIN set (app + API share a registrable parent domain, e.g.
+//     ".maplerewards.ca"): same-site Lax + Domain — robust on Safari and
+//     third-party-cookie-blocking browsers.
+//   - prod, no COOKIE_DOMAIN (app + API on different domains, e.g. *.vercel.app
+//     + *.railway.app): SameSite=None+Secure so the cookie flows cross-site.
+//   - dev: Lax + insecure (localhost is same-site; None needs Secure that dev
+//     HTTP can't provide).
+//
+// Cross-site exposure is contained by the strict CORS allow-list + CSRF
+// double-submit on every state-changing route.
+func cookieProfile() (sameSite http.SameSite, secure bool, domain string) {
+	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
+	domain = strings.TrimSpace(os.Getenv("COOKIE_DOMAIN"))
+	if !prod {
+		return http.SameSiteLaxMode, false, domain
+	}
+	if domain != "" {
+		return http.SameSiteLaxMode, true, domain
+	}
+	return http.SameSiteNoneMode, true, ""
+}
+
 func setTokenCookies(w http.ResponseWriter, tokens *model.TokenPair) {
 	if tokens == nil {
 		return
 	}
-	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
-
-	// The frontend is a distinct origin from the API (CORS, no BFF — the SPA
-	// fetches an absolute NEXT_PUBLIC_API_URL). SameSite=Lax cookies are NOT
-	// sent on cross-site subresource (fetch/XHR) requests, so in production the
-	// auth cookies must be SameSite=None to flow at all, paired with Secure
-	// (HTTPS, already enforced) which None requires. Dev stays Lax+non-Secure:
-	// localhost:3000→:8080 is same-site, and None needs Secure that dev HTTP
-	// can't provide. Cross-site exposure is contained by the strict CORS
-	// allow-list + CSRF double-submit on every state-changing route.
-	sameSite := http.SameSiteLaxMode
-	secure := false
-	if prod {
-		sameSite = http.SameSiteNoneMode
-		secure = true
-	}
+	sameSite, secure, domain := cookieProfile()
 
 	access := &http.Cookie{
 		Name:     mw.AccessCookieName,
 		Value:    tokens.AccessToken,
 		Path:     "/",
+		Domain:   domain,
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: sameSite,
@@ -59,6 +70,7 @@ func setTokenCookies(w http.ResponseWriter, tokens *model.TokenPair) {
 		Name:     mw.RefreshCookieName,
 		Value:    tokens.RefreshToken,
 		Path:     "/api/v1/auth", // narrow scope — only sent to auth endpoints
+		Domain:   domain,
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: sameSite,
@@ -72,16 +84,11 @@ func setTokenCookies(w http.ResponseWriter, tokens *model.TokenPair) {
 // clearTokenCookies overwrites both cookies with empty value + MaxAge<0 so
 // the browser drops them immediately. Used on logout.
 func clearTokenCookies(w http.ResponseWriter) {
-	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
 	expired := time.Unix(0, 0)
 
-	// SameSite/Secure must match the attributes used at set-time (above) or the
-	// browser won't match the cookie to delete it — in prod the auth cookies
-	// are None+Secure, so the clear must be too.
-	sameSite := http.SameSiteLaxMode
-	if prod {
-		sameSite = http.SameSiteNoneMode
-	}
+	// SameSite/Secure/Domain must match the attributes used at set-time or the
+	// browser won't match the cookie to delete it.
+	sameSite, secure, domain := cookieProfile()
 
 	for _, name := range []string{mw.AccessCookieName, mw.RefreshCookieName} {
 		path := "/"
@@ -92,8 +99,9 @@ func clearTokenCookies(w http.ResponseWriter) {
 			Name:     name,
 			Value:    "",
 			Path:     path,
+			Domain:   domain,
 			HttpOnly: true,
-			Secure:   prod,
+			Secure:   secure,
 			SameSite: sameSite,
 			Expires:  expired,
 			MaxAge:   -1,

@@ -118,21 +118,24 @@ func generateCSRFToken() string {
 
 func setCSRFCookie(w http.ResponseWriter, token string) {
 	prod := strings.EqualFold(os.Getenv("APP_ENV"), "production")
-	// Cross-origin SPA: the double-submit cookie must reach the API on
-	// cross-site fetches, so in prod it is SameSite=None+Secure (matching the
-	// auth cookies). Dev stays Lax (same-site localhost). The header check
-	// remains the real protection — an attacker can't read this cookie
-	// cross-origin nor set the custom header without a CORS-rejected preflight.
+	domain := strings.TrimSpace(os.Getenv("COOKIE_DOMAIN"))
+	// Match the auth-cookie profile (handler.cookieProfile): when COOKIE_DOMAIN
+	// is set (app + API share a parent domain) the cookie is same-site Lax +
+	// Domain — Safari-robust; otherwise prod uses SameSite=None+Secure so the
+	// double-submit cookie reaches the API cross-site. Dev stays Lax. The
+	// header==cookie check remains the real CSRF protection regardless.
 	sameSite := http.SameSiteLaxMode
-	if prod {
+	secure := prod
+	if prod && domain == "" {
 		sameSite = http.SameSiteNoneMode
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
+		Domain:   domain,
 		HttpOnly: false, // SPA must read it
-		Secure:   prod,
+		Secure:   secure,
 		SameSite: sameSite,
 		MaxAge:   csrfMaxAge,
 		Expires:  time.Now().Add(time.Duration(csrfMaxAge) * time.Second),
