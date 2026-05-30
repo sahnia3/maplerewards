@@ -131,7 +131,12 @@ function renderSignInNudge(merchant) {
 
 function costcoAmexWarning(merchant, rec) {
   // Most upvoted Canadian-rewards complaint — surface it prominently.
-  const isAmex = /amex|cobalt|platinum/i.test(rec.card_name || "");
+  // Detect Amex via the issuer/program signal, NOT a bare "platinum" substring
+  // (that falsely flagged non-Amex Platinum cards like CIBC Dividend Platinum
+  // or Visa Platinum). Amex card/program names carry "American Express", "Amex",
+  // or "Cobalt".
+  const hay = `${rec.card_name || ""} ${rec.program_name || ""}`;
+  const isAmex = /\bamex\b|american express|cobalt/i.test(hay);
   const amexBlackoutSlugs = new Set([
     "costco_ca", "loblaws_ca", "no_frills_ca", "superstore_ca",
     "shoppers_ca", "wholesale_club_ca",

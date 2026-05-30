@@ -2,11 +2,12 @@
   "manifest_version": 3,
   "name": "MapleRewards — Best Card per Swipe",
   "short_name": "MapleRewards",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tells you the best Canadian credit card to use on every checkout — in CAD, with caps and transfer partners baked in.",
   "permissions": ["storage", "activeTab", "cookies"],
   "host_permissions": [
     "http://localhost:8080/*",
+    "https://maplerewards-production.up.railway.app/*",
     "https://maplerewards.app/*",
     "https://*.maplerewards.app/*"
   ],
@@ -36,6 +37,16 @@
     "service_worker": "background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "https://maplerewards.vercel.app/*",
+        "https://maplerewards.app/*",
+        "https://*.maplerewards.app/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "*://*.amazon.ca/*",

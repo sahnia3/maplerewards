@@ -7,11 +7,12 @@ const $openApp = document.getElementById("open-app");
 const $openSettings = document.getElementById("open-settings");
 
 (async function init() {
-  // Resolve the configured app URL for footer links.
-  const { apiBase } = await chrome.storage.local.get("apiBase");
-  const appBase = (apiBase || "http://localhost:8080/api/v1").replace("/api/v1", "").replace("8080", "3000");
-  $openApp.href = appBase;
-  $openSettings.href = appBase + "/settings";
+  // Resolve the web-app URL for footer links. The bridge stores the real app
+  // origin (appBase) when the user visits the app; fall back to localhost dev.
+  const { appBase } = await chrome.storage.local.get("appBase");
+  const app = appBase || "http://localhost:3000";
+  $openApp.href = app;
+  $openSettings.href = app + "/settings";
 
   // Fetch session ID from local storage (synced from web app via shared
   // cookie domain). For MVP we simply read the session_id from the

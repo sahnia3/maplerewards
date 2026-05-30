@@ -1,9 +1,11 @@
-# MapleRewards browser extension (MVP scaffold)
+# MapleRewards browser extension
 
-Minimum viable Chrome (and Edge / Brave / Opera — all Chromium) extension
-that surfaces the user's best Canadian credit card on supported retailer
-checkouts. This is a scaffold — the structure works end-to-end against the
-local API, but the cookie-bridge to the web app is intentionally manual.
+Chrome (and Edge / Brave / Opera — all Chromium) extension that surfaces the
+user's best Canadian credit card on supported retailer checkouts. The session
+bridge to the web app is now **automatic**: a content script on the MapleRewards
+web app (`bridge.js`) relays the wallet session id + (for signed-in users) a
+short-lived access token + the correct API base into the extension, so the
+popup and the floating best-card bar work without any manual setup.
 
 ## Quick install for development
 
@@ -14,18 +16,18 @@ local API, but the cookie-bridge to the web app is intentionally manual.
    ```
 2. Open `chrome://extensions`, enable **Developer mode**, click **Load
    unpacked**, and select this directory.
-3. (Until the cookie-bridge is wired up) seed your session ID into the
-   extension storage so the popup can read your wallet:
-   ```js
-   // From the popup's DevTools console (right-click extension icon →
-   // Inspect popup):
-   await chrome.storage.local.set({ mr_session_id: "<copy from
-   localStorage.getItem('maple_session_id') in the web app>" });
-   ```
+3. Open the web app (`http://localhost:3000`) once — the bridge writes your
+   session + the dev API base into the extension automatically. (No DevTools
+   paste required anymore.)
 4. Visit any of the 25 supported retailers (Amazon.ca, Costco.ca,
    Loblaws.ca, Shoppers, Sobeys, Air Canada, etc.) — a small floating card
    in the bottom right will surface your best-card recommendation. Costco /
    Loblaws / Shoppers visits get a prominent Amex-blackout warning.
+
+For production, the bridge maps the web origin to the prod API automatically;
+`host_permissions` cover the Railway API and the future `*.maplerewards.app`
+domain. When you move to a custom domain, update the origin→API map in
+`bridge.js` and the `STORE-LISTING.md` URLs.
 
 ## File layout
 
@@ -38,13 +40,14 @@ local API, but the cookie-bridge to the web app is intentionally manual.
 | `popup.html`     | The action popup (extension-icon click)                                |
 | `popup.css`      | Popup styles                                                           |
 | `popup.js`       | Popup logic — fetches and renders the user's wallet                    |
-| `icons/`         | 16/32/48/128 px PNG icons (placeholders — replace before publishing)   |
+| `bridge.js`      | Web-app content script — relays session id + token + API base to storage |
+| `icons/`         | 16/32/48/128 px branded PNG icons (real, submission-ready)             |
 
 ## Roadmap (post-MVP)
 
 1. **Cookie bridge** — when the user is signed in to maplerewards.app, write
    `mr_session_id` into the extension's storage automatically via a one-
-   time `window.postMessage`. Right now this is manual.
+   time `window.postMessage`. **Done** (`bridge.js`).
 2. **Best-card-on-checkout overlay** — anchor the recommendation tile next
    to the actual checkout button, not the page corner. Requires per-merchant
    selectors.
@@ -53,28 +56,30 @@ local API, but the cookie-bridge to the web app is intentionally manual.
 4. **Push notifications for award-watch alerts** — query
    `/wallet/{sid}/award-watches` periodically; if `last_alert_at` is fresh,
    show a chrome.notifications toast.
-5. **Real icons** — current icons are placeholder zeros. Need 16/32/48/128
-   PNGs in `icons/` before Chrome Web Store submission.
 
 ## Permissions explainer
 
 The extension requests:
-- `storage` — local key/value for `apiBase` + `mr_session_id`.
-- `activeTab` — needed to inject the content script on demand (not required
-  for the matches listed in manifest.json's `content_scripts`).
-- `tabs` — currently unused; reserved for a future "open dashboard in new
-  tab" command.
-- `host_permissions` — `localhost:8080`, `maplerewards.app` (the API and the
-  web app). Required so `fetch` from the service worker can include
-  cookies.
+- `storage` — local key/value for `apiBase`, `appBase`, `mr_session_id`, and a
+  short-lived `mr_access_token` (signed-in users).
+- `activeTab` — inject the content script on demand.
+- `cookies` — read the session cookie on the web-app domain as a bridge fallback.
+- `host_permissions` — the API hosts (`localhost:8080`, the Railway prod URL,
+  and `*.maplerewards.app`). Required so the service-worker `fetch` reaches the
+  API. The web-app origins are `content_scripts` matches (for `bridge.js`), not
+  host_permissions.
 
 We deliberately do NOT request `<all_urls>` or `webRequest` — Chrome Web
 Store reviews flag those and we don't need them.
 
 ## Distribution
 
-Not yet published. To publish:
-1. Replace icons in `icons/` (currently 1×1 placeholders).
-2. Bump version in `manifest.json`.
-3. Zip the directory: `zip -r maplerewards-extension-v0.1.0.zip .`
-4. Upload via the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole).
+Not yet published. Before submitting:
+1. Confirm the prod API base + `host_permissions` match your live domain
+   (update `bridge.js`'s origin→API map and the manifest if you move off the
+   Railway URL to a custom domain).
+2. Confirm the signed-in token bridge against the live app (see auth-context's
+   `postMessage`), and the privacy/support URLs in `STORE-LISTING.md`.
+3. Bump version in `manifest.json`.
+4. Zip the directory: `zip -r maplerewards-extension-v0.2.0.zip .`
+5. Upload via the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole).

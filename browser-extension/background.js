@@ -8,11 +8,17 @@
 // MV3 service workers can be killed by Chrome when idle, so all state lives
 // in chrome.storage rather than module-scope variables.
 
-const DEFAULT_API_BASE = "http://localhost:8080/api/v1";
+// Default to PRODUCTION so a freshly-installed extension works before the user
+// has visited the web app. The web-app bridge (bridge.js) overrides `apiBase`
+// in storage to the correct dev/prod API the moment the user opens the app, so
+// dev still works (localhost:3000 -> localhost:8080).
+const DEFAULT_API_BASE = "https://maplerewards-production.up.railway.app/api/v1";
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
-    await chrome.storage.local.set({ apiBase: DEFAULT_API_BASE });
+    // Only seed a default if the bridge hasn't already set one.
+    const { apiBase } = await chrome.storage.local.get("apiBase");
+    if (!apiBase) await chrome.storage.local.set({ apiBase: DEFAULT_API_BASE });
   }
 });
 
@@ -63,12 +69,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   (async () => {
     try {
-      const { apiBase } = await chrome.storage.local.get("apiBase");
+      const { apiBase, mr_access_token } = await chrome.storage.local.get([
+        "apiBase",
+        "mr_access_token",
+      ]);
       const base = apiBase || DEFAULT_API_BASE;
+      const headers = { "Content-Type": "application/json" };
+      // Signed-in users have owner-scoped wallets that need the JWT (the
+      // anonymous session id alone returns 404). The web-app bridge relays a
+      // short-lived access token into storage; attach it when present. Still
+      // restricted to the two allow-listed (method, path) pairs above.
+      if (mr_access_token) headers["Authorization"] = "Bearer " + mr_access_token;
       const res = await fetch(base + msg.path, {
         method,
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: msg.body ? JSON.stringify(msg.body) : undefined,
       });
       const text = await res.text();
