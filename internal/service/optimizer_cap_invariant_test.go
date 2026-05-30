@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"math"
+	"strconv"
 	"testing"
 
 	"maplerewards/internal/model"
@@ -218,5 +220,79 @@ func TestOptimizer_ScotiaGoldScenario_Bounded(t *testing.T) {
 	}
 	if !recs[0].IsCapHit {
 		t.Error("expected IsCapHit=true at $100k over a $50k cap")
+	}
+}
+
+// TestCalculateBlendedRate_PureInvariant locks the cap math at the lowest level
+// — the pure calculateBlendedRate function — across the FULL numeric space,
+// including the prior-spend > 0 path that the period-aware accumulation feature
+// (GetSpendSince / capPeriodStart) feeds in. The service-level matrix above
+// only exercises prior=0 (single purchase / no history) and asserts an upper
+// bound; this asserts the EXACT blended result for every regime (within cap,
+// fully exhausted, partial blend) so a partially-pre-consumed cap can never be
+// mis-projected. 7 spends × 3 caps × 4 prior-spends × 6 rate pairs × 2 periods.
+func TestCalculateBlendedRate_PureInvariant(t *testing.T) {
+	relEqual := func(got, want float64) bool {
+		return math.Abs(got-want) <= 1e-6*math.Max(1.0, math.Abs(want))
+	}
+	ftoa := func(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+	spends := []float64{1000, 2499, 2500, 2501, 5000, 10000, 100000}
+	caps := []float64{2500, 20000, 80000}
+	// accelerated, flat, mis-modelled (bonus<fallback), zero-fallback, cashback, high.
+	rates := [][2]float64{{5, 1}, {2, 2}, {1, 2}, {5, 0}, {1.5, 0.5}, {10, 1}}
+	periods := []string{"monthly", "annual"}
+
+	for _, cap := range caps {
+		for _, prior := range []float64{0, cap / 2, cap, cap + 1000} {
+			for _, spend := range spends {
+				for _, r := range rates {
+					bonus, fallback := r[0], r[1]
+					for _, period := range periods {
+						gotRate, gotCapHit, _ := calculateBlendedRate(spend, prior, cap, period, bonus, fallback)
+						gotPoints := spend * gotRate
+
+						remaining := cap - prior
+						var wantRate float64
+						var wantCapHit bool
+						switch {
+						case remaining <= 0:
+							wantRate, wantCapHit = fallback, true
+						case spend <= remaining:
+							wantRate, wantCapHit = bonus, false
+						default:
+							wantRate = (remaining*bonus + (spend-remaining)*fallback) / spend
+							wantCapHit = true
+						}
+
+						label := "spend=" + ftoa(spend) + " prior=" + ftoa(prior) + " cap=" + ftoa(cap) +
+							" bonus=" + ftoa(bonus) + " fb=" + ftoa(fallback) + " period=" + period
+
+						// (a) exact money math — by itself proves no over-projection.
+						if !relEqual(gotPoints, spend*wantRate) {
+							t.Errorf("%s: points=%.4f want %.4f", label, gotPoints, spend*wantRate)
+						}
+						if gotCapHit != wantCapHit {
+							t.Errorf("%s: capHit=%v want %v", label, gotCapHit, wantCapHit)
+						}
+						// (b) effective rate is bounded by the two rates (convex blend).
+						lo, hi := math.Min(bonus, fallback), math.Max(bonus, fallback)
+						if gotRate < lo-1e-9 || gotRate > hi+1e-9 {
+							t.Errorf("%s: rate %.4f outside [%.4f,%.4f]", label, gotRate, lo, hi)
+						}
+						// (c) headline invariant: an accelerator past its remaining cap
+						//     is STRICTLY below the uncapped spend*bonus — the 500k bug.
+						if bonus > fallback && remaining > 0 && spend > remaining && gotPoints >= spend*bonus-1e-6 {
+							t.Errorf("%s: accelerated %.2f not bounded below uncapped %.2f", label, gotPoints, spend*bonus)
+						}
+						// (d) a genuinely flat card (bonus==fallback) is left exactly
+						//     at its flat rate — never under-promised by the bound.
+						if bonus == fallback && !relEqual(gotRate, bonus) {
+							t.Errorf("%s: flat card distorted, rate %.4f want %.4f", label, gotRate, bonus)
+						}
+					}
+				}
+			}
+		}
 	}
 }

@@ -3,12 +3,16 @@
 **Date:** 2026-05-18
 **Trigger:** Founder QA — `/optimizer` projected Scotiabank Gold Amex at a flat 5x
 for $100,000 spend (500,000 pts), ignoring its real ~$50K/yr accelerated cap.
-**Status: remediated locally — pending commit/CI/merge (2026-05-18).** The
-remediation below is implemented and verified on a dev environment (clean
-migrate v47→49, `go build/vet/test -race`, `optimizer-cap-sweep.sh` all
-green) but is **not yet merged**; it ships as the Phase 0 foundation commit
-of the launch-remediation branch and is not "done" until CI-green on merge.
-The `/ultraplan` cap-remediation work is complete:
+**Status: RESOLVED — shipped on `main` (verified 2026-05-30).** The remediation
+below is implemented, committed, and on the live migration chain (DB at v86;
+migrations `000048_cap_remediation` + `000049_purchase_offer_ceilings` plus the
+`000056`–`000085` per-card earn-rate verification campaign). `go build ./...`,
+`go vet`, and the full `go test ./internal/service/ -race` suite are green,
+including the cap-invariant gate in this directory's sibling test file
+(`optimizer_cap_invariant_test.go`: per-multiplier + shared-group + no-cap
+guardrail matrix, the Scotia-Gold $100k→300k founder scenario, and a pure
+`calculateBlendedRate` exhaustive grid covering the prior-spend > 0
+period-aware path). The `/ultraplan` cap-remediation work is complete:
 - Migration `000048_cap_remediation` — 8 verified shared cap_groups (incl.
   **Scotiabank Gold Amex $50k/yr** — the founder bug) + 15 per-multiplier
   caps, all source-cited (`docs/cap-remediation-checklist.md`).
