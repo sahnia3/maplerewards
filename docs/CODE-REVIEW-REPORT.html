@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MapleRewards — Deep Code Review &amp; Status</title>
+<style>
+  :root{ --maple:#a51f2d; --maple-soft:#f6e8df; --ink:#1a1213; --ink2:#4a3f40; --ink3:#7a6f70; --rule:#e3d9d4; --paper:#fffdfb; --blocker:#b3261e; --high:#c2410c; --med:#a16207; --low:#3f6212; --ok:#15803d; }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--ink); margin:0; background:var(--paper); font-size:12px; line-height:1.55}
+  .page{max-width:860px; margin:0 auto; padding:48px 56px}
+  h1{font-size:29px; margin:0 0 4px; letter-spacing:-0.02em; line-height:1.05}
+  h2{font-size:18px; margin:30px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--maple)}
+  h4{font-size:12.5px; margin:16px 0 4px; color:var(--ink2); text-transform:uppercase; letter-spacing:0.06em}
+  p{margin:6px 0}
+  .eyebrow{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; letter-spacing:0.18em; text-transform:uppercase; color:var(--maple); font-weight:700}
+  .meta{font-family:ui-monospace,monospace; font-size:10.5px; color:var(--ink3); margin-top:8px}
+  code{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; background:#f4efeb; padding:1px 5px; border-radius:4px; color:#5a2a30}
+  .verdict{border:1px solid var(--rule); border-left:4px solid var(--ok); border-radius:10px; padding:16px 18px; background:#f4faf5; margin:16px 0}
+  .badge{display:inline-block; font-family:ui-monospace,monospace; font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; padding:2px 7px; border-radius:999px; color:#fff; vertical-align:middle}
+  .b-blocker{background:var(--blocker)} .b-high{background:var(--high)} .b-med{background:var(--med)} .b-low{background:var(--low)} .b-fixed{background:#0f766e} .b-ok{background:var(--ok)}
+  table{width:100%; border-collapse:collapse; margin:10px 0; font-size:11px}
+  th{text-align:left; font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); border-bottom:1px solid var(--rule); padding:6px 8px}
+  td{border-bottom:1px solid var(--rule); padding:7px 8px; vertical-align:top}
+  ul{margin:6px 0 6px 0; padding-left:20px} li{margin:3px 0}
+  .stat{border:1px solid var(--rule); border-radius:8px; padding:10px 12px; text-align:center}
+  .stat .n{font-size:24px; font-weight:800; line-height:1}
+  .stat .l{font-family:ui-monospace,monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); margin-top:3px}
+  .grid4{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0}
+  .callout{background:var(--maple-soft); border-radius:8px; padding:11px 14px; font-size:11.5px; margin:10px 0}
+  .foot{margin-top:28px; padding-top:12px; border-top:1px solid var(--rule); font-family:ui-monospace,monospace; font-size:9.5px; color:var(--ink3)}
+  @media print{ h2{page-break-after:avoid} table,.verdict,.callout{page-break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">MapleRewards · Deep Code Review &amp; Production Status</div>
+  <h1>Are there any remaining production blockers?</h1>
+  <div class="meta">2026-05-30 · Multi-agent code review (34 agents: 7 subsystem reviewers → adversarial per-finding verification → synthesis) · 23 findings verified · branch <code>main</code> @ <code>293650b</code></div>
+
+  <div class="verdict">
+    <b style="font-size:14px">Answer: NO remaining production blockers in the code.</b>
+    <p style="margin-top:8px">The review found <b>exactly one</b> true code blocker (an unauthenticated <code>/recommend</code> denial-of-service) and one high-severity gap (missing CSRF on the wallet/Pro mutation routes). <b>Both are now fixed, tested, and shipped</b>, along with three mediums and two lows. What remains is a short tail of <b>low-risk, documented</b> items (transient cache staleness, rollback-only migration defects, cosmetic upsell matching) plus the <b>3 infrastructure config actions only you can perform</b> (Stripe env vars, <code>COOKIE_DOMAIN</code>+DNS, worker service). The security fundamentals reviewed as genuinely strong.</p>
+  </div>
+
+  <div class="grid4">
+    <div class="stat"><div class="n" style="color:var(--ok)">0</div><div class="l">Code blockers remaining</div></div>
+    <div class="stat"><div class="n" style="color:#0f766e">7</div><div class="l">Findings fixed this pass</div></div>
+    <div class="stat"><div class="n" style="color:var(--med)">~5</div><div class="l">Low-risk items documented</div></div>
+    <div class="stat"><div class="n" style="color:var(--med)">3</div><div class="l">Infra config (yours)</div></div>
+  </div>
+
+  <h2>1 · What the review found and what I fixed</h2>
+  <table>
+    <tr><th>Sev</th><th>Finding</th><th>Fix (shipped)</th><th>Commit</th></tr>
+    <tr><td><span class="badge b-blocker">Blocker</span></td><td><b>Unauthenticated <code>/recommend</code> query-amplification DoS.</b> Anonymous, no upper bound on the spend map; the service did one uncached DB query per (card × key), so a 1MB body of junk keys → millions of sequential queries → pgxpool (25 conns) exhaustion → whole API down.</td><td>Reject &gt;64 categories; drop unknown slugs; batch via <code>ListMultipliersForCard</code> → <b>one query per card</b> (O(cards), ~104) regardless of body size. Unit-tested.</td><td><code>f155d9c</code></td></tr>
+    <tr><td><span class="badge b-high">High</span></td><td><b>Wallet-owner + Pro mutation route groups had neither CSRF nor JSON-content-type defense.</b> In the cross-site prod cookie profile a malicious page could forge wallet/spend/balance/credits/offers writes (gated only by the 128-bit sessionID, which isn't a strong secret).</td><td>Added <code>mw.CSRFProtect</code> to all three session-scoped mutation groups. Verified: POST without token → 403, with token → 200, GET → 200.</td><td><code>17220c8</code></td></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td><b>Extension broadcast the 15-min access-token JWT</b> over <code>postMessage</code> to any same-page listener (XSS / supply-chain amplifier).</td><td>Removed the broadcast entirely. The extension authenticates via the httpOnly <code>mr_access</code> cookie that <code>credentials:include</code> already sends (XSS can't read it); anonymous wallets use the localStorage session-id bridge.</td><td><code>293650b</code></td></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td><b>Open redirect</b> on <code>/login</code> + <code>/signup</code> via unvalidated <code>?redirect=</code> (phishing).</td><td>Accept only same-origin relative paths (reject absolute / protocol-relative).</td><td><code>293650b</code></td></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td><b>Denial-of-wallet</b>: award-search <code>flex_days</code> was unbounded → one request could fan out unlimited paid Seats.aero/SerpAPI/Apify lookups.</td><td>Clamp <code>flex_days</code> to 0..7.</td><td><code>293650b</code></td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>CSV-import partial failure returned raw <code>err.Error()</code> (internal detail leak).</td><td>Generic message; log the real cause server-side.</td><td><code>293650b</code></td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>PromoSentinel recheck goroutine had no panic recovery — a panic there would crash the whole worker.</td><td>Added <code>recover()</code> in the goroutine.</td><td><code>293650b</code></td></tr>
+  </table>
+
+  <h2>2 · Remaining items — low-risk, documented (not blockers)</h2>
+  <p>The review verified these as real but non-blocking. None corrupt data, lose money, or break the running production system; each is safe to address post-launch.</p>
+  <table>
+    <tr><th>Sev</th><th>Item</th><th>Why it's safe to defer</th></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td>Wallet cache read-repopulate vs write-invalidate race → a balance can read stale for up to the 30-min TTL.</td><td>Probabilistic, self-healing on the next write/TTL; <b>Postgres is always the source of truth</b>. A correct fix needs cache versioning/SETNX — deliberately not rushed. Transient display only.</td></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td>Stripe customer-portal switch to a legacy price can drift entitlement (over-grants the <i>soft</i> AI quota).</td><td>Gated by external Stripe portal config (you control which prices are portal-switchable); never charges wrong or grants paid features beyond AI rate. Downgraded to low by the verifier.</td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>Migration <code>000058.down</code> / <code>076.down</code> collide on rollback past v76 → dirty schema.</td><td><b>Rollback-path only.</b> Forward production (v086) is correct and unaffected; the standing guidance is roll-<i>forward</i>, never run down-migrations in prod.</td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>Award-search CPP rating ignores taxes; optimizer annual-cap-on-single-purchase under-projects.</td><td>Both <b>under-promise, never over-promise</b> — conservative by design. Industry-convention CPP.</td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>Chat free-limit upsell uses an error-string substring match instead of the <code>ApiError.code</code>.</td><td>Works today; brittle only if the server message text changes. Cosmetic.</td></tr>
+  </table>
+
+  <h2>3 · Infrastructure config — the only launch gating items (yours, no code)</h2>
+  <ul>
+    <li><b>Stripe</b>: set <code>STRIPE_PRICE_ID_PRO_ANNUAL / PROPLUS_ANNUAL / LIFETIME</code> on Railway + subscribe the <code>charge.refunded</code> webhook event.</li>
+    <li><b>Cookies</b>: put the app + API on one parent domain and set <code>COOKIE_DOMAIN</code> (fixes Safari third-party-cookie login <i>and</i> the extension's authed path). Code + docs ready.</li>
+    <li><b>Worker</b>: run <code>./worker</code> as its own Railway service (PIPEDA deletion + Pro background features).</li>
+  </ul>
+
+  <h2>4 · What the review confirmed is solid (do not touch)</h2>
+  <ul>
+    <li><b>Auth</b>: HS256 JWT (15-min access + 30-day refresh) with <b>live rotation + reuse-detection</b> (replay → revoke-all, with a grace window for benign SPA double-fire); the 30-day refresh token is httpOnly and never broadcast; production <code>JWT_SECRET</code> hard-fails on boot.</li>
+    <li><b>IDOR</b>: <code>RequireSessionOwner</code> / <code>requireBodySessionOwner</code> consistently gate URL- and body-param routes; anonymous-merge wallet-theft is well-hardened (registered users can't be merge-stolen).</li>
+    <li><b>Billing</b>: Stripe webhook HMAC-SHA256 + 5-min skew + <code>stripe_events</code> idempotency + fail-closed; no path charges the wrong amount or corrupts a money figure.</li>
+    <li><b>Data</b>: Postgres is always the source of truth; spend-ledger dedup + transactions prevent double-counts; SQL parameterized throughout.</li>
+    <li><b>Extension</b>: background fetch-proxy is well-bounded — strict <code>sender.id</code> check + an anchored (method, path) allow-list (only <code>GET /wallet/{32hex}</code> and <code>POST /optimize</code>).</li>
+    <li><b>CORS / boot gates</b>: exact-origin, no wildcard, credentials-aware; prod refuses to start on an unsafe origin or missing secret.</li>
+  </ul>
+
+  <div class="callout"><b>Bottom line:</b> the code is production-ready — zero remaining code blockers after this pass (the one DoS blocker and the CSRF gap are fixed and verified). Ship once the three infrastructure config items are set on your hosts. The documented low-risk items are safe post-launch follow-ups.</div>
+
+  <div class="foot">MapleRewards Deep Code Review · 2026-05-30 · method: 34-agent review with adversarial per-finding verification · all fixes committed to <code>main</code> and verified (go test -race, frontend tsc, extension JS lint, live CSRF probe).</div>
+</div>
+</body>
+</html>
