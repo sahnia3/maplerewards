@@ -85,11 +85,38 @@ func main() {
 	}
 	log.Info("postgres connected")
 
+	// Schema guard: surface the migration state at boot and refuse to serve on
+	// a dirty (half-applied) schema. Migrations are applied out-of-band
+	// (make migrate-up / a release step), so this catches the operator error of
+	// deploying new code against an un-migrated or partially-migrated database.
+	{
+		var schemaVersion uint
+		var schemaDirty bool
+		err := pool.QueryRow(context.Background(),
+			"SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&schemaVersion, &schemaDirty)
+		switch {
+		case err != nil:
+			// No schema_migrations row/table = migrations have never run.
+			log.Error("schema_migrations not found — run migrations before starting (make migrate-up)", "err", err)
+			os.Exit(1)
+		case schemaDirty:
+			log.Error("database schema is DIRTY (a migration failed partway) — fix the migration and clear the dirty flag before serving", "version", schemaVersion)
+			os.Exit(1)
+		default:
+			log.Info("schema migrations applied", "version", schemaVersion)
+		}
+	}
+
 	// ── Redis ─────────────────────────────────────────────────────────────
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		Password: getEnv("REDIS_PASSWORD", ""),
-	})
+	// Prefer REDIS_URL (Railway/Upstash/etc.) over discrete ADDR/PASSWORD so a
+	// managed Redis connection string just works instead of silently falling
+	// back to localhost.
+	redisOpt, redisErr := cache.OptionsFromEnv()
+	if redisErr != nil {
+		log.Error("invalid redis configuration", "err", redisErr)
+		os.Exit(1)
+	}
+	rdb := redis.NewClient(redisOpt)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Error("redis ping failed", "err", err)
 		os.Exit(1)
@@ -158,12 +185,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// REDIS_PASSWORD must be set in production. Redis caches full wallets
+	// Redis auth must be present in production. Redis caches full wallets
 	// (point balances, card IDs, nicknames) and valuations; an
 	// unauthenticated Redis on a shared network is a PII disclosure / cache
-	// poisoning vector. Fail fast rather than run with an open cache.
-	if appEnv == "production" && getEnv("REDIS_PASSWORD", "") == "" {
-		log.Error("REDIS_PASSWORD must be set when APP_ENV=production (cache holds wallet PII; unauthenticated Redis is a disclosure vector)")
+	// poisoning vector. Fail fast rather than run with an open cache. The
+	// password may come from REDIS_PASSWORD or be embedded in REDIS_URL.
+	if appEnv == "production" && !cache.HasRedisAuth() {
+		log.Error("Redis auth required when APP_ENV=production: set REDIS_PASSWORD or a password in REDIS_URL (cache holds wallet PII; unauthenticated Redis is a disclosure vector)")
 		os.Exit(1)
 	}
 

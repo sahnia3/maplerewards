@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,49 @@ import (
 
 // ErrCacheMiss is returned when a key is not found in Redis.
 var ErrCacheMiss = errors.New("cache miss")
+
+// OptionsFromEnv builds redis connection options from the environment,
+// preferring a single connection URL when present.
+//
+// Railway (and most managed Redis providers — Upstash, Render, Heroku)
+// expose the connection as a single REDIS_URL like
+// redis://default:password@host:port or rediss://... for TLS. The previous
+// code only read REDIS_ADDR/REDIS_PASSWORD, so on those platforms it silently
+// fell back to localhost:6379 and failed to connect. Prefer REDIS_URL when
+// set (it carries host, password, db, and TLS), and fall back to the discrete
+// REDIS_ADDR/REDIS_PASSWORD vars for local/dev.
+func OptionsFromEnv() (*redis.Options, error) {
+	if url := os.Getenv("REDIS_URL"); url != "" {
+		opt, err := redis.ParseURL(url)
+		if err != nil {
+			return nil, fmt.Errorf("parse REDIS_URL: %w", err)
+		}
+		return opt, nil
+	}
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+	return &redis.Options{
+		Addr:     addr,
+		Password: os.Getenv("REDIS_PASSWORD"),
+	}, nil
+}
+
+// HasRedisAuth reports whether the environment carries a Redis password,
+// either via REDIS_PASSWORD or embedded in REDIS_URL. Used by the production
+// boot gate so a URL-with-password satisfies the "auth required" check.
+func HasRedisAuth() bool {
+	if os.Getenv("REDIS_PASSWORD") != "" {
+		return true
+	}
+	if url := os.Getenv("REDIS_URL"); url != "" {
+		if opt, err := redis.ParseURL(url); err == nil && opt.Password != "" {
+			return true
+		}
+	}
+	return false
+}
 
 type Cache struct {
 	client *redis.Client

@@ -61,10 +61,12 @@ func main() {
 	}
 	defer pool.Close()
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		Password: getEnv("REDIS_PASSWORD", ""),
-	})
+	redisOpt, redisErr := cache.OptionsFromEnv()
+	if redisErr != nil {
+		log.Error("invalid redis configuration", "err", redisErr)
+		os.Exit(1)
+	}
+	rdb := redis.NewClient(redisOpt)
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Warn("redis ping failed (continuing without cache)", "err", err)
 	}

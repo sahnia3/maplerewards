@@ -29,13 +29,30 @@ Required (server refuses to start without them in production):
 - `APP_ENV=production`
 - `JWT_SECRET` — `openssl rand -hex 32`
 - `DATABASE_URL` — `postgres://...?sslmode=require`
-- `REDIS_ADDR`, `REDIS_PASSWORD`
+- `REDIS_URL` **or** `REDIS_ADDR` + `REDIS_PASSWORD`. Managed Redis (Railway,
+  Upstash, Render, Heroku) hands you a single `REDIS_URL`
+  (`redis://default:pass@host:port`, or `rediss://` for TLS) — set that and
+  the discrete vars are unnecessary. In production the server refuses to boot
+  unless Redis auth is present (a password in either the URL or `REDIS_PASSWORD`).
 - `FRONTEND_URL` — exact https URL of the Vercel deploy
 - `CORS_ORIGIN` — exact match for the SPA host. Server refuses `*`, empty, or non-`https://` in production.
+- `COOKIE_DOMAIN` — **set this when the SPA and API share a parent domain**
+  (e.g. `.maplerewards.ca` with the app on `app.` and the API on `api.`).
+  Without it, the app (Vercel) and API (Railway) are different registrable
+  domains, so the auth/session/CSRF cookies are third-party `SameSite=None`
+  cookies that **Safari/iOS and any "block third-party cookies" setting drop**
+  — login silently fails for a large share of users. With `COOKIE_DOMAIN` the
+  server emits `SameSite=Lax; Domain=<value>` first-party cookies. Put the app
+  and API on one parent domain before charging customers.
 
 Billing (Stripe):
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL`, `STRIPE_PRICE_ID_LIFETIME`
+- **Current tiers (these are what live checkout actually uses):**
+  `STRIPE_PRICE_ID_PRO_ANNUAL`, `STRIPE_PRICE_ID_PROPLUS_ANNUAL`, `STRIPE_PRICE_ID_LIFETIME`.
+  If these are unset, the default "Pro" checkout fails with
+  `stripe price ID not configured`. Set test price IDs in sandbox, live IDs at cutover.
+- `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL` — **legacy only** (kept for
+  backward compat with old subscriptions; not used by current checkout). Safe to leave unset.
 
 Optional but expected:
 - `ANTHROPIC_API_KEY` — Claude Sonnet 4.5 chat
@@ -92,6 +109,9 @@ Configure the Stripe webhook to `POST https://api.maplerewards.example/api/v1/bi
 - `checkout.session.completed`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
+- `charge.refunded` — **required** so a refunded one-time (Lifetime) buyer
+  loses Pro; Lifetime has no subscription, so `subscription.deleted` never
+  fires for it. The handler already exists; you just need to subscribe the event.
 
 Deploy the frontend to Vercel:
 - Root: `frontend/`
