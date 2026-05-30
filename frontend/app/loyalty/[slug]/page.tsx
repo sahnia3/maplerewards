@@ -238,7 +238,7 @@ export default function ProgramDetailPage() {
         <div className="max-w-3xl mx-auto px-6 pt-8 pb-24">
           <div className="h-8 w-48 rounded shimmer mb-2" />
           <div className="h-5 w-64 rounded shimmer mb-8" />
-          <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-2 min-[520px]:grid-cols-3 gap-4 mb-8">
             {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl shimmer" />)}
           </div>
           <div className="h-48 rounded-2xl shimmer mb-4" />
@@ -488,7 +488,7 @@ export default function ProgramDetailPage() {
         </div>
 
         {/* Value tiles — display-typography, no emoji */}
-        <div className="grid grid-cols-3 gap-3 mb-8 fade-up-1">
+        <div className="grid grid-cols-2 min-[520px]:grid-cols-3 gap-3 mb-8 fade-up-1">
           {valueTiles.map(({ label, cpp }) => (
             <div
               key={label}
