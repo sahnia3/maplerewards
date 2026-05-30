@@ -49,18 +49,27 @@
 
   <div class="eyebrow">MapleRewards · Production Readiness Assessment</div>
   <h1>Is it ready to charge customers?</h1>
-  <div class="meta">Prepared 2026-05-30 · Web (Vercel) + API (Railway) + Postgres/Redis + Stripe + Chrome extension · Branch <code>main</code> @ commit <code>1e5a15a</code></div>
+  <div class="meta">Prepared 2026-05-30 · Web (Vercel) + API (Railway) + Postgres/Redis + Stripe + Chrome extension · Branch <code>main</code> @ commit <code>ee8fbc3</code> · revised 2026-05-30 post-remediation</div>
 
-  <div class="verdict">
-    <b style="font-size:14px">Verdict: NOT production-ready yet — close on the web app, but four hard blockers gate charging real customers.</b>
-    <p style="margin-top:8px">The product's <b>core engine and security fundamentals are genuinely solid</b> (Stripe webhook HMAC + idempotency, no-wildcard credentialed CORS, fail-fast prod boot gates, parameterized SQL, the corrected 104-card data). The gaps are at the <b>edges that make money and onboard users</b>: cross-domain auth cookies that Safari silently drops, Stripe price IDs the runbook tells you to set under the wrong names (so checkout fails), a background worker that may not be running, mobile parity gaps, and a Chrome extension that is still an MVP scaffold. None require a rewrite; most are configuration + targeted fixes.</p>
+  <div class="verdict ready">
+    <b style="font-size:14px">Updated verdict (post-remediation): every code- and docs-side issue is now fixed. What remains is 3 infrastructure config actions only you can perform — all with the code + docs already in place.</b>
+    <p style="margin-top:8px">A full remediation pass cleared the blockers and the high/medium mobile findings. The Chrome extension is now wired for production (session bridge + prod hosts + auth token). The Stripe price-ID runbook trap, the Redis URL footgun, a schema dirty-guard, and <code>charge.refunded</code> docs are fixed. Mobile parity is done: every flagged fixed-px ledger/grid/table now collapses or scrolls instead of clipping, the CardFan responds to touch, inputs no longer trigger iOS zoom, and tap targets meet 44px. The 3 remaining items are <b>not code</b> — they are deploy-time configuration on your hosts (see §6): set the Stripe tier price-ID env vars, put the app + API on one parent domain with <code>COOKIE_DOMAIN</code>, and run the worker as its own Railway service. The original findings are preserved below for traceability, annotated FIXED.</p>
   </div>
 
   <div class="grid2" style="grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0">
-    <div class="stat"><div class="n" style="color:var(--blocker)">4</div><div class="l">Launch blockers remaining</div></div>
-    <div class="stat"><div class="n" style="color:var(--high)">~20</div><div class="l">High-severity issues</div></div>
-    <div class="stat"><div class="n" style="color:#0f766e">11</div><div class="l">Fixed &amp; shipped this session</div></div>
+    <div class="stat"><div class="n" style="color:var(--ok)">0</div><div class="l">Code/docs blockers remaining</div></div>
+    <div class="stat"><div class="n" style="color:var(--med)">3</div><div class="l">Infra config actions (yours)</div></div>
+    <div class="stat"><div class="n" style="color:#0f766e">9</div><div class="l">Remediation commits this session</div></div>
     <div class="stat"><div class="n" style="color:var(--ok)">5</div><div class="l">Security fundamentals: solid</div></div>
+  </div>
+
+  <div class="callout" style="background:#f4faf5; border:1px solid #cce9d4">
+    <b>Addendum — fixes applied after the original report (commits af71239 → ee8fbc3):</b>
+    <ul style="margin:6px 0">
+      <li><b>Chrome extension → functional in prod.</b> New <code>bridge.js</code> relays session id + access token + the correct API base from the web app; manifest now lists the real prod hosts; background attaches the Bearer token so signed-in (owner-scoped) wallets resolve. Amex-blackout detection no longer false-flags non-Amex "Platinum" cards. Icons confirmed real.</li>
+      <li><b>Infra code/docs.</b> Redis now reads <code>REDIS_URL</code> (Railway/Upstash) with a password-in-URL aware prod gate; API boot fails fast on a dirty/missing schema and logs the version; SHIP.md + .env.example corrected for the Stripe tier price-IDs, <code>charge.refunded</code>, <code>REDIS_URL</code>, and <code>COOKIE_DOMAIN</code>. Verified: backend boots clean (schema v86, redis connected).</li>
+      <li><b>Mobile parity.</b> Reusable collapse/scroll/tap utilities applied to every flagged grid/table/ledger (cards, insights, portfolio, optimizer, feed, profile, milestones, wallet, head-to-head, card-detail, points-to-cad, trip-planner, privacy); CardFan touch support; ≥44px tap targets; global ≥16px inputs. Verified at mobile width: no horizontal overflow on the swept pages; ledgers read as clean stacked cards.</li>
+    </ul>
   </div>
 
   <h2>1 · Executive summary</h2>
