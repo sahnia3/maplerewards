@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MapleRewards — Production Readiness Report</title>
+<style>
+  :root{
+    --maple:#a51f2d; --maple-soft:#f6e8df; --ink:#1a1213; --ink2:#4a3f40; --ink3:#7a6f70;
+    --rule:#e3d9d4; --paper:#fffdfb; --blocker:#b3261e; --high:#c2410c; --med:#a16207; --low:#3f6212; --info:#1d4ed8; --ok:#15803d;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--ink); margin:0; background:var(--paper); font-size:12px; line-height:1.55}
+  .page{max-width:860px; margin:0 auto; padding:48px 56px}
+  h1{font-size:30px; margin:0 0 4px; letter-spacing:-0.02em; line-height:1.05}
+  h2{font-size:19px; margin:34px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--maple); letter-spacing:-0.01em}
+  h3{font-size:14px; margin:20px 0 6px; color:var(--ink)}
+  h4{font-size:12.5px; margin:14px 0 4px; color:var(--ink2); text-transform:uppercase; letter-spacing:0.06em}
+  p{margin:6px 0}
+  .eyebrow{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px; letter-spacing:0.18em; text-transform:uppercase; color:var(--maple); font-weight:700}
+  .meta{font-family:ui-monospace,monospace; font-size:10.5px; color:var(--ink3); margin-top:8px}
+  .lede{font-size:13.5px; color:var(--ink2); margin:14px 0 6px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px; background:#f4efeb; padding:1px 5px; border-radius:4px; color:#5a2a30}
+  .verdict{border:1px solid var(--rule); border-left:4px solid var(--blocker); border-radius:10px; padding:16px 18px; background:#fdf6f5; margin:16px 0}
+  .verdict.ready{border-left-color:var(--ok); background:#f4faf5}
+  .badge{display:inline-block; font-family:ui-monospace,monospace; font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; padding:2px 7px; border-radius:999px; color:#fff; vertical-align:middle}
+  .b-blocker{background:var(--blocker)} .b-high{background:var(--high)} .b-med{background:var(--med)} .b-low{background:var(--low)} .b-info{background:var(--info)} .b-ok{background:var(--ok)} .b-fixed{background:#0f766e}
+  table{width:100%; border-collapse:collapse; margin:10px 0; font-size:11px}
+  th{text-align:left; font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); border-bottom:1px solid var(--rule); padding:6px 8px}
+  td{border-bottom:1px solid var(--rule); padding:7px 8px; vertical-align:top}
+  .finding{border:1px solid var(--rule); border-radius:8px; padding:11px 13px; margin:9px 0; background:#fff}
+  .finding .t{font-weight:700; font-size:12px}
+  .finding .loc{font-family:ui-monospace,monospace; font-size:9.5px; color:var(--ink3); margin:2px 0 5px}
+  .finding .fix{font-size:11px; color:var(--ink2); margin-top:5px}
+  .finding .fix b{color:var(--ok)}
+  ul{margin:6px 0 6px 0; padding-left:20px} li{margin:3px 0}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .stat{border:1px solid var(--rule); border-radius:8px; padding:10px 12px; text-align:center}
+  .stat .n{font-size:24px; font-weight:800; line-height:1}
+  .stat .l{font-family:ui-monospace,monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); margin-top:3px}
+  .callout{background:var(--maple-soft); border-radius:8px; padding:11px 14px; font-size:11.5px; margin:10px 0}
+  hr{border:0; border-top:1px solid var(--rule); margin:22px 0}
+  .foot{margin-top:30px; padding-top:12px; border-top:1px solid var(--rule); font-family:ui-monospace,monospace; font-size:9.5px; color:var(--ink3)}
+  @media print{ h2{page-break-after:avoid} .finding,.verdict,table{page-break-inside:avoid} .pb{page-break-before:always} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="eyebrow">MapleRewards · Production Readiness Assessment</div>
+  <h1>Is it ready to charge customers?</h1>
+  <div class="meta">Prepared 2026-05-30 · Web (Vercel) + API (Railway) + Postgres/Redis + Stripe + Chrome extension · Branch <code>main</code> @ commit <code>1e5a15a</code></div>
+
+  <div class="verdict">
+    <b style="font-size:14px">Verdict: NOT production-ready yet — close on the web app, but four hard blockers gate charging real customers.</b>
+    <p style="margin-top:8px">The product's <b>core engine and security fundamentals are genuinely solid</b> (Stripe webhook HMAC + idempotency, no-wildcard credentialed CORS, fail-fast prod boot gates, parameterized SQL, the corrected 104-card data). The gaps are at the <b>edges that make money and onboard users</b>: cross-domain auth cookies that Safari silently drops, Stripe price IDs the runbook tells you to set under the wrong names (so checkout fails), a background worker that may not be running, mobile parity gaps, and a Chrome extension that is still an MVP scaffold. None require a rewrite; most are configuration + targeted fixes.</p>
+  </div>
+
+  <div class="grid2" style="grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0">
+    <div class="stat"><div class="n" style="color:var(--blocker)">4</div><div class="l">Launch blockers remaining</div></div>
+    <div class="stat"><div class="n" style="color:var(--high)">~20</div><div class="l">High-severity issues</div></div>
+    <div class="stat"><div class="n" style="color:#0f766e">11</div><div class="l">Fixed &amp; shipped this session</div></div>
+    <div class="stat"><div class="n" style="color:var(--ok)">5</div><div class="l">Security fundamentals: solid</div></div>
+  </div>
+
+  <h2>1 · Executive summary</h2>
+  <p>This assessment combines a live mobile-browser QA sweep of all major routes, a 35-route static responsive audit, a Chrome-extension stress test against the live API, and an infrastructure/deployment review. The findings below separate <span class="badge b-fixed">Fixed</span> (done &amp; verified this session) from <span class="badge b-blocker">Blocker</span> / <span class="badge b-high">High</span> items that remain.</p>
+
+  <h4>The four launch blockers (must fix before charging anyone)</h4>
+  <ol>
+    <li><b>Stripe price IDs are documented under the wrong names → Pro checkout fails for everyone.</b> Checkout reads <code>STRIPE_PRICE_ID_PRO_ANNUAL</code> / <code>PROPLUS_ANNUAL</code> / <code>LIFETIME</code>, but <code>SHIP.md</code> and <code>.env.example</code> only tell you to set <code>MONTHLY</code> / <code>ANNUAL</code> / <code>LIFETIME</code>. Follow the runbook and the default "Pro" checkout throws <i>"stripe price ID not configured"</i>. <span class="mono">internal/service/billing.go:84,109,131 · SHIP.md:38</span></li>
+    <li><b>Cross-domain auth cookies are dropped by Safari / iOS.</b> The app (<code>vercel.app</code>) and API (<code>railway.app</code>) are different registrable domains, so the API's auth/session/CSRF cookies are <i>third-party</i> (<code>SameSite=None</code>) and silently blocked by Safari ITP + any "block third-party cookies" setting — a large share of Canadian (iPhone-heavy) users can't stay logged in. The codebase already supports the fix via <code>COOKIE_DOMAIN</code>; it needs a shared parent domain (e.g. <code>app.maplerewards.ca</code> + <code>api.maplerewards.ca</code>), which is a DNS + env change, not a rewrite. <span class="mono">internal/handler/auth_cookies.go:37-47</span></li>
+    <li><b>The background worker may not be running.</b> <code>cmd/worker</code> is built into the image but must run as its <i>own</i> Railway service. If it isn't: the PIPEDA 30-day account-deletion purge never executes (a compliance promise), and award-watch alerts, weekly digests, offer-expiry, promo-sentinel and CPP refresh — advertised Pro value — silently never fire. <span class="mono">cmd/worker/main.go · Dockerfile</span></li>
+    <li><b>The Chrome extension does not work in production.</b> It points at <code>localhost</code> + a <code>maplerewards.app</code> domain that isn't where prod lives, its marquee "best card on checkout" bar never renders for a normal user, and once a user signs in the extension can't read their (owner-scoped) wallet at all. See §4. <span class="mono">browser-extension/*</span></li>
+  </ol>
+
+  <h2>2 · What I fixed &amp; shipped this session</h2>
+  <p>All committed to <code>main</code> and auto-deployed (Vercel + Railway). Each was verified in a real browser or against the live API.</p>
+  <table>
+    <tr><th>Area</th><th>Fix</th><th>Commit</th></tr>
+    <tr><td><b>Auth (prod blocker)</b></td><td>Production sign-up/login was failing with "missing or invalid CSRF token" — the SPA couldn't read the API-domain CSRF cookie cross-domain. Now sources the token from the <code>/csrf</code> response body + self-heals on rotation. Verified live: account creation returns 201.</td><td><code>f53637f</code></td></tr>
+    <tr><td><b>Billing UX</b></td><td>After Stripe checkout the profile didn't flip to Pro until the 15-min token expired. Added <code>refreshSession()</code> polling on the success page so Pro reflects within seconds.</td><td><code>d365c4c</code></td></tr>
+    <tr><td><b>Card data integrity</b></td><td>Completed the gated 104-card correction: ~50 earn-rate fixes, BMO eclipse + RBC Rewards+ value-model fixes, Hilton/Marriott transfer dedupes, and deactivation of defunct/fabricated cards (HSBC ×3, Capital One ×4, etc.). Resolved the 3 flagged items (Desjardins Remises duplicate, PC Money base rate, Odyssey Gold full restructure) + zeroed no-reward cards (Syncro, CIBC Select). DB at migration v86, 0 dupes, 0 transfer conflicts.</td><td><code>059–086</code></td></tr>
+    <tr><td><b>Mobile (blocker)</b></td><td>Chat input bar was hidden behind the bottom nav and off-screen on phones (a <code>position:fixed</code> element trapped by a transformed <code>.reveal</code> ancestor). Fixed the containing block + anchored to the nav height. Verified: input fully visible above the nav.</td><td><code>1e5a15a</code></td></tr>
+    <tr><td><b>Mobile (blocker)</b></td><td>/compare cut card B off-screen and unreachable on phones — now stacks vertically.</td><td><code>1e5a15a</code></td></tr>
+    <tr><td><b>Mobile (systemic)</b></td><td>iOS auto-zoom on every sub-16px input (trip-planner, settings, applications, optimizer, …) — global rule forces ≥16px on phones.</td><td><code>1e5a15a</code></td></tr>
+    <tr><td><b>Mobile</b></td><td>Home card-fan scaled down so it stops clipping off both edges; marketing landing grid collapses to one column; /loyalty value tiles reflow.</td><td><code>1e5a15a</code></td></tr>
+    <tr><td><b>Landing</b></td><td>Cinematic scroll-scrub video wasn't pinning (a <code>body{overflow-x:hidden}</code> killed <code>position:sticky</code>) and didn't load on phones. Fixed the pin, added a mobile autoplay-loop fallback + poster + lighter source.</td><td><code>aec43db</code></td></tr>
+    <tr><td><b>CI</b></td><td>Backend + frontend CI were red — bumped Next 16.1.6→16.2.6 (CVEs), go-redis→v9.6.3 + go 1.25.7 (CVEs), and resolved 38 golangci-lint findings. Both gates green locally.</td><td><code>765d781</code>, <code>76a0b65</code></td></tr>
+    <tr><td><b>Polish</b></td><td>Ask-Maple FAB redesigned as a Siri-style orb; chat "thinking" animation; money-formatting fixes; worker baked into the Docker image.</td><td>various</td></tr>
+  </table>
+
+  <h2>3 · Mobile parity</h2>
+  <p><b>Status:</b> The worst breaks are fixed and verified; a set of data-dense pages still clip columns on narrow phones. The app never shows a horizontal scrollbar (the scroll root uses <code>overflow-x:clip</code>), so the failure mode is "right-hand columns cut off," not "ugly scroll."</p>
+
+  <h4>Fixed &amp; verified <span class="badge b-fixed">Done</span></h4>
+  <ul>
+    <li>Chat input usable on mobile (was hidden behind nav) · /compare stacks · card-fan fits · iOS-zoom inputs · landing grid · loyalty tiles.</li>
+    <li>Swept clean on mobile (no overflow): <code>/optimizer</code>, <code>/wallet</code>, <code>/cards</code>, <code>/pro-tools</code>, <code>/insights</code> (index), <code>/pricing</code>, <code>/settings</code>, <code>/trip-planner</code>.</li>
+  </ul>
+
+  <h4>Remaining mobile punch-list (high) — data-dense fixed-px grids that clip on ≤430px</h4>
+  <p>Each is a fixed multi-column grid with no mobile breakpoint; the recommended fix is to collapse to a single column or wrap in a horizontal-scroll container below 560–768px.</p>
+  <div class="finding"><span class="badge b-high">High</span> <span class="t">Card-fan is mouse-only on touch</span><div class="loc">components/editorial/card-fan.tsx:291-301,371 (used on home)</div>All elevation/selection is <code>onMouseMove/Enter</code>; nothing fires on touch, so phone users get no feedback and tapping just navigates to /cards. <div class="fix"><b>Fix:</b> add <code>onTouchStart/End</code> handlers + a "tap a card" affordance, or auto-rotate focus on small screens.</div></div>
+  <div class="finding"><span class="badge b-high">High</span> <span class="t">Ledger/row grids overflow on phones</span><div class="loc">cards/page.tsx:450 · insights/page.tsx:261,392,446 · portfolio/page.tsx:221,241 · components/optimizer-form.tsx:703 · onboarding/page.tsx:295</div>Fixed-px column templates (e.g. <code>40px 1fr 140px 130px</code>) exceed a 360–430px viewport, cutting off the right-hand value columns / CTAs.<div class="fix"><b>Fix:</b> add a <code>@media(max-width:560px)</code> rule per row collapsing to <code>1fr</code> (stack the secondary values) or wrap in <code>overflow-x:auto</code>; for the optimizer runners-up, show rank + name + dollar value and tap-to-expand the rest.</div></div>
+  <div class="callout"><b>Note on testing:</b> the local automation browser clamps to a 500px minimum width, so the verified-clean pages were checked at 500px (mobile breakpoint range) and the &lt;430px-specific breaks above were identified from the responsive audit of the actual grid definitions. Spot-check the punch-list on a real 390px device after fixing.</div>
+
+  <h2>4 · Chrome extension — stress-test results</h2>
+  <p><b>What it's supposed to do</b> (per manifest + store listing): on 25 Canadian retailer checkouts, show a floating "best card for this purchase" bar; in the toolbar popup, show your wallet; warn when a store doesn't take Amex.</p>
+  <div class="verdict"><b style="font-size:13px">Verdict: a well-architected MVP <i>scaffold</i> that does not work end-to-end in production.</b> The API contract and the security of its fetch-proxy are correct; the auth/session model and prod host config are not wired for real users.</div>
+
+  <h4>What actually works <span class="badge b-ok">Verified</span></h4>
+  <ul>
+    <li><b>API parsing is correct.</b> Against the live API, an anonymous wallet's <code>GET /wallet/{id}</code> and <code>POST /optimize</code> return exactly the shapes the popup and content script parse (<code>card.name</code>/<code>point_balance</code>; <code>card_name</code>/<code>program_name</code>/<code>effective_return</code>). The Amex-blackout warning logic is sound.</li>
+    <li><b>The background fetch-proxy is production-grade security.</b> Strict <code>sender.id</code> check, empty <code>externally_connectable</code>, and an anchored method+path allow-list (only <code>GET ^/wallet/[a-f0-9]{32}$</code> and <code>POST ^/optimize$</code>) — no IDOR/SSRF surface beyond the two intended calls.</li>
+    <li><b>Icons are real</b>, correctly-sized branded PNGs (16/32/48/128) — submission-ready (the README/STORE-LISTING calling them "placeholders" is stale).</li>
+  </ul>
+
+  <h4>What's broken / blocks production</h4>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">Can't reach production at all</span><div class="loc">manifest.json:8-12 · background.js:11</div><code>DEFAULT_API_BASE</code> is <code>http://localhost:8080</code> and <code>host_permissions</code> lists only localhost + <code>maplerewards.app</code> / <code>*.maplerewards.app</code> — none of which is the real prod host (<code>maplerewards-production.up.railway.app</code> / <code>maplerewards.vercel.app</code>). A published extension can't call the API.<div class="fix"><b>Fix:</b> add the real prod hosts to <code>host_permissions</code> and set <code>apiBase</code> to the prod API (ideally the future <code>api.maplerewards.ca</code>).</div></div>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">The marquee floating bar never renders for a normal user</span><div class="loc">content.js:47-55,77-83 · popup.js:46-75</div>The content script reads the session only from <code>chrome.storage.local.mr_session_id</code> — which is never populated automatically. The popup's cookie-bridge reads a <code>mr_session</code> cookie that <b>the backend never sets</b> (verified), then falls back to a value you must paste in by hand via DevTools. So the headline feature requires manual setup that no real user will do.<div class="fix"><b>Fix:</b> build the real session bridge — have the web app <code>postMessage</code> the session id to the extension on login (or set a readable cookie on the shared parent domain), and make content.js use it.</div></div>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">The access model contradicts the listing the moment you sign in</span><div class="loc">content.js / popup.js (cookie-only auth) vs RequireSessionOwner</div>The extension authenticates only via cookies. Once a user signs up, their wallet is owner-scoped and the API returns <b>404 to any non-authenticated caller</b> — and the web app's access token lives in memory, not a cookie the extension can send. So the extension only ever works for purely anonymous wallets, while the app funnels everyone into sign-up.<div class="fix"><b>Fix:</b> bridge a real auth token to the extension, or add an extension-specific scoped token endpoint.</div></div>
+  <p style="margin-top:8px"><b>Recommendation:</b> treat the extension as <i>pre-launch</i>. It is not ready to publish to the Chrome Web Store; ship the web app first, then do the session-bridge + prod-host work as a dedicated follow-up. Do not list it as a live feature when charging customers.</p>
+
+  <h2>5 · Infrastructure &amp; deployment</h2>
+  <h4>Blockers / high</h4>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">Stripe tier price IDs unset if you follow the runbook → nobody can buy Pro</span><div class="loc">internal/service/billing.go:84-86,109,131 · SHIP.md:38 · .env.example:51-52</div>Current checkout sends <code>pro_annual</code>/<code>proplus_annual</code>/<code>lifetime</code> → reads <code>STRIPE_PRICE_ID_PRO_ANNUAL</code> / <code>PROPLUS_ANNUAL</code> / <code>LIFETIME</code>. The docs only mention <code>MONTHLY</code>/<code>ANNUAL</code>/<code>LIFETIME</code>, so those tier vars stay empty and checkout throws "price ID not configured."<div class="fix"><b>Fix (your action):</b> on Railway set <code>STRIPE_PRICE_ID_PRO_ANNUAL</code>, <code>STRIPE_PRICE_ID_PROPLUS_ANNUAL</code>, <code>STRIPE_PRICE_ID_LIFETIME</code> to the real price IDs (test IDs in sandbox, live IDs at cutover). Also subscribe the webhook to <code>charge.refunded</code> so refunders lose Pro. Update SHIP.md/.env.example.</div></div>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">Cross-domain third-party auth cookies (Safari/iOS drop them)</span><div class="loc">internal/handler/auth_cookies.go:37-47 · csrf.go</div>vercel.app ↔ railway.app are different sites, so session/refresh/CSRF cookies are third-party <code>SameSite=None</code> and silently blocked by Safari ITP + third-party-cookie blocking. The body-token CSRF fallback still needs the cookie to round-trip.<div class="fix"><b>Fix (your action):</b> put app + API on one parent domain — e.g. <code>app.maplerewards.ca</code> (Vercel) + <code>api.maplerewards.ca</code> (Railway) — and set <code>COOKIE_DOMAIN=.maplerewards.ca</code>. The code already emits <code>SameSite=Lax; Domain=…</code> when <code>COOKIE_DOMAIN</code> is set, so this is DNS + one env var. (This also fixes the extension cookie-bridge.)</div></div>
+  <div class="finding"><span class="badge b-blocker">Blocker</span> <span class="t">Background worker not confirmed running</span><div class="loc">cmd/worker/main.go · Dockerfile</div>If <code>./worker</code> isn't a running Railway service: PIPEDA 30-day deletion purge never runs (compliance), and award-watch alerts / digests / offer-expiry / promo-sentinel / CPP refresh never fire.<div class="fix"><b>Fix (your action):</b> add a second Railway service from the same image with start command <code>./worker</code> and the same DB/Redis/API-key env; confirm its logs show the sweep loop.</div></div>
+  <div class="finding"><span class="badge b-high">High</span> <span class="t">Redis env footgun + manual migrations</span><div class="loc">cmd/api/main.go (REDIS_ADDR/PASSWORD) · SHIP.md</div>Code reads <code>REDIS_ADDR</code>/<code>REDIS_PASSWORD</code> but Railway hands out <code>REDIS_URL</code> — a mismatch silently falls back to localhost and fails to boot. Migrations are fully manual with no startup guard, risking serving against an old schema.<div class="fix"><b>Fix:</b> map <code>REDIS_ADDR</code> from Railway's value (or parse <code>REDIS_URL</code>); run <code>migrate up</code> as a release step and/or add a startup schema-version check.</div></div>
+
+  <h4>What's genuinely solid <span class="badge b-ok">Do not touch</span></h4>
+  <ul>
+    <li><b>Stripe webhook:</b> fail-closed on missing secret, bounded body, constant-time HMAC-SHA256, two-sided 5-min timestamp tolerance, and a RESERVED→COMPLETED idempotency state machine with stale-orphan reclaim (409 keeps Stripe retrying). <span class="mono">handler/billing.go</span></li>
+    <li><b>CORS:</b> exactly one configured origin echoed (never <code>*</code>), credentials + fixed allow-list, and prod boot refuses empty/<code>*</code>/non-https origins.</li>
+    <li><b>Boot gates:</b> <code>JWT_SECRET</code> (≥32 chars, non-default), <code>CORS_ORIGIN</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>REDIS_PASSWORD</code> all <code>os.Exit(1)</code> in production if missing/invalid.</li>
+    <li><b>Data:</b> all SQL parameterized; JWT rejects non-HMAC alg; CSRF double-submit; IDOR guards on session-scoped routes.</li>
+  </ul>
+
+  <h2>6 · Path to launch — prioritized checklist</h2>
+  <table>
+    <tr><th>#</th><th>Action</th><th>Owner</th><th>Type</th></tr>
+    <tr><td>1</td><td>Set <code>STRIPE_PRICE_ID_PRO_ANNUAL / PROPLUS_ANNUAL / LIFETIME</code> on Railway (test now, live at cutover); add <code>charge.refunded</code> webhook event</td><td>You</td><td>Config</td></tr>
+    <tr><td>2</td><td>Move app + API onto one parent domain + <code>COOKIE_DOMAIN=.yourdomain.ca</code> (fixes Safari auth <i>and</i> the extension bridge)</td><td>You (DNS) + 1 env</td><td>Config</td></tr>
+    <tr><td>3</td><td>Stand up the <code>./worker</code> Railway service; confirm the sweep loop logs</td><td>You</td><td>Config</td></tr>
+    <tr><td>4</td><td>Confirm Redis wiring (<code>REDIS_ADDR</code> vs Railway <code>REDIS_URL</code>); run migrations to <b>v86</b> in prod; flush prod Redis card/valuation/wallet keys</td><td>You</td><td>Config</td></tr>
+    <tr><td>5</td><td>Finish the mobile punch-list (§3): card-fan touch + the fixed-px ledger grids on cards/insights/portfolio/optimizer/onboarding</td><td>Eng</td><td>Code</td></tr>
+    <tr><td>6</td><td>Extension: defer to post-launch. Build the session bridge + prod hosts before publishing; don't advertise it as live yet</td><td>Eng</td><td>Code</td></tr>
+    <tr><td>7</td><td>End-to-end smoke on a real iPhone + a real test purchase once 1–4 are done</td><td>You</td><td>QA</td></tr>
+  </table>
+
+  <div class="callout"><b>Bottom line:</b> the web app is one focused push from launchable. Blockers 1–4 are configuration you control (Stripe vars, a domain, a worker service, Redis/migrations) — no code rewrite. The mobile punch-list and the extension are engineering follow-ups; the extension should not be a launch-day feature. The security and billing-integrity foundations are strong enough to charge on once the edges are wired.</div>
+
+  <div class="foot">
+    MapleRewards Production Readiness Report · generated 2026-05-30 · sources: live mobile-browser QA, 35-route responsive audit, live-API extension stress test, infra review · all "Fixed" items verified in-browser or against the live API and shipped to <code>main</code>.
+  </div>
+</div>
+</body>
+</html>
