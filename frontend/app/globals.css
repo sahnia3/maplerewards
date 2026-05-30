@@ -329,7 +329,12 @@ html { overflow-x: clip; }
     font-feature-settings: "ss01", "ss02", "cv11";
     font-variant-numeric: tabular-nums;
     text-rendering: optimizeLegibility;
-    overflow-x: hidden;
+    /* `clip`, not `hidden`: overflow-x:hidden makes body a scroll container
+     * (overflow-y resolves to auto), which breaks position:sticky for the
+     * landing scroll-scrub video — it would no longer pin to the viewport.
+     * `clip` stops the horizontal bleed without creating a scroll container,
+     * exactly as the <html> rule above already does. */
+    overflow-x: clip;
     /* Body type — 16px / 500 / 1.55 (was browser default 16px / 400 / 1.2). */
     font-size: 16px;
     font-weight: 500;
@@ -891,10 +896,11 @@ input[type="number"]::-webkit-inner-spin-button {
     grid-column: 2;
     grid-row: 1;
     /* Centre the fan vertically against the (taller) copy column so it sits at
-     * a natural mid-level instead of clinging to the top-right, and nudge it
-     * left so it isn't crammed into the right margin. */
+     * a natural mid-level instead of clinging to the top-right, and pull it
+     * well left so it sits closer to the copy rather than crammed in the far
+     * right margin. */
     align-self: center;
-    --fan-shift-x: -54px;
+    --fan-shift-x: -170px;
     /* Bounded box: the fan lives here and cannot extend past the hero into
      * the ledger no matter how tall the copy column grows. */
     height: clamp(330px, 30vw, 430px);

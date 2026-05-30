@@ -3,84 +3,106 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 
-/* Scroll-scrubbed Toronto dolly-in video.
+/* Toronto dolly-in cinematic.
  *
- * Previous iterations of this section used a static count-up number,
- * then a scroll-bound dollar figure with receipt ledger; the user
- * called those visually weak. This version replaces them with a
- * Kling-3.0-rendered 8-second cinematic dolly: three Toronto towers
- * at twilight that the camera pushes into, eventually crossing the
- * glass into a lit office where a silhouetted figure walks past.
+ * Desktop: scroll-scrubbed. The 200vh container pins a 100vh stage (position:
+ * sticky) and binds the video's `currentTime` to scroll progress — scroll down,
+ * the dolly pushes in. This is the iPhone-launch-page scrub technique. It needs
+ * position:sticky to actually work, which requires NO ancestor to be a scroll
+ * container (body uses overflow-x: clip, not hidden, for exactly this reason).
  *
- * The video does NOT autoplay. Its `currentTime` is bound to the
- * user's scroll position through the 220vh container — scroll down,
- * dolly pushes in; scroll back, it rewinds. This is the iPhone-launch-
- * page scrubbing technique.
+ * Mobile: the currentTime-scrub technique is unreliable on iOS Safari (seeking
+ * a video frame-by-frame on touch scroll is janky/blocked, and a heavy file may
+ * never preload on cellular), so phones get a normal autoplaying muted loop in
+ * a regular-height section instead — guaranteed to actually play.
  *
- * For smooth scrubbing on long scroll jumps the video would benefit
- * from re-encoding with every-frame keyframes (ffmpeg -g 1), but the
- * stock MP4 from Kling scrubs acceptably for hero use. */
-
-/* `-scrub.mp4` is the ffmpeg-rebuilt version with every-frame keyframes
- * (-g 1 -keyint_min 1 -sc_threshold 0). Stock MP4 from Kling had
- * keyframes ~every 30 frames → backward seeks were expensive and made
- * the scrub feel like ping-ponging. With per-frame keyframes the
- * browser can seek to any time instantly. */
-const VIDEO_SRC = "/landing/toronto-dolly-hd.mp4";
+ * Source: `-scrub.mp4` is the ffmpeg-rebuilt every-frame-keyframe version
+ * (-g 1 -keyint_min 1 -sc_threshold 0) — far smaller (6.5MB vs 15MB) AND seeks
+ * instantly, so it scrubs smoothly instead of ping-ponging between sparse
+ * keyframes. A poster gives an instant first paint and a no-decode fallback. */
+const VIDEO_SCRUB_SRC = "/landing/toronto-dolly-scrub.mp4";
+const VIDEO_LOOP_SRC = "/landing/toronto-dolly.mp4";
+const VIDEO_POSTER = "/landing/toronto-dolly-poster.jpg";
 const VIDEO_DURATION_SEC = 8;
+
+/* Shared framed-window styling for the video in both modes. */
+const FRAME_STYLE: React.CSSProperties = {
+  position: "relative",
+  width: "min(82vw, 1200px)",
+  aspectRatio: "16 / 9",
+  maxHeight: "80vh",
+  borderRadius: 18,
+  overflow: "hidden",
+  boxShadow:
+    "0 40px 80px -20px rgba(0, 0, 0, 0.55), 0 24px 48px -16px rgba(0, 0, 0, 0.35), var(--shadow-accent-glow)",
+  border: "1px solid var(--rule-strong)",
+  background: "#0a0606",
+};
+
+function InnerVignette() {
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "radial-gradient(ellipse 85% 75% at 50% 50%, transparent 60%, rgba(10, 6, 6, 0.35) 100%)",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
 
 export function LandingKineticProof() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
-  /* Forward-only watermark: tracks the furthest currentTime the user has
-   * reached. Once the video has advanced to a frame, it never rewinds —
-   * scroll-up keeps the video where it is. Per user request: "once you
-   * scroll down, you see the video and then after that you can't go back." */
+  /* null until measured (avoids a hydration flash); then true on touch/narrow. */
+  const [isMobile, setIsMobile] = useState<boolean | null>(null);
+  /* Forward-only watermark for the desktop scrub: tracks the furthest
+   * currentTime reached so scroll-up never rewinds the dolly. */
   const watermarkRef = useRef(0);
 
-  /* Track scroll through the 220vh container. */
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  /* Scroll through the container (desktop only — harmless on mobile). */
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start end", "end start"],
   });
 
-  /* No spring — was adding 200-300ms of lag making the scrub feel
-   * disconnected from the wheel. Raw scrollYProgress is the source of
-   * truth; we only smooth the video binding via the watermark below. */
-  const playhead = useTransform(scrollYProgress, [0.15, 0.85], [0, VIDEO_DURATION_SEC], { clamp: true });
+  /* Map scroll to playhead. The video spans almost the whole pinned range so
+   * there is no long "dead scroll" tail where the dolly has finished but the
+   * stage is still pinned — that tail read as an awkward empty gap. */
+  const playhead = useTransform(scrollYProgress, [0.12, 0.82], [0, VIDEO_DURATION_SEC], { clamp: true });
 
-  /* Forward-only binding: the video's currentTime is monotonically
-   * non-decreasing. If the user scrolls back, the video stays at the
-   * watermark frame; if they scroll forward past the watermark, the
-   * video catches up. */
   useMotionValueEvent(playhead, "change", (t) => {
     const v = videoRef.current;
-    if (!v || !videoReady) return;
-    /* Only advance — never rewind. */
-    if (t <= watermarkRef.current) return;
+    if (!v || !videoReady || isMobile) return;
+    if (t <= watermarkRef.current) return; // forward-only
     watermarkRef.current = t;
-    /* Threshold avoids redundant seeks on micro-deltas. */
     if (Math.abs(v.currentTime - t) > 0.02) {
       v.currentTime = t;
     }
   });
 
-  /* Eyebrow + caption fade tied to RAW progress (these can fade in/out
-   * with scroll; only the video is locked forward-only). */
+  /* Eyebrow + caption fades, tied to raw scroll progress (desktop). */
   const eyebrowOpacity = useTransform(scrollYProgress, [0.05, 0.18], [0, 1]);
   const eyebrowY = useTransform(scrollYProgress, [0.05, 0.18], [12, 0]);
-  const captionOpacity = useTransform(scrollYProgress, [0.75, 0.9], [0, 1]);
-  const captionY = useTransform(scrollYProgress, [0.75, 0.9], [16, 0]);
+  const captionOpacity = useTransform(scrollYProgress, [0.7, 0.88], [0, 1]);
+  const captionY = useTransform(scrollYProgress, [0.7, 0.88], [16, 0]);
 
-  /* Mark the video ready once metadata is available. ONLY seeks to 0
-   * on the very first ready event — the canplay event re-fires every
-   * time the browser buffers a new chunk (e.g. after every scroll-seek),
-   * and re-seeking to 0 each time was producing the "flickering between
-   * first and last keyframe" symptom: the scrub set a frame, the seek
-   * completed, canplay re-fired, currentTime reset to 0, next scroll
-   * tick set a new frame, etc. The didSeekInitial flag fixes it. */
+  /* Desktop scrub: seek to frame 0 once when metadata is ready (re-firing
+   * canplay must not reset currentTime — that caused first/last-frame flicker). */
   useEffect(() => {
+    if (isMobile !== false) return; // only wire the scrub on desktop
     const v = videoRef.current;
     if (!v) return;
     let didSeekInitial = false;
@@ -97,46 +119,133 @@ export function LandingKineticProof() {
       v.removeEventListener("loadedmetadata", onReady);
       v.removeEventListener("canplay", onReady);
     };
-  }, []);
+  }, [isMobile]);
 
+  /* Mobile autoplay: the `autoPlay` attribute alone is unreliable across
+   * engines (React-set attribute, buffering timing), so explicitly call
+   * play() once the frame is decodable. Muted + playsInline keeps it within
+   * iOS's allowed-autoplay rules; if a browser still blocks it the poster
+   * stays visible so the section is never an empty black box. */
+  useEffect(() => {
+    if (isMobile !== true) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const tryPlay = () => {
+      v.muted = true;
+      const p = v.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    };
+    tryPlay();
+    v.addEventListener("canplay", tryPlay);
+    return () => v.removeEventListener("canplay", tryPlay);
+  }, [isMobile]);
+
+  // ── Mobile: a normal-height section with an autoplaying muted loop ──────────
+  if (isMobile) {
+    return (
+      <section
+        style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 20,
+          padding: "clamp(32px, 8vh, 64px) clamp(16px, 5vw, 40px)",
+        }}
+      >
+        <span
+          className="mono"
+          style={{
+            fontSize: 11,
+            letterSpacing: "0.22em",
+            textTransform: "uppercase",
+            color: "rgba(242, 237, 227, 0.78)",
+            fontWeight: 600,
+            padding: "8px 16px",
+            background: "rgba(10, 6, 6, 0.35)",
+            borderRadius: 999,
+            border: "1px solid rgba(242, 237, 227, 0.08)",
+          }}
+        >
+          Built into every Canadian wallet
+        </span>
+
+        <div style={{ ...FRAME_STYLE, width: "100%", maxHeight: "none" }}>
+          <video
+            ref={videoRef}
+            src={VIDEO_LOOP_SRC}
+            poster={VIDEO_POSTER}
+            muted
+            loop
+            autoPlay
+            playsInline
+            preload="metadata"
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "center",
+            }}
+          />
+          <InnerVignette />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", padding: "0 8px" }}>
+          <span
+            className="display"
+            style={{
+              fontSize: "clamp(24px, 7vw, 34px)",
+              fontStyle: "italic",
+              letterSpacing: "-0.015em",
+              color: "#F2EDE3",
+              textShadow: "0 2px 24px rgba(0,0,0,0.6)",
+              lineHeight: 1.05,
+              margin: 0,
+            }}
+          >
+            Every Bay Street wallet, optimized.
+          </span>
+          <span
+            className="serif"
+            style={{
+              marginTop: 4,
+              fontSize: "clamp(13px, 3.6vw, 15px)",
+              fontStyle: "italic",
+              color: "rgba(242, 237, 227, 0.72)",
+              lineHeight: 1.45,
+              maxWidth: 460,
+            }}
+          >
+            Maple knows which card to swipe before you walk through the door.
+          </span>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Desktop (and pre-measure default): pinned scroll-scrub ──────────────────
   return (
-    <section ref={containerRef} style={{ position: "relative", height: "220vh" }}>
+    <section ref={containerRef} style={{ position: "relative", height: "200vh" }}>
       <div
         style={{
           position: "sticky",
           top: 0,
           height: "100vh",
           width: "100%",
-          /* Brand canvas still bleeds through around the inset video.
-           * No more fullscreen black background. */
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
         }}
       >
-        {/* The video sits in a centered, framed window — not edge-to-edge.
-         * Aspect ratio locks to 16:9 (matching the asset) so the frame
-         * stays cinematic at any viewport. max-width/height keep it
-         * inset from the page edges so the burgundy canvas reads
-         * around it. */}
-        <div
-          style={{
-            position: "relative",
-            width: "min(82vw, 1200px)",
-            aspectRatio: "16 / 9",
-            maxHeight: "72vh",
-            borderRadius: 18,
-            overflow: "hidden",
-            boxShadow:
-              "0 40px 80px -20px rgba(0, 0, 0, 0.55), 0 24px 48px -16px rgba(0, 0, 0, 0.35), var(--shadow-accent-glow)",
-            border: "1px solid var(--rule-strong)",
-            background: "#0a0606",
-          }}
-        >
+        <div style={FRAME_STYLE}>
           <video
             ref={videoRef}
-            src={VIDEO_SRC}
+            src={VIDEO_SCRUB_SRC}
+            poster={VIDEO_POSTER}
             muted
             playsInline
             preload="auto"
@@ -150,22 +259,10 @@ export function LandingKineticProof() {
               objectPosition: "center",
             }}
           />
-
-          {/* Soft inner vignette so the video edges feel intentional
-              rather than hard-cropped. */}
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              background:
-                "radial-gradient(ellipse 85% 75% at 50% 50%, transparent 60%, rgba(10, 6, 6, 0.35) 100%)",
-              pointerEvents: "none",
-            }}
-          />
+          <InnerVignette />
         </div>
 
-        {/* Eyebrow at top — fades in as the section enters */}
+        {/* Eyebrow — fades in as the section enters */}
         <motion.div
           style={{
             position: "absolute",
@@ -199,7 +296,7 @@ export function LandingKineticProof() {
           </span>
         </motion.div>
 
-        {/* Caption that lands at the end of the scrub — "what was the point" */}
+        {/* Caption that lands at the end of the scrub */}
         <motion.div
           style={{
             position: "absolute",
