@@ -298,6 +298,7 @@ export default function MilestonesPage() {
 
                           {/* Bonus info grid */}
                           <div
+                            className="m-grid-2"
                             style={{
                               display: "grid",
                               gridTemplateColumns: "repeat(3, minmax(0, 1fr))",

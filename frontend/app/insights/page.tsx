@@ -256,6 +256,7 @@ export default function InsightsPage() {
                     {missed.top_missed.map((m, i) => (
                       <div
                         key={m.spend_entry_id}
+                        className="m-grid-1"
                         style={{
                           display: "grid",
                           gridTemplateColumns: "40px 1fr 110px 100px",
@@ -395,7 +396,7 @@ function CardLedgerRow({
         padding: "20px 4px",
         borderTop: "1px solid var(--rule)",
       }}
-      className="card-ledger-row"
+      className="card-ledger-row m-grid-1"
     >
       <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
         {String(index + 1).padStart(2, "0")}
@@ -449,7 +450,7 @@ function CategoryRow({
         padding: "18px 4px",
         borderTop: "1px solid var(--rule)",
       }}
-      className="category-row"
+      className="category-row m-grid-1"
     >
       <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
         {String(index + 1).padStart(2, "0")}

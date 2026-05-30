@@ -88,7 +88,7 @@ export default function WalletPage() {
               gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
               gap: 0,
             }}
-            className="wallet-stat-strip"
+            className="wallet-stat-strip m-grid-2"
           >
             <Stat label="Total points" value={totalPoints.toLocaleString()} />
             <Stat label="Est. value" value={`$${Math.round(totalValue).toLocaleString()}`} accent />
@@ -320,7 +320,7 @@ function WalletRow({
       }}
     >
       {/* Card visual + name + actions */}
-      <div style={{ display: "grid", gridTemplateColumns: "180px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+      <div className="m-grid-1" style={{ display: "grid", gridTemplateColumns: "180px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <div>
           <CreditCardVisual card={card} balance={userCard.point_balance} size="sm" />
         </div>

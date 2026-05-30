@@ -446,6 +446,7 @@ function CardLedgerRow({
   return (
     <Link
       href={`/cards/${card.id}`}
+      className="m-grid-1"
       style={{
         display: "grid",
         gridTemplateColumns: "84px 1fr 180px 120px 130px",
@@ -547,6 +548,7 @@ function CardLedgerRow({
 function RowSkeleton() {
   return (
     <div
+      className="m-grid-1"
       style={{
         display: "grid",
         gridTemplateColumns: "84px 1fr 180px 120px 130px",

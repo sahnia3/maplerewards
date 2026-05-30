@@ -282,7 +282,7 @@ function RowArticle({ a, isFirst }: { a: FeedArticle; isFirst: boolean }) {
       href={a.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="feed-row"
+      className="feed-row m-grid-1"
       style={{
         display: "grid",
         gridTemplateColumns: "92px 80px 1fr 100px 70px",

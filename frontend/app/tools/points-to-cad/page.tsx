@@ -76,7 +76,7 @@ export default function PointsToCADPage() {
             gap: 16,
             marginBottom: 24,
           }}
-          className="converter-grid"
+          className="converter-grid m-grid-1"
         >
           <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span className="eyebrow">Program</span>

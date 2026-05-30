@@ -216,6 +216,7 @@ export default function PortfolioPage() {
               redemption value of points held on it. Never conflated. */}
           <div style={{ marginBottom: 32 }}>
             <div
+              className="m-grid-1"
               style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(0, 1fr) 170px 150px",
@@ -236,6 +237,7 @@ export default function PortfolioPage() {
                 return (
                   <div
                     key={c.card_id}
+                    className="m-grid-1"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "minmax(0, 1fr) 170px 150px",
@@ -410,7 +412,7 @@ export default function PortfolioPage() {
               Run optimizer →
             </Link>
           </div>
-          <div className="portfolio-cat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <div className="portfolio-cat-grid m-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
               const cat = CATEGORY_LABELS[slug] ?? { name: slug };
               const topCard = summary?.cards[0];

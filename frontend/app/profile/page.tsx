@@ -275,6 +275,7 @@ export default function ProfilePage() {
             ].map(([k, v]) => (
               <div
                 key={k as string}
+                className="m-grid-1"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "200px 1fr",

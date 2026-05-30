@@ -459,8 +459,9 @@ export default function ChatPage() {
               onClick={() => handleSend()}
               disabled={!input.trim() || loading || (rateLimited && !isPro)}
               style={{
-                width: 36,
-                height: 36,
+                width: 44,
+                height: 44,
+                flexShrink: 0,
                 borderRadius: 8,
                 background: input.trim() && !loading ? "var(--accent)" : "var(--surface-2)",
                 color: input.trim() && !loading ? "#fff" : "var(--ink-3)",

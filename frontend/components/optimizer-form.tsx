@@ -691,7 +691,7 @@ export function OptimizerForm() {
                    * user has it set. */
                   <motion.div
                     key={rec.card_id}
-                    className="optimizer-runner-row"
+                    className="optimizer-runner-row m-grid-1"
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{

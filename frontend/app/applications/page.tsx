@@ -382,6 +382,7 @@ const inputStyle: React.CSSProperties = {
 const submitStyle: React.CSSProperties = {
   gridColumn: "1 / -1",
   padding: "12px 18px",
+  minHeight: 44,
   borderRadius: 8,
   background: "var(--accent)",
   color: "#fff",

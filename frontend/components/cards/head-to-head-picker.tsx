@@ -55,7 +55,7 @@ export function HeadToHeadPicker({ cards }: { cards: Card[] }) {
           gap: 12,
           alignItems: "center",
         }}
-        className="h2h-picker"
+        className="h2h-picker m-grid-1"
       >
         <select
           aria-label="First card"

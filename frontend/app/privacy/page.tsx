@@ -56,6 +56,7 @@ export default function PrivacyPage() {
 
         <Section title="4. Sub-processors we use">
           <p>To run the service we share specific data with these vendors. Each is contractually bound to use the data only for the stated purpose.</p>
+          <div className="m-scroll-x">
           <table style={tableStyle}>
             <thead>
               <tr><th>Vendor</th><th>What they see</th><th>Why</th></tr>
@@ -70,6 +71,7 @@ export default function PrivacyPage() {
               <tr><td>Google (US)</td><td>Email, name (only if you used Google sign-in)</td><td>OAuth login</td></tr>
             </tbody>
           </table>
+          </div>
         </Section>
 
         <Section title="5. Cookies and storage">

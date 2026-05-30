@@ -519,6 +519,7 @@ export default function HomePage() {
             {recentSpend.map((entry) => (
               <div
                 key={entry.id}
+                className="m-grid-1"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 140px 100px",

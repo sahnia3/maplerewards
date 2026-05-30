@@ -299,7 +299,7 @@ function TripPlannerInner() {
                 className="mono"
                 style={{
                   width: "100%",
-                  height: 42,
+                  height: 44,
                   background: "var(--surface)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
@@ -337,7 +337,7 @@ function TripPlannerInner() {
                 className="mono"
                 style={{
                   width: "100%",
-                  height: 42,
+                  height: 44,
                   background: "var(--surface)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
@@ -350,7 +350,7 @@ function TripPlannerInner() {
             </div>
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Flex window</div>
-              <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 42 }}>
+              <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 44 }}>
                 {([0, 7, 14] as const).map((d, i) => (
                   <button
                     key={d}
@@ -377,7 +377,7 @@ function TripPlannerInner() {
             </div>
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Cabin</div>
-              <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 42 }}>
+              <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 44 }}>
                 {CABIN_OPTIONS.map((c, i) => (
                   <button
                     key={c.value}
@@ -404,7 +404,7 @@ function TripPlannerInner() {
             </div>
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Passengers</div>
-              <div style={{ display: "flex", alignItems: "center", border: "1px solid var(--rule)", borderRadius: 8, height: 42, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", border: "1px solid var(--rule)", borderRadius: 8, height: 44, overflow: "hidden" }}>
                 <button
                   type="button"
                   onClick={() => setPassengers(Math.max(1, passengers - 1))}
@@ -451,7 +451,7 @@ function TripPlannerInner() {
                 background: "var(--accent)",
                 color: "#fff",
                 border: "none",
-                height: 42,
+                height: 44,
                 borderRadius: 8,
                 fontSize: 12,
                 fontWeight: 600,

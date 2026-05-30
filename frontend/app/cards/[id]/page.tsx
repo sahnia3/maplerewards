@@ -395,7 +395,7 @@ export default function CardDetailPage() {
             marginBottom: 28,
             borderBottom: "1px solid var(--rule)",
           }}
-          className="card-detail-hero fade-up"
+          className="card-detail-hero fade-up m-grid-1"
         >
           <div
             aria-hidden
