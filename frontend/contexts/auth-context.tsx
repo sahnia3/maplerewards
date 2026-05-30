@@ -93,32 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthTokenAccessor(() => tokenRef.current);
   }, [accessToken]);
 
-  // Browser-extension bridge: relay the session id + current access token to
-  // the MapleRewards extension (if installed). The extension's bridge.js
-  // content script listens for this same-origin postMessage and stores it so
-  // its merchant-checkout "best card" overlay can call the API as the
-  // signed-in user (owner-scoped wallets need the JWT, not just the anon
-  // session id). Same-origin target only; no-op if no extension is present.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (user) {
-        window.postMessage(
-          {
-            __maple_ext: true,
-            type: "auth",
-            sessionId: user.session_id ?? null,
-            accessToken: accessToken ?? null,
-          },
-          window.location.origin
-        );
-      } else {
-        window.postMessage({ __maple_ext: true, type: "logout" }, window.location.origin);
-      }
-    } catch {
-      /* postMessage can throw on exotic origins — ignore */
-    }
-  }, [accessToken, user]);
+  // NOTE: the browser extension does NOT need a token relayed from here. Its
+  // background fetch uses credentials:include against the API host (in the
+  // extension's host_permissions), so the httpOnly mr_access cookie is sent
+  // automatically and authenticates the signed-in user — without ever exposing
+  // the JWT to page scripts. The anonymous session id is read by the
+  // extension's bridge.js straight from localStorage. We deliberately do not
+  // broadcast the access token over postMessage (that would leak it to any
+  // same-page listener / XSS).
 
   // Wire transparent refresh-on-401 for the API client. When any Pro endpoint
   // returns 401 because the 15-minute access token expired, lib/api.ts calls

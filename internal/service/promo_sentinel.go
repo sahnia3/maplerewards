@@ -188,6 +188,13 @@ func (s *PromoSentinelService) RecheckSources(ctx context.Context, log *slog.Log
 		go func(ref repo.SourceRef) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			// Panic isolation: a panic in this background goroutine would crash
+			// the whole worker process (taking down every sweep). Recover and log.
+			defer func() {
+				if rec := recover(); rec != nil {
+					log.Error("promo source recheck: recovered panic", "id", ref.ID, "panic", rec)
+				}
+			}()
 			if sourceURLLive(ctx, s.httpClient, ref.SourceURL) {
 				// Only count a real recovery (dead → live), not every live promo.
 				if flipped, err := s.repo.MarkSourceLive(ctx, ref.ID); err != nil {

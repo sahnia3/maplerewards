@@ -69,21 +69,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   (async () => {
     try {
-      const { apiBase, mr_access_token } = await chrome.storage.local.get([
-        "apiBase",
-        "mr_access_token",
-      ]);
+      const { apiBase } = await chrome.storage.local.get("apiBase");
       const base = apiBase || DEFAULT_API_BASE;
-      const headers = { "Content-Type": "application/json" };
-      // Signed-in users have owner-scoped wallets that need the JWT (the
-      // anonymous session id alone returns 404). The web-app bridge relays a
-      // short-lived access token into storage; attach it when present. Still
-      // restricted to the two allow-listed (method, path) pairs above.
-      if (mr_access_token) headers["Authorization"] = "Bearer " + mr_access_token;
+      // Auth rides on cookies: credentials:include sends the httpOnly mr_access
+      // cookie (set by the web app on the API host, which is in our
+      // host_permissions), so a signed-in user's owner-scoped wallet resolves
+      // without ever handling the JWT in JS. Anonymous wallets need only the
+      // session id in the body. Still restricted to the two allow-listed
+      // (method, path) pairs checked above.
       const res = await fetch(base + msg.path, {
         method,
         credentials: "include",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: msg.body ? JSON.stringify(msg.body) : undefined,
       });
       const text = await res.text();

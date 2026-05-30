@@ -49,30 +49,15 @@
     }
   }
 
-  // Initial sync: apiBase + anonymous session id.
+  // Initial sync: apiBase + appBase + anonymous session id.
   sync();
 
-  // Signed-in users: the web app posts {sessionId, accessToken} to the window
-  // (auth-context). We're a content script in the page's window, so we receive
-  // it via postMessage. Same-origin only; we ignore anything else.
-  window.addEventListener("message", (e) => {
-    if (e.origin !== location.origin) return;
-    const d = e.data;
-    if (!d || d.__maple_ext !== true) return;
-    if (d.type === "auth") {
-      sync({
-        mr_session_id: d.sessionId || readAnonSession(),
-        mr_access_token: d.accessToken || null,
-      });
-    } else if (d.type === "logout") {
-      try {
-        chrome.storage.local.remove(["mr_access_token"]);
-      } catch (_) {}
-    }
-  });
+  // Signed-in users don't need anything relayed here: the extension's background
+  // fetch uses credentials:include against the API host, so the httpOnly
+  // mr_access cookie authenticates them automatically. We never touch the JWT.
 
   // The anonymous session id can change (e.g. a new wallet) without a reload;
-  // re-sync on storage events and a light interval so the extension stays fresh.
+  // re-sync on storage events so the extension stays fresh.
   window.addEventListener("storage", (e) => {
     if (e.key === "maple_session_id") sync();
   });

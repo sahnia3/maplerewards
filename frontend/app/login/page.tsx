@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/";
+  // Only allow same-origin relative paths — reject absolute/protocol-relative
+  // URLs so ?redirect=https://evil.com can't turn the login into an open
+  // redirect (phishing). Must start with a single "/" and not "//".
+  const rawRedirect = searchParams.get("redirect") || "/";
+  const redirect = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
   const { login } = useAuth();
 
   const [email, setEmail] = useState("");

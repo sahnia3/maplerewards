@@ -65,6 +65,12 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "passengers must be 9 or fewer", http.StatusBadRequest)
 		return
 	}
+	// Bound the flex window: each extra day is another paid external lookup, so
+	// an unbounded value lets one request drain the Seats.aero/SerpAPI/Apify quota.
+	if req.FlexDays < 0 || req.FlexDays > 7 {
+		jsonError(w, "flex_days must be between 0 and 7", http.StatusBadRequest)
+		return
+	}
 
 	// Pro-gate the live Apify scrape (the expensive path). Set server-side
 	// from the verified JWT context — clients cannot forge this.

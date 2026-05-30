@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/button";
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/";
+  // Same-origin relative paths only — block ?redirect=https://evil.com open redirect.
+  const rawRedirect = searchParams.get("redirect") || "/";
+  const redirect = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
   const { register } = useAuth();
 
   const [displayName, setDisplayName] = useState("");

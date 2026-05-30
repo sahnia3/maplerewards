@@ -88,7 +88,7 @@ func (h *CSVImportHandler) Commit(w http.ResponseWriter, r *http.Request) {
 		// Partial success — report how many made it before the failure.
 		jsonOK(w, map[string]any{
 			"created": created,
-			"error":   err.Error(),
+			"error":   "some rows could not be imported — the rest were saved",
 		})
 		return
 	}
