@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
-import { chatStream } from "@/lib/api";
+import { chatStream, ApiError } from "@/lib/api";
 import type { ChatMessage } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { MapleLeaf } from "@/components/editorial/leaf-divider";
@@ -108,7 +108,13 @@ export default function ChatPage() {
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
-      if (msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro")) {
+      // Prefer the machine code (chatStream throws an ApiError carrying it) over
+      // a brittle message-substring match. UPGRADE_REQUIRED = free monthly cap,
+      // USER_RATE_LIMITED = per-user RPM cap — both route to the upsell.
+      const code = err instanceof ApiError ? err.code : undefined;
+      const isUpsell = code === "UPGRADE_REQUIRED" || code === "USER_RATE_LIMITED" ||
+        msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro");
+      if (isUpsell) {
         setRateLimited(true);
         setMessages((prev) => [...prev, { role: "assistant", content: "You've used your 2 free messages for the month. Upgrade to Pro for unlimited AI access." }]);
       } else {

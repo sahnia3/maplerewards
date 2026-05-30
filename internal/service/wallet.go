@@ -51,7 +51,12 @@ func (s *WalletService) GetWallet(ctx context.Context, sessionID string) ([]mode
 		return nil, err
 	}
 
-	go s.cache.SetWallet(context.Background(), sessionID, cards) //nolint:errcheck
+	// Repopulate synchronously (a fast Redis SET) rather than in a detached
+	// background goroutine. A detached repopulate could land arbitrarily late —
+	// after a concurrent write's invalidation — and re-cache stale data for the
+	// full TTL. Doing it inline bounds the write to this request so the cache
+	// layer's delayed double-delete reliably clears any racing repopulate.
+	_ = s.cache.SetWallet(ctx, sessionID, cards)
 	return cards, nil
 }
 

@@ -160,8 +160,22 @@ func (c *Cache) SetWallet(ctx context.Context, sessionID string, data any) error
 }
 
 func (c *Cache) InvalidateWallet(ctx context.Context, sessionID string) error {
-	return c.client.Del(ctx, fmt.Sprintf("wallet:%s", sessionID)).Err()
+	key := fmt.Sprintf("wallet:%s", sessionID)
+	err := c.client.Del(ctx, key).Err()
+	// Delayed double-delete: a read that missed the cache reads the DB and then
+	// repopulates the cache; if that repopulate lands AFTER this delete, the
+	// cache would hold stale data for the full TTL. A second delete a moment
+	// later removes any such racing repopulate, so a wallet write can't leave a
+	// stale balance cached. (The repopulate is synchronous + request-bounded in
+	// the wallet service, so this window comfortably covers it.)
+	time.AfterFunc(walletInvalidateRecheck, func() {
+		c.client.Del(context.Background(), key) //nolint:errcheck
+	})
+	return err
 }
+
+// walletInvalidateRecheck is the delay before the second wallet-cache delete.
+const walletInvalidateRecheck = 1500 * time.Millisecond
 
 // ── Card Multipliers ─────────────────────────────────────────────────────────
 
