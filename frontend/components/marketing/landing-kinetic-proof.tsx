@@ -99,6 +99,15 @@ export function LandingKineticProof() {
   const captionOpacity = useTransform(scrollYProgress, [0.7, 0.88], [0, 1]);
   const captionY = useTransform(scrollYProgress, [0.7, 0.88], [16, 0]);
 
+  /* Mobile scroll animation: a reliable transform-based dolly-in reveal driven
+   * by the section's scroll progress (NOT video currentTime — that's the janky
+   * path iOS blocks). The framed loop lifts, fades and scales up as it enters,
+   * then eases to a gentle over-scale, so the section feels alive on scroll.
+   * Hooks are declared unconditionally here; only applied in the mobile branch. */
+  const mFrameOpacity = useTransform(scrollYProgress, [0.02, 0.22], [0, 1], { clamp: true });
+  const mFrameY = useTransform(scrollYProgress, [0.02, 0.3], [56, 0], { clamp: true });
+  const mFrameScale = useTransform(scrollYProgress, [0.02, 0.5, 1], [0.9, 1, 1.05], { clamp: true });
+
   /* Desktop scrub: seek to frame 0 once when metadata is ready (re-firing
    * canplay must not reset currentTime — that caused first/last-frame flicker). */
   useEffect(() => {
@@ -140,17 +149,18 @@ export function LandingKineticProof() {
     return () => v.removeEventListener("canplay", tryPlay);
   }, [isMobile]);
 
-  // ── Mobile: a normal-height section with an autoplaying muted loop ──────────
+  // ── Mobile: autoplaying muted loop with a scroll-linked dolly-in reveal ─────
   if (isMobile) {
     return (
       <section
+        ref={containerRef}
         style={{
           position: "relative",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: 20,
-          padding: "clamp(32px, 8vh, 64px) clamp(16px, 5vw, 40px)",
+          padding: "clamp(48px, 12vh, 96px) clamp(16px, 5vw, 40px)",
         }}
       >
         <span
@@ -170,7 +180,7 @@ export function LandingKineticProof() {
           Built into every Canadian wallet
         </span>
 
-        <div style={{ ...FRAME_STYLE, width: "100%", maxHeight: "none" }}>
+        <motion.div style={{ ...FRAME_STYLE, width: "100%", maxHeight: "none", opacity: mFrameOpacity, y: mFrameY, scale: mFrameScale }}>
           <video
             ref={videoRef}
             src={VIDEO_LOOP_SRC}
@@ -191,7 +201,7 @@ export function LandingKineticProof() {
             }}
           />
           <InnerVignette />
-        </div>
+        </motion.div>
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", padding: "0 8px" }}>
           <span

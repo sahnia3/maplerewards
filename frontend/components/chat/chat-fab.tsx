@@ -48,10 +48,16 @@ export function ChatFab() {
           text-decoration: none;
           isolation: isolate;
           cursor: pointer;
+          background: transparent;
           transition: transform 380ms cubic-bezier(0.2, 0.7, 0.2, 1);
         }
         @media (min-width: 1024px) {
           .maple-orb-fab { bottom: 28px; right: 28px; }
+        }
+        /* Mobile: tame the ambient glow so the orb reads as a clean floating
+           sphere on a transparent background, not a luminous box. */
+        @media (max-width: 1023px) {
+          .maple-orb-halo { opacity: 0.4 !important; filter: blur(8px); inset: -6px; }
         }
 
         /* ── Ambient multi-hue halo ─────────────────────────────────────── */
@@ -82,17 +88,17 @@ export function ChatFab() {
           height: 70px;
           border-radius: 50%;
           background: radial-gradient(circle at 50% 42%,
-            rgba(20, 30, 60, 0.30) 0%,
-            rgba(12, 20, 46, 0.55) 58%,
-            rgba(7, 12, 34, 0.92) 86%,
-            rgba(4, 8, 24, 1) 100%);
+            rgba(12, 18, 38, 0.55) 0%,
+            rgba(7, 12, 30, 0.82) 58%,
+            rgba(4, 7, 20, 0.96) 86%,
+            rgba(2, 4, 12, 1) 100%);
           box-shadow:
-            inset 0 2px 1px rgba(255, 255, 255, 0.45),
-            inset 0 -12px 26px rgba(0, 0, 0, 0.62),
-            inset -7px -9px 22px rgba(0, 0, 0, 0.45),
-            inset 0 0 0 1px rgba(150, 195, 255, 0.22),
-            0 16px 38px rgba(8, 16, 60, 0.6),
-            0 0 26px rgba(120, 180, 255, 0.30);
+            inset 0 2px 1px rgba(255, 255, 255, 0.40),
+            inset 0 -12px 26px rgba(0, 0, 0, 0.68),
+            inset -7px -9px 22px rgba(0, 0, 0, 0.50),
+            inset 0 0 0 1px rgba(150, 195, 255, 0.18),
+            0 12px 28px rgba(4, 8, 30, 0.55),
+            0 0 14px rgba(90, 150, 235, 0.18);
           overflow: hidden;
           z-index: 1;
         }

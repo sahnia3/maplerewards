@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 interface SidebarContextValue {
   isCollapsed: boolean;
@@ -14,6 +15,13 @@ const SidebarContext = createContext<SidebarContextValue | null>(null);
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close the mobile drawer whenever the route changes (e.g. tapping a nav
+  // link inside the drawer) so it never lingers over the new page.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   // Persist collapsed state to localStorage
   useEffect(() => {

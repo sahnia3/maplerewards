@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { listCategories, optimize, logSpend } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import { Term } from "@/components/term";
-import { ApplyButton } from "@/components/cards/ApplyButton";
 import type { Category, CardRecommendation } from "@/lib/types";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
 import { cardImageUrl } from "@/lib/card-images";
@@ -656,9 +655,6 @@ export function OptimizerForm() {
                 >
                   Card detail
                 </Link>
-              </div>
-              <div style={{ marginTop: 14 }}>
-                <ApplyButton cardId={best.card_id} cardName={best.card_name} alwaysShow size="sm" />
               </div>
             </div>
           </div>

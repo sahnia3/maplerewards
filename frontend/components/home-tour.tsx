@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { X, Zap, Wallet as WalletIcon, Sparkles, MessageCircle } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 
 const TOUR_KEY = "maple_home_tour_seen_v1";
+// A signed-in user counts as "first session" only within this window after
+// their account was created — so the walkthrough fires once for new accounts
+// and never re-appears for returning users on every launch.
+const FIRST_LOGIN_WINDOW_MIN = 30;
 
 interface Step {
   title: string;
@@ -46,32 +51,42 @@ const STEPS: Step[] = [
 ];
 
 /**
- * HomeTour — first-load welcome carousel for the authenticated dashboard.
+ * HomeTour — first-session welcome carousel for a newly-created account.
  *
- * Renders nothing if the user has dismissed or completed the tour before
- * (`localStorage[TOUR_KEY] === "true"`). Otherwise overlays a small carousel
- * walking through wallet → optimizer → Pro Tools → AI chat. State persists
- * locally so the tour fires exactly once per browser.
+ * Fires ONLY when a signed-in user's account was created within the last
+ * FIRST_LOGIN_WINDOW_MIN minutes (i.e. their genuine first session right after
+ * sign-up) AND they haven't dismissed it yet. This prevents the old behaviour
+ * where the walkthrough re-appeared for returning/anonymous visitors on every
+ * launch. The "seen" flag is keyed per-user so different accounts on the same
+ * browser each get their one walkthrough.
  *
- * Re-trigger: clear `localStorage[TOUR_KEY]`. A future Settings entry can
- * expose this as a one-click "replay walkthrough".
+ * Re-trigger (e.g. a future Settings "replay walkthrough"): clear
+ * `localStorage["maple_home_tour_seen_v1:<userId>"]`.
  */
 export function HomeTour() {
+  const { isAuthenticated, user } = useAuth();
   const [active, setActive] = useState(false);
   const [step, setStep] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.localStorage.getItem(TOUR_KEY) === "true") return;
+    // Anonymous / logged-out visitors never see the in-app walkthrough.
+    if (!isAuthenticated || !user) return;
+    const key = `${TOUR_KEY}:${user.id}`;
+    if (window.localStorage.getItem(key) === "true") return;
+    // Only a freshly-created account (first session) qualifies.
+    const created = user.created_at ? new Date(user.created_at).getTime() : NaN;
+    const ageMinutes = Number.isFinite(created) ? (Date.now() - created) / 60000 : Infinity;
+    if (!Number.isFinite(ageMinutes) || ageMinutes > FIRST_LOGIN_WINDOW_MIN) return;
     // Defer so the dashboard renders first; gives the overlay a clean entrance.
     const t = setTimeout(() => setActive(true), 700);
     return () => clearTimeout(t);
-  }, []);
+  }, [isAuthenticated, user]);
 
   function dismiss() {
     setActive(false);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(TOUR_KEY, "true");
+    if (typeof window !== "undefined" && user) {
+      window.localStorage.setItem(`${TOUR_KEY}:${user.id}`, "true");
     }
   }
 

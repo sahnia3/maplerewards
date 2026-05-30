@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "./sidebar";
-import { BottomNav } from "./bottom-nav";
+import { MobileNavTrigger } from "./mobile-nav";
 import { useSidebar } from "@/contexts/sidebar-context";
 
 const pageVariants = {
@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           @media (max-width: 1023px) {
             :root {
               --sidebar-width: 0px;
-              --bottom-nav-height: 64px;
+              --bottom-nav-height: 0px;
             }
           }
         `}</style>
@@ -98,8 +98,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </AnimatePresence>
       </main>
 
-      {/* Mobile bottom tab bar */}
-      <BottomNav />
+      {/* Mobile hamburger → opens the slide-out sidebar drawer */}
+      <MobileNavTrigger />
     </>
   );
 }

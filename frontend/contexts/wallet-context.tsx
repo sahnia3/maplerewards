@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "./session-context";
+import { useAuth } from "./auth-context";
 import {
   getWallet,
   addCardToWallet,
@@ -31,6 +33,9 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { sessionId, isReady } = useSession();
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
   const [wallet, setWallet] = useState<UserCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,11 +80,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const addCard = useCallback(
     async (cardId: string) => {
+      // Anonymous (no-account) visitors cannot build a wallet anywhere in the
+      // app. Add-card buttons stay visible, but the moment a logged-out user
+      // tries to add, route them to create an account — the signup flow merges
+      // their anon session so nothing they staged is lost. Single gate for every
+      // add-card surface (cards, portfolio, onboarding, stack templates).
+      if (!isAuthenticated) {
+        const back = pathname && pathname.startsWith("/") && !pathname.startsWith("//") ? pathname : "/cards";
+        router.push(`/signup?redirect=${encodeURIComponent(back)}`);
+        return;
+      }
       if (!sessionId) return;
       await addCardToWallet(sessionId, cardId);
       await loadWallet();
     },
-    [sessionId, loadWallet]
+    [sessionId, loadWallet, isAuthenticated, pathname, router]
   );
 
   const removeCard = useCallback(

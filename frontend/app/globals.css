@@ -1018,8 +1018,15 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 @media (max-width: 560px) {
-  /* Optimizer winner card hides — too wide for phones */
-  .optimizer-winner-card { display: none; }
+  /* Optimizer winner card — keep the sprite visible on phones (centered and
+     scaled to fit) rather than hiding it; the card art is the point. */
+  .optimizer-winner-card {
+    display: block;
+    justify-self: center;
+    margin-top: 8px;
+    transform: scale(0.86);
+    transform-origin: top center;
+  }
 
   /* Single-column for everything */
   .protool-watch-grid { grid-template-columns: 1fr !important; }

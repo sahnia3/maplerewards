@@ -253,43 +253,10 @@ export default function HomePage() {
            * number IS the visual; no illustration needed. */}
         <LandingKineticProof />
 
-        {/* Pillars row */}
+        {/* Social proof + origin note */}
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px clamp(20px, 4vw, 60px) 80px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
-            <span className="eyebrow" style={{ color: "var(--accent)" }}>How it works</span>
-            <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 80 }} />
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 16,
-            }}
-          >
-            <Pillar
-              n="01"
-              title="Add your cards."
-              body="Tell us which Canadian cards you carry. We know the earn rates, category caps, welcome bonuses, and credits for 104 of them."
-            />
-            <Pillar
-              n="02"
-              title="Get the best card per purchase."
-              body="Tap a category, see your cards ranked by what they actually earn. Transfer-partner value and category caps included."
-            />
-            <Pillar
-              n="03"
-              title="See what you missed."
-              body="Pro shows what every past swipe would have earned on the optimal card. The dollar gap is exactly what you left on the table."
-            />
-            <Pillar
-              n="04"
-              title="Track Aeroplan status."
-              body="The only Canadian tracker for the new 2026 SQC system. Project your year-end tier and find the cheapest path to elite."
-            />
-          </div>
-
-          {/* Social proof — three short quotes from Canadian users */}
-          <div style={{ marginTop: 56 }}>
+          {/* Social proof — short quotes from Canadian users */}
+          <div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
               <span className="eyebrow" style={{ color: "var(--accent)" }}>From the wallet</span>
               <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 80 }} />
@@ -570,29 +537,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="display" style={{ fontSize: 36, fontStyle: "italic", color: "var(--ink)", lineHeight: 1 }}>
         {value}
       </div>
-    </div>
-  );
-}
-
-function Pillar({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <div
-      style={{
-        padding: "22px 22px",
-        border: "1px solid var(--rule)",
-        borderRadius: 14,
-        background: "var(--card-fill)",
-      }}
-    >
-      <div className="mono" style={{ fontSize: 11, color: "var(--accent)", letterSpacing: "0.18em", marginBottom: 12 }}>
-        {n}
-      </div>
-      <h3 className="display" style={{ fontSize: 22, margin: 0, lineHeight: 1.15, fontStyle: "italic" }}>
-        {title}
-      </h3>
-      <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.5 }}>
-        {body}
-      </p>
     </div>
   );
 }
