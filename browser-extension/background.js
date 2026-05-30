@@ -12,7 +12,7 @@
 // has visited the web app. The web-app bridge (bridge.js) overrides `apiBase`
 // in storage to the correct dev/prod API the moment the user opens the app, so
 // dev still works (localhost:3000 -> localhost:8080).
-const DEFAULT_API_BASE = "https://maplerewards-production.up.railway.app/api/v1";
+const DEFAULT_API_BASE = "https://api.maplerewards.app/api/v1";
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
