@@ -438,7 +438,9 @@ export function Sidebar() {
       <aside
         className="fixed left-0 top-0 bottom-0 z-50 flex flex-col lg:hidden"
         style={{
-          width: 272,
+          // Cap to the viewport so it doesn't crowd a 360px phone, but keep it
+          // readable. 272px on wider phones, ~85vw on very narrow ones.
+          width: "min(272px, 85vw)",
           background: "var(--sidebar-fill)",
           borderRight: "1px solid var(--rule)",
           backdropFilter: "blur(18px)",

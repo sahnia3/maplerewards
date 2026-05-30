@@ -719,7 +719,7 @@ function Pill({ label, active, onClick }: { label: string; active: boolean; onCl
     <button
       type="button"
       onClick={onClick}
-      className="mono"
+      className="mono m-tap"
       style={{
         padding: "9px 16px",
         borderRadius: 999,

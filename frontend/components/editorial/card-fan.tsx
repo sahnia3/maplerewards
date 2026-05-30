@@ -369,7 +369,15 @@ export function CardFan({
             <div
               key={card.id}
               onMouseEnter={() => setHover(i)}
+              // Touch devices have no hover: a first tap elevates the card
+              // (so the fan is explorable on a phone), and the click handler
+              // still navigates. We stop the touch from immediately also
+              // firing elsewhere but let the synthesized click through.
+              onTouchStart={() => setHover(i)}
               onClick={() => router.push("/cards")}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") router.push("/cards"); }}
               style={{
                 position: "absolute",
                 left: "50%",
