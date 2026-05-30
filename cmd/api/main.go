@@ -584,6 +584,11 @@ func main() {
 		// wallet CRUD is fast — anything slower is a query-plan regression.
 		r.Group(func(r chi.Router) {
 			r.Use(mw.RequireSessionOwner(walletRepo))
+			// CSRF on these wallet mutations: the JWT cookie is SameSite=None in
+			// the cross-site prod profile, so without this a cross-origin page
+			// could forge wallet/spend/balance writes (the SPA already sends the
+			// X-CSRF-Token header). Safe methods pass through.
+			r.Use(mw.CSRFProtect)
 			r.Use(middleware.Timeout(30 * time.Second))
 
 			// Wallet read + mutate
@@ -636,6 +641,7 @@ func main() {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.RequirePro())
 			r.Use(mw.RequireSessionOwner(walletRepo))
+			r.Use(mw.CSRFProtect)
 			r.Use(middleware.Timeout(30 * time.Second))
 
 			// Missed-rewards forensics
@@ -687,6 +693,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(mw.JWTRequired(authSvc))
 			r.Use(mw.RequirePro())
+			r.Use(mw.CSRFProtect)
 			r.Use(middleware.Timeout(30 * time.Second))
 			r.Post("/buy-points/evaluate", buyPointsH.Evaluate)
 			r.Post("/stack-recommend", stackH.Recommend)
