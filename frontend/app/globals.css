@@ -918,6 +918,26 @@ input[type="number"]::-webkit-inner-spin-button {
   .compare-cards { grid-template-columns: 1fr !important; }
 }
 
+/* ── Mobile data-grid hardening utilities ──────────────────────────────────
+ * Reusable classes applied to pages whose inline grid-template-columns are
+ * fixed-px (so they don't collapse on phones and clip their right columns).
+ * Add the class to the grid element; these override the inline template on
+ * narrow screens. */
+@media (max-width: 768px) {
+  /* Collapse any multi-column grid to a single stacked column. */
+  .m-grid-1 { grid-template-columns: 1fr !important; }
+  /* Two equal columns (for 3-4 column stat/tile grids). */
+  .m-grid-2 { grid-template-columns: 1fr 1fr !important; }
+  /* Make a wide table/row scroll horizontally instead of clipping. The element
+   * keeps its natural width; the wrapper (this element) scrolls. */
+  .m-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  /* Keep a tap target comfortably above the 44px iOS minimum. */
+  .m-tap { min-height: 44px !important; }
+}
+@media (max-width: 480px) {
+  .m-grid-2 { grid-template-columns: 1fr !important; }
+}
+
 /* ── Hero: desktop 2-column grid ───────────────────────────────────────────
  * Copy on the left, the card-fan as a BOUNDED right-column grid item that is
  * top-aligned with the headline. Replaces the old absolute-positioned fan
