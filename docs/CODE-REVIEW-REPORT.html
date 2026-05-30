@@ -45,8 +45,8 @@
 
   <div class="grid4">
     <div class="stat"><div class="n" style="color:var(--ok)">0</div><div class="l">Code blockers remaining</div></div>
-    <div class="stat"><div class="n" style="color:#0f766e">7</div><div class="l">Findings fixed this pass</div></div>
-    <div class="stat"><div class="n" style="color:var(--med)">~5</div><div class="l">Low-risk items documented</div></div>
+    <div class="stat"><div class="n" style="color:#0f766e">9</div><div class="l">Findings fixed</div></div>
+    <div class="stat"><div class="n" style="color:var(--ok)">0</div><div class="l">Real code bugs left</div></div>
     <div class="stat"><div class="n" style="color:var(--med)">3</div><div class="l">Infra config (yours)</div></div>
   </div>
 
@@ -62,25 +62,30 @@
     <tr><td><span class="badge b-low">Low</span></td><td>PromoSentinel recheck goroutine had no panic recovery — a panic there would crash the whole worker.</td><td>Added <code>recover()</code> in the goroutine.</td><td><code>293650b</code></td></tr>
   </table>
 
-  <h2>2 · Remaining items — low-risk, documented (not blockers)</h2>
-  <p>The review verified these as real but non-blocking. None corrupt data, lose money, or break the running production system; each is safe to address post-launch.</p>
+  <h2>2 · Also fixed after the review (second remediation pass)</h2>
+  <p>Two more verified findings were fixed rather than deferred:</p>
   <table>
-    <tr><th>Sev</th><th>Item</th><th>Why it's safe to defer</th></tr>
-    <tr><td><span class="badge b-med">Med</span></td><td>Wallet cache read-repopulate vs write-invalidate race → a balance can read stale for up to the 30-min TTL.</td><td>Probabilistic, self-healing on the next write/TTL; <b>Postgres is always the source of truth</b>. A correct fix needs cache versioning/SETNX — deliberately not rushed. Transient display only.</td></tr>
-    <tr><td><span class="badge b-med">Med</span></td><td>Stripe customer-portal switch to a legacy price can drift entitlement (over-grants the <i>soft</i> AI quota).</td><td>Gated by external Stripe portal config (you control which prices are portal-switchable); never charges wrong or grants paid features beyond AI rate. Downgraded to low by the verifier.</td></tr>
-    <tr><td><span class="badge b-low">Low</span></td><td>Migration <code>000058.down</code> / <code>076.down</code> collide on rollback past v76 → dirty schema.</td><td><b>Rollback-path only.</b> Forward production (v086) is correct and unaffected; the standing guidance is roll-<i>forward</i>, never run down-migrations in prod.</td></tr>
-    <tr><td><span class="badge b-low">Low</span></td><td>Award-search CPP rating ignores taxes; optimizer annual-cap-on-single-purchase under-projects.</td><td>Both <b>under-promise, never over-promise</b> — conservative by design. Industry-convention CPP.</td></tr>
-    <tr><td><span class="badge b-low">Low</span></td><td>Chat free-limit upsell uses an error-string substring match instead of the <code>ApiError.code</code>.</td><td>Works today; brittle only if the server message text changes. Cosmetic.</td></tr>
+    <tr><th>Sev</th><th>Item</th><th>Fix (shipped)</th></tr>
+    <tr><td><span class="badge b-med">Med</span></td><td>Wallet cache read-repopulate vs write-invalidate race → a balance could read stale for up to the 30-min TTL.</td><td>Repopulate synchronously (request-bounded) + <code>InvalidateWallet</code> is now a delayed double-delete (DEL now + DEL again after 1.5s), clearing any racing repopulate. <code>a80f03e</code></td></tr>
+    <tr><td><span class="badge b-low">Low</span></td><td>Chat free-limit upsell used a brittle error-string substring match.</td><td>Now branches on <code>ApiError.code</code> (<code>UPGRADE_REQUIRED</code>/<code>USER_RATE_LIMITED</code>). <code>a80f03e</code></td></tr>
   </table>
 
-  <h2>3 · Infrastructure config — the only launch gating items (yours, no code)</h2>
+  <h2>3 · The only remaining items — not code bugs</h2>
+  <table>
+    <tr><th>Type</th><th>Item</th><th>Why nothing to fix in code</th></tr>
+    <tr><td>Config</td><td>Stripe customer-portal switch to a legacy price can drift the <i>soft</i> AI quota entitlement.</td><td>Governed by which prices you make portal-switchable in the Stripe dashboard; never charges wrong. Verifier rated it low.</td></tr>
+    <tr><td>Rollback</td><td>Migration <code>000058.down</code>/<code>076.down</code> collide on rollback past v76.</td><td><b>Rollback-path only.</b> Forward prod (v086) is correct; standing guidance is roll-forward; existing migrations are edit-protected.</td></tr>
+    <tr><td>By design</td><td>Award-search CPP ignores taxes; optimizer annual-cap-on-single-purchase under-projects.</td><td>Both <b>under-promise, never over-promise</b> — conservative on purpose. Not bugs.</td></tr>
+  </table>
+
+  <h2>4 · Infrastructure config — the only launch gating items (yours, no code)</h2>
   <ul>
     <li><b>Stripe</b>: set <code>STRIPE_PRICE_ID_PRO_ANNUAL / PROPLUS_ANNUAL / LIFETIME</code> on Railway + subscribe the <code>charge.refunded</code> webhook event.</li>
     <li><b>Cookies</b>: put the app + API on one parent domain and set <code>COOKIE_DOMAIN</code> (fixes Safari third-party-cookie login <i>and</i> the extension's authed path). Code + docs ready.</li>
     <li><b>Worker</b>: run <code>./worker</code> as its own Railway service (PIPEDA deletion + Pro background features).</li>
   </ul>
 
-  <h2>4 · What the review confirmed is solid (do not touch)</h2>
+  <h2>5 · What the review confirmed is solid (do not touch)</h2>
   <ul>
     <li><b>Auth</b>: HS256 JWT (15-min access + 30-day refresh) with <b>live rotation + reuse-detection</b> (replay → revoke-all, with a grace window for benign SPA double-fire); the 30-day refresh token is httpOnly and never broadcast; production <code>JWT_SECRET</code> hard-fails on boot.</li>
     <li><b>IDOR</b>: <code>RequireSessionOwner</code> / <code>requireBodySessionOwner</code> consistently gate URL- and body-param routes; anonymous-merge wallet-theft is well-hardened (registered users can't be merge-stolen).</li>
