@@ -49,6 +49,21 @@ func (m *mockCardRepo) GetEverythingElseMultiplier(ctx context.Context, cardID s
 	return &model.CardMultiplier{EarnRate: 1.0, EarnType: "points", FallbackEarnRate: 1.0}, nil
 }
 
+func (m *mockCardRepo) ListMultipliersForCard(ctx context.Context, cardID string) ([]model.MultiplierRow, error) {
+	var out []model.MultiplierRow
+	for key, mul := range m.multipliers {
+		// keys are "cardID:categoryID"; only this card's rows.
+		if len(key) > len(cardID)+1 && key[:len(cardID)] == cardID && key[len(cardID)] == ':' {
+			out = append(out, model.MultiplierRow{
+				CategorySlug: key[len(cardID)+1:],
+				EarnRate:     mul.EarnRate,
+				EarnType:     mul.EarnType,
+			})
+		}
+	}
+	return out, nil
+}
+
 func (m *mockCardRepo) GetProgramBySlug(ctx context.Context, slug string) (*model.LoyaltyProgram, error) {
 	return &model.LoyaltyProgram{Slug: slug}, nil
 }

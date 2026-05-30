@@ -16,6 +16,10 @@ type CardRepository interface {
 	GetCategoryByMCC(ctx context.Context, mcc int) (*model.Category, error)
 	GetMultiplierForCard(ctx context.Context, cardID, categoryID string) (*model.CardMultiplier, error)
 	GetEverythingElseMultiplier(ctx context.Context, cardID string) (*model.CardMultiplier, error)
+	// ListMultipliersForCard returns every active multiplier row for a card in
+	// ONE query — used to score a full spend profile without a per-category
+	// round-trip (the /recommend amplification fix).
+	ListMultipliersForCard(ctx context.Context, cardID string) ([]model.MultiplierRow, error)
 	GetProgramBySlug(ctx context.Context, slug string) (*model.LoyaltyProgram, error)
 }
 

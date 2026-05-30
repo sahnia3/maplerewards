@@ -62,12 +62,24 @@ func (s *RecommenderService) Recommend(ctx context.Context, req RecommendRequest
 		return nil, err
 	}
 
-	// slug → category ID
-	slugToID := make(map[string]string, len(categories))
+	// slug → category name. Also the set of REAL category slugs — anything not
+	// in here is junk (or an attacker padding the body) and is dropped, so the
+	// work is bounded by the ~real category count regardless of body size.
 	slugToName := make(map[string]string, len(categories))
 	for _, cat := range categories {
-		slugToID[cat.Slug] = cat.ID
 		slugToName[cat.Slug] = cat.Name
+	}
+
+	// Pre-filter the request to known categories with positive spend. This caps
+	// the per-card inner loop at the real category count even if the caller sent
+	// a huge map (DoS hardening — see handler bound too).
+	spend := make(map[string]float64, len(slugToName))
+	for slug, amt := range req.MonthlySpend {
+		if amt > 0 {
+			if _, ok := slugToName[slug]; ok {
+				spend[slug] = amt
+			}
+		}
 	}
 
 	var scores []CardScore
@@ -75,7 +87,10 @@ func (s *RecommenderService) Recommend(ctx context.Context, req RecommendRequest
 		if !card.IsActive || card.LoyaltyProgram == nil {
 			continue
 		}
-		score := s.scoreCard(ctx, card, req.MonthlySpend, slugToID, slugToName)
+		score, err := s.scoreCard(ctx, card, spend, slugToName)
+		if err != nil {
+			return nil, err
+		}
 		scores = append(scores, score)
 	}
 
@@ -89,9 +104,8 @@ func (s *RecommenderService) scoreCard(
 	ctx context.Context,
 	card model.Card,
 	monthlySpend map[string]float64,
-	slugToID map[string]string,
 	slugToName map[string]string,
-) CardScore {
+) (CardScore, error) {
 	cpp := card.LoyaltyProgram.BaseCPP
 
 	var grossAnnualValue float64
@@ -102,30 +116,40 @@ func (s *RecommenderService) scoreCard(
 		totalMonthlySpend += amt
 	}
 
+	// ONE query per card for all its multipliers, instead of one query per
+	// (card, category). This is the core fix for the /recommend amplification
+	// DoS: total DB work is now O(cards), not O(cards × request keys).
+	rows, err := s.cardRepo.ListMultipliersForCard(ctx, card.ID)
+	if err != nil {
+		return CardScore{}, err
+	}
+	bySlug := make(map[string]model.MultiplierRow, len(rows))
+	var everythingElse *model.MultiplierRow
+	for i := range rows {
+		bySlug[rows[i].CategorySlug] = rows[i]
+		if rows[i].CategorySlug == "everything-else" {
+			everythingElse = &rows[i]
+		}
+	}
+
 	for slug, monthly := range monthlySpend {
 		if monthly <= 0 {
 			continue
 		}
 
-		catID, ok := slugToID[slug]
+		mult, ok := bySlug[slug]
 		if !ok {
-			catID = slugToID["everything-else"]
-		}
-
-		multiplier, err := s.cardRepo.GetMultiplierForCard(ctx, card.ID, catID)
-		if err != nil {
-			var fallbackErr error
-			multiplier, fallbackErr = s.cardRepo.GetEverythingElseMultiplier(ctx, card.ID)
-			if fallbackErr != nil {
+			if everythingElse == nil {
 				continue
 			}
+			mult = *everythingElse
 		}
 
 		var monthlyValue float64
-		if multiplier.EarnType == "cashback_pct" {
-			monthlyValue = monthly * (multiplier.EarnRate / 100)
+		if mult.EarnType == "cashback_pct" {
+			monthlyValue = monthly * (mult.EarnRate / 100)
 		} else {
-			pointsPerMonth := monthly * multiplier.EarnRate
+			pointsPerMonth := monthly * mult.EarnRate
 			monthlyValue = pointsPerMonth * (cpp / 100)
 		}
 
@@ -139,8 +163,8 @@ func (s *RecommenderService) scoreCard(
 			CategoryName: catName,
 			CategorySlug: slug,
 			MonthlySpend: monthly,
-			EarnRate:     multiplier.EarnRate,
-			EarnType:     multiplier.EarnType,
+			EarnRate:     mult.EarnRate,
+			EarnType:     mult.EarnType,
 			MonthlyValue: monthlyValue,
 		})
 	}
@@ -178,5 +202,5 @@ func (s *RecommenderService) scoreCard(
 		WelcomeBonusPoints:   card.WelcomeBonusPoints,
 		WelcomeBonusMinSpend: card.WelcomeBonusMinSpend,
 		WelcomeBonusMonths:   card.WelcomeBonusMonths,
-	}
+	}, nil
 }
