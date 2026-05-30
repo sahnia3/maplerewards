@@ -737,7 +737,6 @@ function FlightRow({
       }}
     >
       <div
-        className="m-grid-1"
         style={{
           display: "grid",
           gridTemplateColumns: "40px 1fr 130px 130px 110px",
@@ -745,7 +744,7 @@ function FlightRow({
           gap: 18,
           padding: "20px 4px",
         }}
-        className="flight-row"
+        className="flight-row m-grid-1"
       >
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
           {String(index + 1).padStart(2, "0")}
