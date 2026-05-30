@@ -2,9 +2,11 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { listCategories, optimize, logSpend } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
+import { useAuth } from "@/contexts/auth-context";
 import { Term } from "@/components/term";
 import type { Category, CardRecommendation } from "@/lib/types";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
@@ -67,6 +69,8 @@ function tintFor(slug: string) {
 
 export function OptimizerForm() {
   const { ensureSession } = useSession();
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categorySlug, setCategorySlug] = useState("");
   const [amount, setAmount] = useState<string>("");
@@ -122,6 +126,12 @@ export function OptimizerForm() {
 
   async function handleLog(rec: CardRecommendation) {
     if (loggedIds.has(rec.card_id)) return;
+    // Logging a spend writes to a wallet — anonymous visitors must create an
+    // account first. Send them to signup (which merges their anon session).
+    if (!isAuthenticated) {
+      router.push("/signup?redirect=/optimizer");
+      return;
+    }
     try {
       const sid = await ensureSession();
       await logSpend(sid, {

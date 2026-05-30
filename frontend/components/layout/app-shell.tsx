@@ -66,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         className="min-h-screen relative z-10"
         style={{
           marginLeft: `var(--sidebar-width, 0px)`,
+          paddingTop: "var(--mobile-top-inset, 0px)",
           paddingBottom: "var(--bottom-nav-height, 0px)",
           transition: "margin-left 0.25s cubic-bezier(0.22, 1, 0.36, 1)",
         }}
@@ -76,12 +77,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             :root {
               --sidebar-width: ${isCollapsed ? 56 : 240}px;
               --bottom-nav-height: 0px;
+              --mobile-top-inset: 0px;
             }
           }
           @media (max-width: 1023px) {
             :root {
               --sidebar-width: 0px;
               --bottom-nav-height: 0px;
+              /* Reserve a top safe-zone so page headers clear the fixed
+                 hamburger (top-left) and the device notch. */
+              --mobile-top-inset: calc(env(safe-area-inset-top, 0px) + 52px);
             }
           }
         `}</style>

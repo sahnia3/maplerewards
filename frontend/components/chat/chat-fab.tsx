@@ -54,10 +54,30 @@ export function ChatFab() {
         @media (min-width: 1024px) {
           .maple-orb-fab { bottom: 28px; right: 28px; }
         }
-        /* Mobile: tame the ambient glow so the orb reads as a clean floating
-           sphere on a transparent background, not a luminous box. */
+        /* Mobile (esp. iOS Safari): mix-blend-mode + isolation composite the
+           orb's square layer as an opaque box — the "orb in a box" bug. On
+           phones we drop isolation and every blend-mode layer and paint a clean,
+           darker iridescent glass sphere with a baked gradient. Same look on a
+           truly transparent background, and it can't render a box on WebKit. */
         @media (max-width: 1023px) {
-          .maple-orb-halo { opacity: 0.4 !important; filter: blur(8px); inset: -6px; }
+          .maple-orb-fab { isolation: auto; }
+          .maple-orb-halo,
+          .maple-orb-iris,
+          .maple-orb-lobe,
+          .maple-orb-core,
+          .maple-orb-gloss,
+          .maple-orb-rim { display: none !important; }
+          .maple-orb-sphere {
+            background:
+              radial-gradient(120% 120% at 30% 24%, rgba(110, 200, 255, 0.55) 0%, rgba(70, 130, 235, 0.26) 24%, rgba(10, 14, 34, 0) 48%),
+              radial-gradient(120% 120% at 72% 82%, rgba(205, 95, 180, 0.42) 0%, rgba(140, 75, 205, 0.22) 28%, rgba(10, 14, 34, 0) 54%),
+              radial-gradient(circle at 50% 40%, #1a2044 0%, #0c1230 55%, #05081c 100%);
+            box-shadow:
+              inset 0 2px 2px rgba(255, 255, 255, 0.5),
+              inset 0 -10px 22px rgba(0, 0, 0, 0.6),
+              inset -6px -8px 18px rgba(0, 0, 0, 0.45),
+              0 8px 22px rgba(4, 8, 30, 0.5);
+          }
         }
 
         /* ── Ambient multi-hue halo ─────────────────────────────────────── */
