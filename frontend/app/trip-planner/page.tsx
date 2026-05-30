@@ -737,6 +737,7 @@ function FlightRow({
       }}
     >
       <div
+        className="m-grid-1"
         style={{
           display: "grid",
           gridTemplateColumns: "40px 1fr 130px 130px 110px",
