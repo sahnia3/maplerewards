@@ -22,11 +22,32 @@ type ApifyAwardService struct {
 	apiToken string
 	client   *http.Client
 	actorID  string
+	// baseURL is the Apify API v2 root (no trailing slash). It exists ONLY as
+	// a test seam so an httptest.Server can stand in for api.apify.com when
+	// exercising the full run→poll→fetch→parse path. Production always uses the
+	// default below (apifyDefaultBaseURL); nothing outside tests sets it.
+	baseURL string
+	// pollInterval is how long pollUntilDone waits between status checks. It is
+	// a test seam (real runs poll every few seconds; tests shrink it so the
+	// run→poll→fetch loop completes in milliseconds). Zero means use the
+	// production default (apifyDefaultPollInterval).
+	pollInterval time.Duration
 	// quota enforces a hard monthly ceiling on paid actor runs (kill-switch
 	// against a bug/spike running unbounded scrapes). May be nil in tests —
 	// nil means the cap is skipped (treated as unlimited).
 	quota QuotaSpender
 }
+
+// apifyDefaultBaseURL is the real Apify API v2 root. SearchAwards builds every
+// run/poll/dataset URL from this. It is also the production value of the
+// baseURL field — the test seam defaults to exactly this, so production
+// behavior is byte-for-byte unchanged.
+const apifyDefaultBaseURL = "https://api.apify.com/v2"
+
+// apifyDefaultPollInterval is the production status-poll cadence for
+// pollUntilDone. The actor run takes 30-150s, so a few-second poll is fine and
+// keeps request volume low.
+const apifyDefaultPollInterval = 3 * time.Second
 
 // NewApifyAwardService creates the Apify award scraper service. quotaClient
 // may be nil (tests) — when nil the monthly cap is not enforced.
@@ -36,14 +57,27 @@ func NewApifyAwardService(apiToken string, quotaClient QuotaSpender) *ApifyAward
 		client: &http.Client{
 			Timeout: 120 * time.Second, // Actor runs can take a while
 		},
-		actorID: "igolaizola~flight-award-scraper",
-		quota:   quotaClient,
+		actorID:      "igolaizola~flight-award-scraper",
+		baseURL:      apifyDefaultBaseURL,
+		pollInterval: apifyDefaultPollInterval,
+		quota:        quotaClient,
 	}
 }
 
 // IsAvailable returns true if the Apify API token is configured.
 func (s *ApifyAwardService) IsAvailable() bool {
 	return s.apiToken != ""
+}
+
+// apiBaseURL returns the Apify API v2 root, falling back to the real
+// production URL when the field is unset (e.g. a zero-value struct built
+// without the constructor). This keeps the seam invisible to production: the
+// only way baseURL differs from apifyDefaultBaseURL is a test setting it.
+func (s *ApifyAwardService) apiBaseURL() string {
+	if s.baseURL == "" {
+		return apifyDefaultBaseURL
+	}
+	return s.baseURL
 }
 
 // ── Apify actor input/output types ──────────────────────────────────────────
@@ -198,7 +232,7 @@ func (s *ApifyAwardService) SearchAwards(
 func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput) (string, string, error) {
 	body, _ := json.Marshal(input)
 
-	url := fmt.Sprintf("https://api.apify.com/v2/acts/%s/runs", s.actorID)
+	url := fmt.Sprintf("%s/acts/%s/runs", s.apiBaseURL(), s.actorID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 	if err != nil {
@@ -232,13 +266,18 @@ func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput)
 // pollUntilDone polls the run status until SUCCEEDED, FAILED, or timeout.
 func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	url := fmt.Sprintf("https://api.apify.com/v2/actor-runs/%s", runID)
+	url := fmt.Sprintf("%s/actor-runs/%s", s.apiBaseURL(), runID)
+
+	interval := s.pollInterval
+	if interval <= 0 {
+		interval = apifyDefaultPollInterval
+	}
 
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(3 * time.Second):
+		case <-time.After(interval):
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -293,7 +332,7 @@ func readCappedBody(r io.Reader) ([]byte, error) {
 // separate from parse (shape) is what makes the parser unit-testable against a
 // battery of malformed bodies.
 func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) ([]byte, error) {
-	url := fmt.Sprintf("https://api.apify.com/v2/datasets/%s/items?format=json", datasetID)
+	url := fmt.Sprintf("%s/datasets/%s/items?format=json", s.apiBaseURL(), datasetID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
