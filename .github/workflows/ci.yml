@@ -28,9 +28,14 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.59
+          # golangci-lint v2 is required for Go 1.25 (go.mod toolchain go1.25.7).
+          # v1.59's bundled type-checker can't parse 1.25 and emits bogus
+          # "undefined: <imported pkg>" typecheck errors — which is what was
+          # failing every backend CI run. v7 of the action is the one that
+          # supports golangci-lint v2.x.
+          version: v2.12.2
           args: --timeout=5m
 
       - name: go build
