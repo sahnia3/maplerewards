@@ -93,6 +93,13 @@ export default function ToolsIndexPage() {
             cta="Convert points →"
           />
           <ToolCard
+            href="/tools/costco-card-router"
+            eyebrow="Card router"
+            title="Which card works at Costco?"
+            body="Costco Canada is Mastercard-only and codes as a warehouse club, so grocery bonuses don't apply. Pick the cards you hold and see the single best one to swipe at the till."
+            cta="Route my Costco run →"
+          />
+          <ToolCard
             href="/promos"
             eyebrow="Promo Sentinel"
             title="Active transfer-bonus promos"
