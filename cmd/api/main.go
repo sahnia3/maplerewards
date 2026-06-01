@@ -219,6 +219,8 @@ func main() {
 	authSvc := service.NewAuthService(authRepo, walletRepo, jwtSecret)
 	missedRewardsSvc := service.NewMissedRewardsService(walletRepo, spendRepo, optimizerSvc)
 	creditsSvc := service.NewCreditsService(walletRepo, creditRepo)
+	renewalSvc := service.NewRenewalService(walletRepo, spendRepo, creditRepo, cardRepo)
+	transferSweetSpotSvc := service.NewTransferSweetSpotService(walletRepo, loyaltyAccountRepo, cardRepo, transferRepo)
 	sqcSvc := service.NewSQCService(walletRepo, sqcRepo)
 	awardWatchSvc := service.NewAwardWatchService(walletRepo, awardWatchRepo)
 	buyPointsSvc := service.NewBuyPointsService(buyPromoRepo)
@@ -228,6 +230,7 @@ func main() {
 	cardValueSvc := service.NewCardValueService(walletRepo, cardValueRepo)
 	tangerineSvc := service.NewTangerineService(tangerineRepo)
 	loyaltyAccountSvc := service.NewLoyaltyAccountService(walletRepo, loyaltyAccountRepo)
+	expiryGuardianSvc := service.NewExpiryGuardianService(walletRepo, loyaltyAccountRepo, loyaltyAccountRepo, cardRepo)
 	csvImportSvc := service.NewCSVImportService(walletSvc)
 	cardOfferSvc := service.NewCardOfferService(walletRepo, cardOfferRepo)
 	emailVerifyRepo := repo.NewEmailVerifyRepo(pool)
@@ -290,6 +293,20 @@ func main() {
 	affiliateH := handler.NewAffiliateHandler(affiliateRepo, getEnv("FRONTEND_URL", ""))
 	applicationSvc := service.NewApplicationService(applicationRepo, walletRepo, cardRepo)
 	applicationH := handler.NewApplicationHandler(applicationSvc)
+	// Welcome-bonus / churn planner — best next card to apply for. Reuses
+	// applicationSvc.CheckEligibility for the cooldown verdict rather than
+	// reimplementing issuer rules.
+	churnSvc := service.NewChurnPlannerService(walletRepo, cardRepo, spendRepo, applicationSvc)
+	churnH := handler.NewChurnPlannerHandler(churnSvc)
+	// Pro: wallet simulator — net annual-value impact of adding and/or dropping
+	// cards, re-pricing logged spend per category against a hypothetical wallet.
+	simulatorSvc := service.NewSimulatorService(walletRepo, spendRepo, cardRepo)
+	simulatorH := handler.NewSimulatorHandler(simulatorSvc)
+	// Pro: household optimizer — across the user's held cards + a partner's
+	// cards (supplied as catalog ids, never another user's account), who should
+	// use which card per category and which fee-carrying cards are redundant.
+	householdSvc := service.NewHouseholdService(walletRepo, spendRepo, cardRepo)
+	householdH := handler.NewHouseholdHandler(householdSvc)
 	walletH := handler.NewWalletHandler(walletSvc)
 	optimizerH := handler.NewOptimizerHandler(optimizerSvc, walletRepo)
 	spendH := handler.NewSpendHandler(walletSvc)
@@ -318,6 +335,8 @@ func main() {
 	portfolioH := handler.NewPortfolioHandler(walletRepo, cardRepo, spendRepo, transferRepo, optimizerSvc)
 	missedH := handler.NewMissedRewardsHandler(missedRewardsSvc)
 	creditsH := handler.NewCreditsHandler(creditsSvc)
+	renewalH := handler.NewRenewalHandler(renewalSvc)
+	transferSweetSpotH := handler.NewTransferSweetSpotHandler(transferSweetSpotSvc)
 	sqcH := handler.NewSQCHandler(sqcSvc)
 	awardWatchH := handler.NewAwardWatchHandler(awardWatchSvc)
 	buyPointsH := handler.NewBuyPointsHandler(buyPointsSvc)
@@ -328,6 +347,7 @@ func main() {
 	tangerineH := handler.NewTangerineHandler(tangerineSvc)
 	issuerChangesH := handler.NewIssuerChangesHandler(issuerPageRepo)
 	loyaltyAccountH := handler.NewLoyaltyAccountHandler(loyaltyAccountSvc)
+	expiryGuardianH := handler.NewExpiryGuardianHandler(expiryGuardianSvc)
 	csvImportH := handler.NewCSVImportHandler(csvImportSvc)
 	cardOfferH := handler.NewCardOfferHandler(cardOfferSvc)
 	compareH := handler.NewCompareHandler(cardRepo, transferRepo)
@@ -652,6 +672,26 @@ func main() {
 			r.Post("/wallet/{sessionID}/credits", creditsH.AddCredit)
 			r.Post("/wallet/{sessionID}/credits/{creditDefID}/redeem", creditsH.RecordRedemption)
 
+			// Pro: renewal optimizer — keep / use-credits / downgrade-or-cancel per card
+			r.Get("/wallet/{sessionID}/renewal-optimizer", renewalH.GetRenewal)
+
+			// Pro: transfer sweet-spot finder — best value-increasing transfer-
+			// partner move per program the user holds points in
+			r.Get("/wallet/{sessionID}/transfer-sweet-spots", transferSweetSpotH.GetSweetSpots)
+
+			// Pro: welcome-bonus / churn planner — best next card to apply for,
+			// gated by issuer cooldown eligibility + min-spend feasibility
+			r.Get("/wallet/{sessionID}/churn-planner", churnH.GetPlan)
+
+			// Pro: wallet simulator — net annual-value impact of adding and/or
+			// dropping cards (re-prices logged spend per category, nets fees)
+			r.Post("/wallet/{sessionID}/simulator", simulatorH.Simulate)
+
+			// Pro: household optimizer — best card + owner per category across
+			// the user's cards + a partner's cards (catalog ids in the body),
+			// plus redundant fee-carrying cards you could cancel
+			r.Post("/wallet/{sessionID}/household", householdH.Analyze)
+
 			// 2026 Aeroplan SQC projector
 			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)
 
@@ -677,6 +717,9 @@ func main() {
 			r.Post("/wallet/{sessionID}/loyalty-accounts", loyaltyAccountH.Create)
 			r.Put("/wallet/{sessionID}/loyalty-accounts/{accountID}", loyaltyAccountH.Update)
 			r.Delete("/wallet/{sessionID}/loyalty-accounts/{accountID}", loyaltyAccountH.Delete)
+
+			// Pro: points-expiry guardian — when balances lapse + how to reset the clock
+			r.Get("/wallet/{sessionID}/expiry-guardian", expiryGuardianH.GetGuardian)
 
 			// Card-linked offer tracker (Amex Offers / RBC Offers / Scene+)
 			r.Get("/wallet/{sessionID}/offers", cardOfferH.List)

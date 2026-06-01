@@ -16,10 +16,16 @@ import { CreditsTile } from "@/components/pro-tools/CreditsTile";
 import { CardValueTile } from "@/components/pro-tools/CardValueTile";
 import { IssuerChangesTile } from "@/components/pro-tools/IssuerChangesTile";
 import { SQCTile } from "@/components/pro-tools/SQCTile";
+import { RenewalTile } from "@/components/pro-tools/RenewalTile";
+import { TransferSweetSpotsTile } from "@/components/pro-tools/TransferSweetSpotsTile";
 import { LoyaltyAccountsTile } from "@/components/pro-tools/LoyaltyAccountsTile";
+import { ExpiryGuardianTile } from "@/components/pro-tools/ExpiryGuardianTile";
 import { AwardWatchTile } from "@/components/pro-tools/AwardWatchTile";
 import { StackTemplates } from "@/components/pro-tools/StackTemplates";
 import { StackTile } from "@/components/pro-tools/StackTile";
+import { ChurnPlannerTile } from "@/components/pro-tools/ChurnPlannerTile";
+import { SimulatorTile } from "@/components/pro-tools/SimulatorTile";
+import { HouseholdTile } from "@/components/pro-tools/HouseholdTile";
 import { BuyPointsTile } from "@/components/pro-tools/BuyPointsTile";
 import { CardOffersTile } from "@/components/pro-tools/CardOffersTile";
 import { DevaluationTile } from "@/components/pro-tools/DevaluationTile";
@@ -41,10 +47,10 @@ interface TabSpec {
 }
 
 const TABS: TabSpec[] = [
-  { key: "forensics", label: "Forensics", count: 4, hint: "What you missed, what's expiring, what changed." },
-  { key: "status", label: "Status & balances", count: 3, hint: "Aeroplan SQC, loyalty programs, award watches." },
-  { key: "stacking", label: "Stacking & math", count: 4, hint: "Card combos, portal stacks, buy-points, offers." },
-  { key: "knowledge", label: "Knowledge", count: 3, hint: "Devaluations, India hotels, PC Optimum." },
+  { key: "forensics", label: "Forensics", count: 6, hint: "What you missed, what to renew, what's expiring, what changed." },
+  { key: "status", label: "Status & balances", count: 5, hint: "Aeroplan SQC, loyalty programs, transfer sweet-spots, points expiry, award watches." },
+  { key: "stacking", label: "Stacking & math", count: 7, hint: "Your next best card, wallet swap simulator, household optimizer, card combos, portal stacks, buy-points, offers." },
+  { key: "knowledge", label: "Knowledge", count: 2, hint: "Devaluations, PC Optimum." },
 ];
 
 export default function ProToolsPage() {
@@ -86,7 +92,7 @@ export default function ProToolsPage() {
               The <span style={{ fontStyle: "italic", color: "var(--accent)" }}>Pro</span> toolkit.
             </>
           }
-          lede="14 Canadian-rewards tools grouped by purpose. Forensics shows what you've missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead of program changes."
+          lede="20 Canadian-rewards tools grouped by purpose. Forensics shows what you've missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead of program changes."
         />
 
         <ProToolsPersonalStrip sessionId={sessionId} isReady={isReady} />
@@ -181,6 +187,8 @@ export default function ProToolsPage() {
             <LeafDivider />
             <CreditsTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
+            <RenewalTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
             <CardValueTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <IssuerChangesTile />
@@ -193,12 +201,22 @@ export default function ProToolsPage() {
             <LeafDivider />
             <LoyaltyAccountsTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
             <LeafDivider />
+            <TransferSweetSpotsTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
+            <ExpiryGuardianTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
             <AwardWatchTile sessionId={sessionId} ensureSession={ensureSession} />
           </>
         )}
 
         {active === "stacking" && (
           <>
+            <ChurnPlannerTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
+            <SimulatorTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
+            <HouseholdTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
             <StackTemplates sessionId={sessionId} />
             <LeafDivider />
             <StackTile sessionId={sessionId} ensureSession={ensureSession} />

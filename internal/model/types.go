@@ -632,6 +632,26 @@ type SQCProjection struct {
 	// Without this disclosure CurrentTier silently implied full qualification
 	// on SQC alone, overstating the user's actual status.
 	RevenueFloorNote string `json:"revenue_floor_note,omitempty"`
+
+	// ── Optional flight inputs (additive; both 0 ⇒ legacy card-spend-only
+	// behaviour). The user can self-report flight SQC and flight revenue so the
+	// projection accounts for the Aeroplan 2026 rule that elite status needs
+	// BOTH enough SQC AND a minimum flight-revenue floor per tier. ──────────
+	FlightSQC      int     `json:"flight_sqc"`       // SQC the user reports earning from flights/partners (echoed)
+	FlightSpendCAD float64 `json:"flight_spend_cad"` // flight revenue (CAD) the user reports for the year (echoed)
+	// QualifiedTier is the highest tier the user TRULY qualifies for — meeting
+	// BOTH the SQC threshold (card + flight) AND that tier's flight-revenue
+	// floor. "" when no tier is fully met. May trail CurrentTier when the SQC
+	// is there but the revenue floor isn't.
+	QualifiedTier string `json:"qualified_tier,omitempty"`
+	// RevenueFloorCAD is the min_revenue_cad of the next/target tier (NextTier
+	// when present, else the current tier). 0 when no floor applies.
+	RevenueFloorCAD float64 `json:"revenue_floor_cad,omitempty"`
+	// RevenueFloorMet reports whether FlightSpendCAD already clears RevenueFloorCAD.
+	RevenueFloorMet bool `json:"revenue_floor_met"`
+	// RevenueFloorGapCAD is the additional flight revenue needed to clear the
+	// next/target tier's floor. 0 when already met (or no floor).
+	RevenueFloorGapCAD float64 `json:"revenue_floor_gap_cad,omitempty"`
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────

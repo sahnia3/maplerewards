@@ -691,8 +691,78 @@ export async function recordCreditRedemption(
 
 import type { SQCProjection } from "./types";
 
-export async function getSQCProjection(sessionId: string): Promise<SQCProjection> {
-  return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection`);
+export async function getSQCProjection(
+  sessionId: string,
+  opts?: { flightSqc?: number; flightSpendCad?: number },
+): Promise<SQCProjection> {
+  const qs = new URLSearchParams();
+  if (opts?.flightSqc != null) qs.set("flight_sqc", String(opts.flightSqc));
+  if (opts?.flightSpendCad != null) qs.set("flight_spend_cad", String(opts.flightSpendCad));
+  const tail = qs.toString() ? `?${qs.toString()}` : "";
+  return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection${tail}`);
+}
+
+// ── Renewal optimizer ────────────────────────────────────────────────────────
+
+import type { RenewalReport } from "./types";
+
+export async function getRenewalReport(sessionId: string): Promise<RenewalReport> {
+  return request<RenewalReport>(`/wallet/${sessionId}/renewal-optimizer`);
+}
+
+// ── Transfer sweet-spot finder ───────────────────────────────────────────────
+
+import type { TransferSweetSpotReport } from "./types";
+
+export async function getTransferSweetSpots(sessionId: string): Promise<TransferSweetSpotReport> {
+  return request<TransferSweetSpotReport>(`/wallet/${sessionId}/transfer-sweet-spots`);
+}
+
+// ── Welcome-bonus / churn planner ────────────────────────────────────────────
+
+import type { ChurnPlan } from "./types";
+
+export async function getChurnPlan(sessionId: string): Promise<ChurnPlan> {
+  return request<ChurnPlan>(`/wallet/${sessionId}/churn-planner`);
+}
+
+// ── Wallet simulator ─────────────────────────────────────────────────────────
+
+import type { SimulationResult } from "./types";
+
+export async function getWalletSimulation(
+  sessionId: string,
+  opts: { addCardIds?: string[]; dropCardIds?: string[] },
+): Promise<SimulationResult> {
+  return request<SimulationResult>(`/wallet/${sessionId}/simulator`, {
+    method: "POST",
+    body: JSON.stringify({
+      add_card_ids: opts.addCardIds ?? [],
+      drop_card_ids: opts.dropCardIds ?? [],
+    }),
+  });
+}
+
+// ── Household optimizer ──────────────────────────────────────────────────────
+
+import type { HouseholdReport } from "./types";
+
+export async function getHouseholdReport(
+  sessionId: string,
+  partnerCardIds: string[],
+): Promise<HouseholdReport> {
+  return request<HouseholdReport>(`/wallet/${sessionId}/household`, {
+    method: "POST",
+    body: JSON.stringify({ partner_card_ids: partnerCardIds }),
+  });
+}
+
+// ── Points-expiry guardian ───────────────────────────────────────────────────
+
+import type { ExpiryReport } from "./types";
+
+export async function getExpiryGuardian(sessionId: string): Promise<ExpiryReport> {
+  return request<ExpiryReport>(`/wallet/${sessionId}/expiry-guardian`);
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────

@@ -483,6 +483,193 @@ export interface SQCProjection {
   spend_to_next_tier?: number;
   best_card_for_gap?: string;
   wallet_has_no_aeroplan_cards: boolean;
+  /** Disclosure when the current/next tier also enforces a flight-revenue floor. */
+  revenue_floor_note?: string;
+  // ── Optional flight inputs (additive; default 0 ⇒ legacy behaviour) ──────
+  /** Echoed flight SQC the user self-reported. */
+  flight_sqc?: number;
+  /** Echoed flight revenue (CAD) the user self-reported. */
+  flight_spend_cad?: number;
+  /** Highest tier meeting BOTH the SQC threshold AND its flight-revenue floor. */
+  qualified_tier?: string;
+  /** min_revenue_cad for the next/target tier (0 if no floor). */
+  revenue_floor_cad?: number;
+  /** Whether reported flight revenue clears revenue_floor_cad. */
+  revenue_floor_met?: boolean;
+  /** Additional flight revenue (CAD) needed to clear the next tier's floor. */
+  revenue_floor_gap_cad?: number;
+}
+
+// ── Renewal optimizer ────────────────────────────────────────────────────────
+
+export interface RenewalDowngradeOption {
+  card_id: string;
+  card_name: string;
+  annual_fee: number;
+  fee_saved: number;
+}
+
+export interface RenewalAssessment {
+  card_id: string;
+  card_name: string;
+  issuer: string;
+  program_name: string;
+  annual_fee: number;
+  fee_renewal_date?: string;
+  days_to_renewal?: number;
+  spend_value: number;
+  credits_value: number;
+  credits_used: number;
+  realized_net: number;
+  potential_net: number;
+  verdict: string;
+  rationale: string;
+  downgrade_options?: RenewalDowngradeOption[];
+}
+
+export interface RenewalReport {
+  year: number;
+  assessments: RenewalAssessment[];
+  total_annual_fees: number;
+  total_net_value: number;
+  potential_savings: number;
+}
+
+// ── Transfer sweet-spot finder ───────────────────────────────────────────────
+
+export interface TransferOption {
+  to_program_slug: string;
+  to_program_name: string;
+  transfer_ratio: number;
+  transferred_points: number;
+  transfer_value_cad: number;
+  uplift_cad: number;
+  min_transfer: number;
+  eligible: boolean;
+}
+
+export interface TransferSweetSpotSource {
+  program_slug: string;
+  program_name: string;
+  points: number;
+  keep_value_cad: number;
+  base_cpp: number;
+  best_transfer: TransferOption | null;
+  all_transfers: TransferOption[];
+}
+
+export interface TransferSweetSpotReport {
+  sources: TransferSweetSpotSource[];
+  total_potential_uplift_cad: number;
+  note: string;
+}
+
+// ── Welcome-bonus / churn planner ────────────────────────────────────────────
+
+export interface ChurnCandidate {
+  card_id: string;
+  card_name: string;
+  issuer: string;
+  program_name: string;
+  welcome_bonus_points: number;
+  welcome_bonus_value_cad: number;
+  annual_fee: number;
+  net_first_year_value_cad: number;
+  min_spend: number;
+  min_spend_months: number;
+  monthly_spend_needed_cad: number;
+  min_spend_feasible: boolean;
+  eligible: boolean;
+  block_reason?: string;
+  earliest_eligible_date?: string | null; // ISO YYYY-MM-DD, set when cooldown-blocked
+}
+
+export interface ChurnPlan {
+  year: number;
+  recommendations: ChurnCandidate[];
+  blocked: ChurnCandidate[];
+  best_next_card: string;
+  total_potential_bonus_value_cad: number;
+}
+
+// ── Wallet simulator ──────────────────────────────────────────────────────────
+
+export interface SimulatorCardRef {
+  card_id: string;
+  card_name: string;
+  annual_fee: number;
+}
+
+export interface SimulatorCategoryChange {
+  category_name: string;
+  annual_spend: number;
+  before_card: string;
+  before_value: number;
+  after_card: string;
+  after_value: number;
+  delta_cad: number;
+}
+
+export interface SimulationResult {
+  baseline_annual_value: number;
+  simulated_annual_value: number;
+  value_delta_cad: number;
+  fee_delta_cad: number;
+  net_delta_after_fees_cad: number;
+  added: SimulatorCardRef[];
+  dropped: SimulatorCardRef[];
+  category_changes: SimulatorCategoryChange[];
+  ignored_already_held: string[];
+  ignored_not_held: string[];
+  note: string;
+}
+
+// ── Household optimizer ───────────────────────────────────────────────────────
+
+export interface HouseholdCategoryCoverage {
+  category_name: string;
+  best_card_id: string;
+  best_card_name: string;
+  owner: "you" | "partner";
+  effective_value: number;
+}
+
+export interface HouseholdCancelCandidate {
+  card_id: string;
+  card_name: string;
+  owner: "you" | "partner";
+  annual_fee: number;
+  reason: string;
+}
+
+export interface HouseholdReport {
+  category_coverage: HouseholdCategoryCoverage[];
+  cancel_candidates: HouseholdCancelCandidate[];
+  total_fee_savings_opportunity_cad: number;
+  you_card_count: number;
+  partner_card_count: number;
+  note: string;
+}
+
+// ── Points-expiry guardian ───────────────────────────────────────────────────
+
+export interface ExpiryAccount {
+  program_slug: string;
+  program_name: string;
+  account_label?: string | null;
+  balance: number;
+  effective_expiry?: string | null; // ISO date, null = never
+  days_to_expiry?: number | null;   // null = never
+  points_at_risk_cad: number;
+  risk: string; // critical | warning | watch | ok | none
+  reset_suggestion: string;
+}
+
+export interface ExpiryReport {
+  generated_year: number;
+  accounts: ExpiryAccount[];
+  total_points_at_risk_cad: number;
+  accounts_expiring_soon: number;
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────

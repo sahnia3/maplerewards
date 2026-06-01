@@ -27,7 +27,15 @@ func NewSQCService(walletRepo WalletRepository, sqcRepo SQCRepository) *SQCServi
 	return &SQCService{walletRepo: walletRepo, sqcRepo: sqcRepo}
 }
 
-func (s *SQCService) Project(ctx context.Context, sessionID string) (*model.SQCProjection, error) {
+// SQCFlightInputs carries the OPTIONAL self-reported flight figures. The zero
+// value (both 0) reproduces the legacy card-spend-only projection exactly, so
+// existing callers can pass an empty struct.
+type SQCFlightInputs struct {
+	FlightSQC      int     // SQC earned on flights/partners (not tracked by Maple)
+	FlightSpendCAD float64 // flight revenue in CAD for the year
+}
+
+func (s *SQCService) Project(ctx context.Context, sessionID string, flights SQCFlightInputs) (*model.SQCProjection, error) {
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
@@ -43,10 +51,17 @@ func (s *SQCService) Project(ctx context.Context, sessionID string) (*model.SQCP
 		Cards:            cards,
 		Tiers:            tiers,
 		WalletHasNoCards: len(cards) == 0,
+		FlightSQC:        flights.FlightSQC,
+		FlightSpendCAD:   flights.FlightSpendCAD,
 	}
 	for _, c := range cards {
 		out.TotalSQCEarned += c.SQCEarned
 	}
+	// Flight SQC the user self-reports folds into the running total so the
+	// current/next-tier math (below) reflects card + flight credits. With the
+	// default flights.FlightSQC == 0 this is a no-op and the projection is
+	// identical to the card-spend-only behaviour.
+	out.TotalSQCEarned += flights.FlightSQC
 
 	// Determine current and next tier. The current/next logic below assumes
 	// tiers ascend by SQCRequired; GetUserSQCContext does not guarantee order
@@ -82,6 +97,27 @@ func (s *SQCService) Project(ctx context.Context, sessionID string) (*model.SQCP
 			out.RevenueFloorNote = fmt.Sprintf(
 				"%s also requires ~$%.0f minimum flight revenue in addition to the SQC shown.",
 				out.NextTier, nextTierRevFloor)
+		}
+
+		// QualifiedTier: the TRUE tier — highest one where BOTH the SQC total
+		// (card + flight) clears sqc_required AND reported flight revenue clears
+		// min_revenue_cad. This can trail CurrentTier when the SQC is there but
+		// the flight-revenue floor isn't. Tiers are already sorted ascending.
+		for _, t := range tiers {
+			if out.TotalSQCEarned >= t.SQCRequired && out.FlightSpendCAD >= t.MinRevenueCAD {
+				out.QualifiedTier = t.StatusLevel
+			}
+		}
+
+		// RevenueFloorCAD targets the next tier the user is climbing toward
+		// (NextTier when present, else the current tier they've reached on SQC).
+		out.RevenueFloorCAD = nextTierRevFloor
+		if out.NextTier == "" {
+			out.RevenueFloorCAD = currentTierRevFloor
+		}
+		out.RevenueFloorMet = out.FlightSpendCAD >= out.RevenueFloorCAD
+		if !out.RevenueFloorMet {
+			out.RevenueFloorGapCAD = out.RevenueFloorCAD - out.FlightSpendCAD
 		}
 	}
 

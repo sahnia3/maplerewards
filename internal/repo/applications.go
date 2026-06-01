@@ -138,3 +138,19 @@ func (r *ApplicationRepo) LastApplicationForIssuer(ctx context.Context, userID, 
 	}
 	return *t, nil
 }
+
+// CountApplicationsForIssuerSince counts a user's applications to an issuer on
+// or after `since`. Used by CheckEligibility to evaluate max_per_year rules.
+func (r *ApplicationRepo) CountApplicationsForIssuerSince(ctx context.Context, userID, issuer string, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM card_applications a
+		JOIN cards c ON c.id = a.card_id
+		WHERE a.user_id = $1 AND c.issuer = $2 AND a.applied_at >= $3::date
+	`, userID, issuer, since.Format("2006-01-02")).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count applications for issuer since: %w", err)
+	}
+	return n, nil
+}
