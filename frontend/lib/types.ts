@@ -535,6 +535,35 @@ export interface RenewalReport {
   potential_savings: number;
 }
 
+// ── Transfer sweet-spot finder ───────────────────────────────────────────────
+
+export interface TransferOption {
+  to_program_slug: string;
+  to_program_name: string;
+  transfer_ratio: number;
+  transferred_points: number;
+  transfer_value_cad: number;
+  uplift_cad: number;
+  min_transfer: number;
+  eligible: boolean;
+}
+
+export interface TransferSweetSpotSource {
+  program_slug: string;
+  program_name: string;
+  points: number;
+  keep_value_cad: number;
+  base_cpp: number;
+  best_transfer: TransferOption | null;
+  all_transfers: TransferOption[];
+}
+
+export interface TransferSweetSpotReport {
+  sources: TransferSweetSpotSource[];
+  total_potential_uplift_cad: number;
+  note: string;
+}
+
 // ── Welcome-bonus / churn planner ────────────────────────────────────────────
 
 export interface ChurnCandidate {

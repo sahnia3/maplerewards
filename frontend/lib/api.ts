@@ -710,6 +710,14 @@ export async function getRenewalReport(sessionId: string): Promise<RenewalReport
   return request<RenewalReport>(`/wallet/${sessionId}/renewal-optimizer`);
 }
 
+// ── Transfer sweet-spot finder ───────────────────────────────────────────────
+
+import type { TransferSweetSpotReport } from "./types";
+
+export async function getTransferSweetSpots(sessionId: string): Promise<TransferSweetSpotReport> {
+  return request<TransferSweetSpotReport>(`/wallet/${sessionId}/transfer-sweet-spots`);
+}
+
 // ── Welcome-bonus / churn planner ────────────────────────────────────────────
 
 import type { ChurnPlan } from "./types";

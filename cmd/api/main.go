@@ -220,6 +220,7 @@ func main() {
 	missedRewardsSvc := service.NewMissedRewardsService(walletRepo, spendRepo, optimizerSvc)
 	creditsSvc := service.NewCreditsService(walletRepo, creditRepo)
 	renewalSvc := service.NewRenewalService(walletRepo, spendRepo, creditRepo, cardRepo)
+	transferSweetSpotSvc := service.NewTransferSweetSpotService(walletRepo, loyaltyAccountRepo, cardRepo, transferRepo)
 	sqcSvc := service.NewSQCService(walletRepo, sqcRepo)
 	awardWatchSvc := service.NewAwardWatchService(walletRepo, awardWatchRepo)
 	buyPointsSvc := service.NewBuyPointsService(buyPromoRepo)
@@ -330,6 +331,7 @@ func main() {
 	missedH := handler.NewMissedRewardsHandler(missedRewardsSvc)
 	creditsH := handler.NewCreditsHandler(creditsSvc)
 	renewalH := handler.NewRenewalHandler(renewalSvc)
+	transferSweetSpotH := handler.NewTransferSweetSpotHandler(transferSweetSpotSvc)
 	sqcH := handler.NewSQCHandler(sqcSvc)
 	awardWatchH := handler.NewAwardWatchHandler(awardWatchSvc)
 	buyPointsH := handler.NewBuyPointsHandler(buyPointsSvc)
@@ -667,6 +669,10 @@ func main() {
 
 			// Pro: renewal optimizer — keep / use-credits / downgrade-or-cancel per card
 			r.Get("/wallet/{sessionID}/renewal-optimizer", renewalH.GetRenewal)
+
+			// Pro: transfer sweet-spot finder — best value-increasing transfer-
+			// partner move per program the user holds points in
+			r.Get("/wallet/{sessionID}/transfer-sweet-spots", transferSweetSpotH.GetSweetSpots)
 
 			// Pro: welcome-bonus / churn planner — best next card to apply for,
 			// gated by issuer cooldown eligibility + min-spend feasibility

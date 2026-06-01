@@ -17,6 +17,7 @@ import { CardValueTile } from "@/components/pro-tools/CardValueTile";
 import { IssuerChangesTile } from "@/components/pro-tools/IssuerChangesTile";
 import { SQCTile } from "@/components/pro-tools/SQCTile";
 import { RenewalTile } from "@/components/pro-tools/RenewalTile";
+import { TransferSweetSpotsTile } from "@/components/pro-tools/TransferSweetSpotsTile";
 import { LoyaltyAccountsTile } from "@/components/pro-tools/LoyaltyAccountsTile";
 import { ExpiryGuardianTile } from "@/components/pro-tools/ExpiryGuardianTile";
 import { AwardWatchTile } from "@/components/pro-tools/AwardWatchTile";
@@ -46,7 +47,7 @@ interface TabSpec {
 
 const TABS: TabSpec[] = [
   { key: "forensics", label: "Forensics", count: 6, hint: "What you missed, what to renew, what's expiring, what changed." },
-  { key: "status", label: "Status & balances", count: 4, hint: "Aeroplan SQC, loyalty programs, points expiry, award watches." },
+  { key: "status", label: "Status & balances", count: 5, hint: "Aeroplan SQC, loyalty programs, transfer sweet-spots, points expiry, award watches." },
   { key: "stacking", label: "Stacking & math", count: 6, hint: "Your next best card, wallet swap simulator, card combos, portal stacks, buy-points, offers." },
   { key: "knowledge", label: "Knowledge", count: 3, hint: "Devaluations, India hotels, PC Optimum." },
 ];
@@ -198,6 +199,8 @@ export default function ProToolsPage() {
             <SQCTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <LoyaltyAccountsTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
+            <LeafDivider />
+            <TransferSweetSpotsTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <ExpiryGuardianTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
