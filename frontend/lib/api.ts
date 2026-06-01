@@ -743,6 +743,20 @@ export async function getWalletSimulation(
   });
 }
 
+// ── Household optimizer ──────────────────────────────────────────────────────
+
+import type { HouseholdReport } from "./types";
+
+export async function getHouseholdReport(
+  sessionId: string,
+  partnerCardIds: string[],
+): Promise<HouseholdReport> {
+  return request<HouseholdReport>(`/wallet/${sessionId}/household`, {
+    method: "POST",
+    body: JSON.stringify({ partner_card_ids: partnerCardIds }),
+  });
+}
+
 // ── Points-expiry guardian ───────────────────────────────────────────────────
 
 import type { ExpiryReport } from "./types";

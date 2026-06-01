@@ -302,6 +302,11 @@ func main() {
 	// cards, re-pricing logged spend per category against a hypothetical wallet.
 	simulatorSvc := service.NewSimulatorService(walletRepo, spendRepo, cardRepo)
 	simulatorH := handler.NewSimulatorHandler(simulatorSvc)
+	// Pro: household optimizer — across the user's held cards + a partner's
+	// cards (supplied as catalog ids, never another user's account), who should
+	// use which card per category and which fee-carrying cards are redundant.
+	householdSvc := service.NewHouseholdService(walletRepo, spendRepo, cardRepo)
+	householdH := handler.NewHouseholdHandler(householdSvc)
 	walletH := handler.NewWalletHandler(walletSvc)
 	optimizerH := handler.NewOptimizerHandler(optimizerSvc, walletRepo)
 	spendH := handler.NewSpendHandler(walletSvc)
@@ -681,6 +686,11 @@ func main() {
 			// Pro: wallet simulator — net annual-value impact of adding and/or
 			// dropping cards (re-prices logged spend per category, nets fees)
 			r.Post("/wallet/{sessionID}/simulator", simulatorH.Simulate)
+
+			// Pro: household optimizer — best card + owner per category across
+			// the user's cards + a partner's cards (catalog ids in the body),
+			// plus redundant fee-carrying cards you could cancel
+			r.Post("/wallet/{sessionID}/household", householdH.Analyze)
 
 			// 2026 Aeroplan SQC projector
 			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)

@@ -624,6 +624,33 @@ export interface SimulationResult {
   note: string;
 }
 
+// ── Household optimizer ───────────────────────────────────────────────────────
+
+export interface HouseholdCategoryCoverage {
+  category_name: string;
+  best_card_id: string;
+  best_card_name: string;
+  owner: "you" | "partner";
+  effective_value: number;
+}
+
+export interface HouseholdCancelCandidate {
+  card_id: string;
+  card_name: string;
+  owner: "you" | "partner";
+  annual_fee: number;
+  reason: string;
+}
+
+export interface HouseholdReport {
+  category_coverage: HouseholdCategoryCoverage[];
+  cancel_candidates: HouseholdCancelCandidate[];
+  total_fee_savings_opportunity_cad: number;
+  you_card_count: number;
+  partner_card_count: number;
+  note: string;
+}
+
 // ── Points-expiry guardian ───────────────────────────────────────────────────
 
 export interface ExpiryAccount {
