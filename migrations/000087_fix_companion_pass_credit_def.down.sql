@@ -1,0 +1,3 @@
+-- Intentional no-op: this migration deletes erroneous data (a spend threshold
+-- mis-stored as a $25,000 statement credit). Rolling back does not restore the
+-- incorrect rows.
