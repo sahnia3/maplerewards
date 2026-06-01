@@ -34,7 +34,7 @@ export function WalletAffordPill({
           display: "inline-flex",
           alignItems: "center",
           gap: 4,
-          fontSize: 9,
+          fontSize: 12,
           padding: "3px 9px",
           borderRadius: 999,
           background: "rgba(34, 139, 84, 0.10)",
@@ -68,7 +68,7 @@ export function WalletAffordPill({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          fontSize: 9,
+          fontSize: 12,
           padding: "3px 9px",
           borderRadius: 999,
           background: "var(--surface-2)",
@@ -85,7 +85,7 @@ export function WalletAffordPill({
           href={boostHref}
           className="mono"
           style={{
-            fontSize: 9,
+            fontSize: 12,
             padding: "3px 9px",
             borderRadius: 999,
             background: "var(--ink)",

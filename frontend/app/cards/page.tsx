@@ -86,6 +86,7 @@ export default function CardsPage() {
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         {/* ── Masthead ─────────────────────────────────────────────── */}
         <header
+          className="page-masthead"
           style={{
             borderBottom: "1px solid var(--rule)",
             paddingBottom: 28,
@@ -103,7 +104,7 @@ export default function CardsPage() {
               <span className="eyebrow">{allCards.length} cards · CAD</span>
             </div>
             <h1
-              className="display"
+              className="display page-masthead-title"
               style={{ fontSize: "clamp(40px, 5vw, 56px)", margin: 0, letterSpacing: "-0.015em", lineHeight: 0.96 }}
             >
               The Canadian<br />
@@ -129,8 +130,8 @@ export default function CardsPage() {
             href="/wallet"
             className="btn btn-primary"
             style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
               fontWeight: 600,
@@ -330,10 +331,12 @@ export default function CardsPage() {
         {/* ── Available-cards ledger ──────────────────────────────── */}
         <section>
           {cardsLoading ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <RowSkeleton key={i} />
-              ))}
+            <div className="m-scroll-x">
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 680 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <RowSkeleton key={i} />
+                ))}
+              </div>
             </div>
           ) : cardsError ? (
             <div
@@ -360,25 +363,28 @@ export default function CardsPage() {
               </p>
             </div>
           ) : (
-            <div
-              style={{
-                borderTop: "1px solid var(--ink)",
-                borderBottom: "1px solid var(--rule)",
-              }}
-            >
-              {filtered.map((card) => {
-                const inWallet = walletCardIds.has(card.id) || addedIds.has(card.id);
-                const isAdding = addingCardId === card.id;
-                return (
-                  <CardLedgerRow
-                    key={card.id}
-                    card={card}
-                    inWallet={inWallet}
-                    isAdding={isAdding}
-                    onAdd={() => !inWallet && handleAddCard(card.id)}
-                  />
-                );
-              })}
+            <div className="m-scroll-x">
+              <div
+                style={{
+                  borderTop: "1px solid var(--ink)",
+                  borderBottom: "1px solid var(--rule)",
+                  minWidth: 680,
+                }}
+              >
+                {filtered.map((card) => {
+                  const inWallet = walletCardIds.has(card.id) || addedIds.has(card.id);
+                  const isAdding = addingCardId === card.id;
+                  return (
+                    <CardLedgerRow
+                      key={card.id}
+                      card={card}
+                      inWallet={inWallet}
+                      isAdding={isAdding}
+                      onAdd={() => !inWallet && handleAddCard(card.id)}
+                    />
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
@@ -446,7 +452,6 @@ function CardLedgerRow({
   return (
     <Link
       href={`/cards/${card.id}`}
-      className="m-grid-1"
       style={{
         display: "grid",
         gridTemplateColumns: "84px 1fr 180px 120px 130px",
@@ -548,7 +553,6 @@ function CardLedgerRow({
 function RowSkeleton() {
   return (
     <div
-      className="m-grid-1"
       style={{
         display: "grid",
         gridTemplateColumns: "84px 1fr 180px 120px 130px",

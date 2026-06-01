@@ -246,12 +246,10 @@ export function Term({ k, children }: TermProps) {
               }}
             >
               <div
-                className="mono"
+                className="eyebrow"
                 style={{
-                  fontSize: 9,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  opacity: 0.65,
+                  color: "var(--surface)",
+                  opacity: 0.7,
                   marginBottom: 4,
                 }}
               >

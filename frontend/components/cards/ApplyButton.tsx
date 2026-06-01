@@ -71,12 +71,11 @@ export function ApplyButton({
         Apply Now →
       </a>
       <div
-        className="mono"
+        className="sans"
         style={{
-          fontSize: 9,
-          color: "var(--ink-3)",
-          letterSpacing: "0.10em",
-          textTransform: "uppercase",
+          fontSize: 12,
+          color: "var(--ink-2)",
+          letterSpacing: "0.04em",
         }}
       >
         Commission link · no extra cost to you

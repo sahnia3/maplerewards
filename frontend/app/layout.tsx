@@ -1,7 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
-import { Instrument_Serif, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
 
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -12,25 +10,34 @@ import { InstallPWAPrompt } from "@/components/install-pwa-prompt";
 import { CookieConsent } from "@/components/cookie-consent";
 import { ErrorReporterInit } from "@/components/error-reporter-init";
 
-const instrumentSerif = Instrument_Serif({
+// Display / headings / italic lede — variable optical-size serif. The opsz
+// axis lets one family serve 72px heroes AND the 17px lede legibly; the old
+// single-weight Instrument Serif could do neither well over the page grain.
+const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: "400",
+  // Variable font: omit `weight` so the full wght axis loads alongside opsz
+  // (next/font rejects `axes` when a static `weight` is pinned). CSS drives
+  // the weights — 300–600 plus the 450 used in the dark-mode body.
+  axes: ["opsz"],
   style: ["normal", "italic"],
-  variable: "--font-instrument-serif",
+  variable: "--font-display-src",
   display: "swap",
 });
 
-const interTight = Inter_Tight({
+// Body + UI labels + numerics — variable. Tabular figures requested in .mono.
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-inter-tight",
+  // Fully variable (no pinned weight) so arbitrary weights resolve exactly —
+  // including the dark-mode body weight 450 and the 600/700 label weights.
+  variable: "--font-sans-src",
   display: "swap",
 });
 
+// Scoped to code blocks only (.chat-message pre/code) — not used for labels.
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
-  variable: "--font-jetbrains-mono",
+  variable: "--font-code-src",
   display: "swap",
 });
 
@@ -55,11 +62,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const fontVars = [
-    instrumentSerif.variable,
-    interTight.variable,
+    fraunces.variable,
+    inter.variable,
     jetbrainsMono.variable,
-    GeistSans.variable,
-    GeistMono.variable,
   ].join(" ");
 
   return (

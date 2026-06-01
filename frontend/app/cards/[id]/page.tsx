@@ -378,7 +378,20 @@ export default function CardDetailPage() {
   const { card, multipliers, transfer_partners, value_range_low, value_range_high } = detail;
 
   return (
-    <div className="reveal" style={{ paddingTop: 0 }}>
+    <div className="reveal cards-detail-root" style={{ paddingTop: 0 }}>
+      {/* Dark-mode gold tokens. --gold/--gold-soft/--gold-tint are defined only
+          in :root (light) in globals.css, so in dark mode the gold annual-fee
+          pill, the cap-amount badge on earn rates, the 2× earn tone, and the
+          hero radial backdrop resolved to undefined. Brighten them to read on
+          the dark surface (mirrors how the dark block lifts --chart-gold).
+          Scoped to this page root, not globals.css. */}
+      <style>{`
+        [data-theme="dark"] .cards-detail-root {
+          --gold: #ECC868;
+          --gold-soft: rgba(236, 200, 104, 0.24);
+          --gold-tint: rgba(236, 200, 104, 0.14);
+        }
+      `}</style>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         <BackButton onClick={goBack} label={backLabel} />
 

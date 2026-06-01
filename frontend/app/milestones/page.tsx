@@ -545,14 +545,9 @@ function BonusStat({
         {value}
       </div>
       <div
-        className="mono"
+        className="eyebrow"
         style={{
           marginTop: 4,
-          fontSize: 9,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "var(--ink-3)",
-          fontWeight: 500,
         }}
       >
         {label}

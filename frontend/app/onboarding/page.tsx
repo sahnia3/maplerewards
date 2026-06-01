@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWallet } from "@/contexts/wallet-context";
@@ -88,6 +88,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(restored?.step ?? 1);
   const [allCards, setAllCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(true);
+  const [cardsError, setCardsError] = useState(false);
   const [cardSearch, setCardSearch] = useState("");
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>(restored?.selectedCardIds ?? []);
   const [monthlySpend, setMonthlySpend] = useState<Record<string, number>>(
@@ -98,17 +99,24 @@ export default function OnboardingPage() {
   const [selectedPerks, setSelectedPerks] = useState<string[]>(restored?.selectedPerks ?? []);
   const [results, setResults] = useState<CardScore[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
+  const [resultsError, setResultsError] = useState<string | null>(null);
   const [addingCards, setAddingCards] = useState(false);
 
   const reportCards = useReportableError("onboarding.listCards");
   const reportResults = useReportableError("onboarding.getRecommendations");
 
-  useEffect(() => {
+  const loadCards = useCallback(() => {
+    setCardsLoading(true);
+    setCardsError(false);
     listCards()
       .then(setAllCards)
-      .catch(reportCards)
+      .catch((e) => { reportCards(e); setCardsError(true); })
       .finally(() => setCardsLoading(false));
   }, [reportCards]);
+
+  useEffect(() => {
+    loadCards();
+  }, [loadCards]);
 
   // Mirror every step input into localStorage. The results array isn't
   // persisted — it's derived from the inputs and regenerable on demand.
@@ -124,11 +132,19 @@ export default function OnboardingPage() {
 
   const handleGetResults = async () => {
     setResultsLoading(true);
+    setResultsError(null);
     try {
       const data = await getRecommendations({ monthly_spend: monthlySpend });
       setResults(data);
       setStep(4);
-    } catch (e) { reportResults(e); }
+    } catch (e) {
+      reportResults(e);
+      setResultsError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't generate your recommendations. Check your connection and try again."
+      );
+    }
     finally { setResultsLoading(false); }
   };
 
@@ -262,6 +278,42 @@ export default function OnboardingPage() {
             {cardsLoading ? (
               <div style={{ display: "flex", justifyContent: "center", padding: "64px 0" }}>
                 <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
+              </div>
+            ) : cardsError ? (
+              <div
+                role="alert"
+                style={{
+                  border: "1px solid var(--accent)",
+                  borderLeft: "3px solid var(--accent)",
+                  borderRadius: 14,
+                  padding: "20px 24px",
+                  background: "var(--card-fill)",
+                  marginBottom: 28,
+                }}
+              >
+                <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+                  Couldn&rsquo;t load the card catalog. Check your connection and try again.
+                </p>
+                <button
+                  type="button"
+                  onClick={loadCards}
+                  className="mono"
+                  style={{
+                    marginTop: 10,
+                    background: "transparent",
+                    border: "1px solid var(--rule-strong)",
+                    color: "var(--ink-2)",
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                  }}
+                >
+                  Try again →
+                </button>
               </div>
             ) : (
               <>
@@ -537,6 +589,23 @@ export default function OnboardingPage() {
               </FieldGroup>
             </div>
 
+            {resultsError && (
+              <div
+                role="alert"
+                style={{
+                  border: "1px solid var(--accent)",
+                  borderLeft: "3px solid var(--accent)",
+                  borderRadius: 12,
+                  padding: "14px 18px",
+                  background: "var(--card-fill)",
+                  marginBottom: 14,
+                }}
+              >
+                <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+                  {resultsError}
+                </p>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10 }}>
               <button type="button" onClick={() => setStep(2)} style={{ ...ctaSecondary, flex: 1 }}>Back</button>
               <button
@@ -548,7 +617,7 @@ export default function OnboardingPage() {
                 {resultsLoading ? (
                   <><Loader2 size={14} className="animate-spin" /> Calculating…</>
                 ) : (
-                  <>Get my results <ChevronRight size={14} /></>
+                  <>{resultsError ? "Try again" : "Get my results"} <ChevronRight size={14} /></>
                 )}
               </button>
             </div>
@@ -566,11 +635,19 @@ export default function OnboardingPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
               {results.slice(0, 5).map((score, idx) => {
+                // CardScore.network is typed as a loose string. Normalize it to
+                // the Card network union so an unexpected backend value (e.g.
+                // "discover", "") falls back to a known network instead of being
+                // silently asserted and producing a broken visual.
+                const network: Card["network"] =
+                  score.network === "mastercard" || score.network === "amex"
+                    ? score.network
+                    : "visa";
                 const cardForVisual: Card = {
                   id: score.card_id,
                   name: score.card_name,
                   issuer: score.issuer,
-                  network: score.network as "visa" | "mastercard" | "amex",
+                  network,
                   loyalty_program_id: "",
                   annual_fee: score.annual_fee,
                   welcome_bonus_points: score.welcome_bonus_points,

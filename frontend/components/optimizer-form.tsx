@@ -197,14 +197,15 @@ export function OptimizerForm() {
                 min="0.01"
                 step="0.01"
                 placeholder="0.00"
+                aria-label="Spend amount in Canadian dollars"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && rank()}
+                className="focus-ring"
                 style={{
                   flex: 1,
                   background: "transparent",
                   border: "none",
-                  outline: "none",
                   fontFamily: "var(--font-display)",
                   fontSize: 56,
                   letterSpacing: "-0.02em",
@@ -226,7 +227,7 @@ export function OptimizerForm() {
             type="button"
             onClick={rank}
             disabled={loading || !categorySlug || !amount}
-            className="mono"
+            className="mono focus-ring"
             style={{
               background: "var(--accent)",
               color: "#fff",
@@ -257,12 +258,13 @@ export function OptimizerForm() {
           }}
         >
           <span
-            className="mono"
+            className="sans"
             style={{
-              fontSize: 10,
-              color: "var(--ink-3)",
+              fontSize: 12,
+              color: "var(--ink-2)",
               letterSpacing: "0.14em",
               textTransform: "uppercase",
+              fontWeight: 600,
               marginRight: 4,
             }}
           >
@@ -281,9 +283,10 @@ export function OptimizerForm() {
                   border: `1px solid ${active ? t.hue : "var(--rule)"}`,
                   background: active ? t.hue : "transparent",
                   color: active ? "#fff" : "var(--ink-2)",
-                  padding: "5px 12px",
+                  padding: "6px 13px",
                   borderRadius: 999,
-                  fontSize: 11,
+                  fontSize: 13,
+                  fontWeight: 600,
                   letterSpacing: "0.04em",
                   transition: "all 160ms",
                 }}
@@ -383,10 +386,10 @@ export function OptimizerForm() {
             <span
               className="serif"
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontStyle: "italic",
-                color: "var(--ink-3)",
-                lineHeight: 1.3,
+                color: "var(--ink-2)",
+                lineHeight: 1.4,
                 maxWidth: 320,
               }}
             >
@@ -534,9 +537,9 @@ export function OptimizerForm() {
             <div style={{ position: "relative" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 6 }}>
                 <span
-                  className="mono"
+                  className="sans"
                   style={{
-                    fontSize: 10,
+                    fontSize: 12,
                     color: t.hue,
                     letterSpacing: "0.16em",
                     textTransform: "uppercase",
@@ -547,7 +550,7 @@ export function OptimizerForm() {
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.10em" }}
+                  style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.10em" }}
                 >
                   Rank 1 / {results.length}
                 </span>
@@ -617,7 +620,7 @@ export function OptimizerForm() {
                 <Stat label="Cash value" value={`$${best.dollar_value.toFixed(2)}`} accent={t.hue} />
                 <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
                 <Stat label={<>Effective <Term k="redemption">return</Term></>} value={`${best.effective_return.toFixed(2)}%`} />
-                <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} />
+                <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} last />
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {(() => {
@@ -714,7 +717,7 @@ export function OptimizerForm() {
                       borderTop: "1px solid var(--rule)",
                     }}
                   >
-                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.10em" }}>
                       {String(i + 2).padStart(2, "0")}
                     </div>
                     <div style={{ minWidth: 0 }}>
@@ -792,16 +795,16 @@ export function OptimizerForm() {
   );
 }
 
-function Stat({ label, value, accent }: { label: ReactNode; value: string; accent?: string }) {
+function Stat({ label, value, accent, last = false }: { label: ReactNode; value: string; accent?: string; last?: boolean }) {
   return (
     <div
       style={{
         padding: "12px 16px",
-        borderRight: "1px solid var(--rule)",
+        borderRight: last ? "none" : "1px solid var(--rule)",
         minWidth: 0,
       }}
     >
-      <div className="eyebrow" style={{ fontSize: 9, letterSpacing: "0.14em", marginBottom: 4 }}>
+      <div className="eyebrow" style={{ letterSpacing: "0.14em", marginBottom: 4 }}>
         {label}
       </div>
       <div

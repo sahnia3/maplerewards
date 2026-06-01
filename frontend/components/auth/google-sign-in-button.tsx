@@ -174,8 +174,9 @@ export function GoogleSignInButton({ onSuccess, onError, disabled }: GoogleSignI
         filter: disabled ? "opacity(0.4) grayscale(0.3)" : undefined,
         pointerEvents: disabled ? "none" : undefined,
         minHeight: "44px",
-        // The GIS button renders inside here
-        colorScheme: "dark",
+        // GIS renders an "outline" (light) button — keep the container's
+        // color-scheme light so it doesn't paint a dark box in the cream card.
+        colorScheme: "light",
       }}
     />
   );

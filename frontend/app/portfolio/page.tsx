@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
@@ -115,6 +115,18 @@ export default function PortfolioPage() {
   const haveCardValues = cardValues.length > 0;
 
   const hasWallet = wallet.length > 0;
+
+  // Real per-category best card, keyed by category display name, sourced from
+  // the portfolio analysis (utilization.gaps[].best_card_in_wallet). Replaces
+  // the previous placeholder that printed the first wallet card for every
+  // category regardless of earn rates.
+  const bestCardByCategory = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const g of analysis?.utilization.gaps ?? []) {
+      if (g.best_card_in_wallet) m[g.category_name] = g.best_card_in_wallet;
+    }
+    return m;
+  }, [analysis]);
 
   // Fresh user: no cards in wallet AND wallet finished loading. Skip the
   // spinner gauntlet — we already know the analysis tiles will be empty,
@@ -415,7 +427,10 @@ export default function PortfolioPage() {
           <div className="portfolio-cat-grid m-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
               const cat = CATEGORY_LABELS[slug] ?? { name: slug };
-              const topCard = summary?.cards[0];
+              // Real per-category winner from the analysis. While the analysis
+              // is still loading we show a skeleton dash; if it loaded but has
+              // no card for this category, point the user at the optimizer.
+              const bestCard = bestCardByCategory[cat.name];
               return (
                 <div
                   key={slug}
@@ -428,10 +443,13 @@ export default function PortfolioPage() {
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span className="eyebrow">{cat.name}</span>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>${amount}/mo</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>${amount}/mo</span>
                   </div>
-                  <div className="display" style={{ fontSize: 16, lineHeight: 1.2, color: "var(--ink)" }}>
-                    {topCard?.card_name ?? "Run optimizer"}
+                  <div
+                    className="display"
+                    style={{ fontSize: 16, lineHeight: 1.2, color: analysisLoading || !bestCard ? "var(--ink-3)" : "var(--ink)" }}
+                  >
+                    {analysisLoading ? "…" : bestCard ?? "Run optimizer"}
                   </div>
                 </div>
               );
@@ -903,13 +921,13 @@ export default function PortfolioPage() {
                       fontSize: 44,
                       fontStyle: "italic",
                       lineHeight: 1,
-                      color: analysis.dollar_gap.total_gap > 0 ? "var(--accent)" : "var(--gain)",
+                      color: (analysis.dollar_gap.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--gain)",
                     }}
                   >
-                    ${analysis.dollar_gap.total_gap.toFixed(2)}
+                    ${(analysis.dollar_gap.total_gap ?? 0).toFixed(2)}
                   </span>
                   <span className="serif" style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-3)" }}>
-                    {analysis.dollar_gap.total_gap > 0 ? "missed last cycle" : "— already optimal!"}
+                    {(analysis.dollar_gap.total_gap ?? 0) > 0 ? "missed last cycle" : "— already optimal!"}
                   </span>
                 </div>
               </div>
@@ -1007,24 +1025,24 @@ export default function PortfolioPage() {
                       stroke="var(--accent)"
                       strokeWidth="3"
                       strokeLinecap="round"
-                      strokeDasharray={`${analysis.utilization.score * 238.76} 238.76`}
+                      strokeDasharray={`${(analysis.utilization.score ?? 0) * 238.76} 238.76`}
                       style={{ transition: "stroke-dasharray 1s cubic-bezier(.16,1,.3,1)" }}
                     />
                   </svg>
                   <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <span className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)" }}>
-                      {Math.round(analysis.utilization.score * 100)}%
+                      {Math.round((analysis.utilization.score ?? 0) * 100)}%
                     </span>
                   </div>
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <h3 className="display" style={{ fontSize: 22, margin: 0, lineHeight: 1.15 }}>
-                    {analysis.utilization.covered_categories}/{analysis.utilization.total_categories} categories covered
+                    {analysis.utilization.covered_categories ?? 0}/{analysis.utilization.total_categories ?? 0} categories covered
                   </h3>
                   <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, marginTop: 4, lineHeight: 1.45 }}>
-                    {analysis.utilization.score >= 0.8
+                    {(analysis.utilization.score ?? 0) >= 0.8
                       ? "Great coverage. Your wallet handles most categories well."
-                      : analysis.utilization.score >= 0.5
+                      : (analysis.utilization.score ?? 0) >= 0.5
                         ? "Good start. Consider adding cards for the uncovered categories."
                         : "Gaps in several categories. Adding one or two more cards would help."}
                   </p>

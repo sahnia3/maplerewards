@@ -668,7 +668,7 @@ export default function ProgramDetailPage() {
               Ready to book?
             </p>
             <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 4 }}>
-              Check availability on the official {program.name} portal.
+              Search the web for {program.name} award availability and booking.
             </p>
           </div>
           <a
@@ -676,9 +676,9 @@ export default function ProgramDetailPage() {
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary"
-            style={{ fontSize: 12, height: 38, padding: "0 18px", textDecoration: "none" }}
+            style={{ fontSize: 13, fontWeight: 600, height: 38, padding: "0 18px", textDecoration: "none" }}
           >
-            Book →
+            Search awards →
           </a>
         </div>
       </div>

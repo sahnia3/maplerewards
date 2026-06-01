@@ -27,6 +27,7 @@ export default function ApplicationsPage() {
   const [apps, setApps] = useState<CardApplication[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   // Add form
@@ -59,12 +60,19 @@ export default function ApplicationsPage() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const sid = await ensureSession();
       setSessionId(sid);
       const [a, c] = await Promise.all([listApplications(sid), listCards()]);
       setApps(a);
       setCards(c);
+    } catch (e) {
+      setLoadError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't load your applications. Check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -139,6 +147,44 @@ export default function ApplicationsPage() {
         />
 
         <LeafDivider />
+
+        {loadError && (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid var(--accent)",
+              borderLeft: "3px solid var(--accent)",
+              borderRadius: 14,
+              padding: "20px 24px",
+              background: "var(--card-fill)",
+              marginBottom: 32,
+            }}
+          >
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="mono"
+              style={{
+                marginTop: 10,
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                color: "var(--ink-2)",
+                padding: "8px 16px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              Try again →
+            </button>
+          </div>
+        )}
 
         <section style={{ marginBottom: 32 }}>
           <h2 className="display" style={{ fontSize: 22, marginBottom: 12 }}>Record an application</h2>
@@ -326,9 +372,9 @@ export default function ApplicationsPage() {
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div className="display" style={{ fontSize: 18 }}>{a.card_name}</div>
-                    <div className="eyebrow" style={{ color: "var(--ink-3)", marginTop: 4 }}>
-                      {a.issuer} · {a.applied_at} · {a.status}
+                    <div className="display" style={{ fontSize: 18 }}>{a.card_name ?? "Unknown card"}</div>
+                    <div className="eyebrow" style={{ color: "var(--ink-2)", marginTop: 4 }}>
+                      {(a.issuer ?? "—")} · {a.applied_at} · {a.status}
                     </div>
                     {a.notes && (
                       <p className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)", marginTop: 6 }}>

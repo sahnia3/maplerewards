@@ -26,6 +26,7 @@ export default function InsightsPage() {
   const [stats, setStats] = useState<SpendStats | null>(null);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>("all");
 
   const load = useCallback(async () => {
@@ -34,6 +35,7 @@ export default function InsightsPage() {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     const sinceDays = dateRange === "all" ? 0 : Number(dateRange.replace("d", ""));
     try {
       const [history, ss, mr] = await Promise.all([
@@ -44,10 +46,15 @@ export default function InsightsPage() {
       setAllEntries(history ?? []);
       setStats(ss);
       setMissed(mr);
-    } catch {
+    } catch (e) {
       setAllEntries([]);
       setStats(null);
       setMissed(null);
+      setLoadError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't load your insights. Check your connection and try again."
+      );
     }
     setLoading(false);
   }, [sessionId, dateRange]);
@@ -167,6 +174,41 @@ export default function InsightsPage() {
         {loading ? (
           <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
             LOADING…
+          </div>
+        ) : loadError ? (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid var(--accent)",
+              borderLeft: "3px solid var(--accent)",
+              borderRadius: 14,
+              padding: "20px 24px",
+              background: "var(--card-fill)",
+            }}
+          >
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => load()}
+              className="mono"
+              style={{
+                marginTop: 10,
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                color: "var(--ink-2)",
+                padding: "8px 16px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              Try again →
+            </button>
           </div>
         ) : entries.length === 0 ? (
           <EmptyInsights />

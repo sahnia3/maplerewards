@@ -127,10 +127,14 @@ export default function SettingsPage() {
         </Section>
 
         {/* Password change — only meaningful for password-auth accounts.
-            Google-only users see a helper hint instead of an empty form. */}
-        {isAuthenticated && (
+            Google-only users see a helper hint instead of an empty form.
+            Gate on `user` being resolved (not just isAuthenticated): if auth
+            ever reports authenticated while `user` is still null, rendering the
+            form would let a submission reach changePassword without a valid
+            session. */}
+        {isAuthenticated && user && (
           <Section eyebrow="Security" title="Change your password.">
-            {user?.auth_provider === "google" ? (
+            {user.auth_provider === "google" ? (
               <p
                 className="serif"
                 style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, padding: "16px 4px", marginTop: 0, lineHeight: 1.5 }}

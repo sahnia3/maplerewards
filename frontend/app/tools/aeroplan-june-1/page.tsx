@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { BASE_URL } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -38,8 +39,7 @@ interface LockInResponse {
  * saves $250-$300 per ticket. This page makes that delta obvious.
  */
 
-export const dynamic = "force-dynamic";
-export const revalidate = 3600; // 1h cache — chart only changes on deploy
+export const revalidate = 3600; // 1h ISR cache — chart only changes on deploy
 
 export const metadata = {
   title: "Aeroplan June 1 Lock-In Calculator — Maple Rewards",
@@ -81,6 +81,16 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
 
   const data = await fetchLockIn({ airport, region, cabin });
   const daysUntil = data?.days_until ?? 0;
+
+  // Preserve the user's filter selection on the retry link so a refresh
+  // re-runs the same query rather than dropping them back to defaults.
+  const retryQs = new URLSearchParams();
+  if (airport) retryQs.set("airport", airport);
+  if (region) retryQs.set("region", region);
+  if (cabin) retryQs.set("cabin", cabin);
+  const retryHref = retryQs.toString()
+    ? `/tools/aeroplan-june-1?${retryQs.toString()}`
+    : "/tools/aeroplan-june-1";
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
@@ -140,6 +150,65 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
             Update
           </button>
         </form>
+
+        {data === null && (
+          <div
+            role="alert"
+            style={{
+              background: "var(--card-fill)",
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "32px 28px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
+              marginBottom: 36,
+            }}
+          >
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 999,
+                margin: "0 auto 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--accent-wash)",
+                border: "1px solid var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              <AlertTriangle size={22} strokeWidth={1.5} />
+            </div>
+            <h2 className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+              Couldn&rsquo;t load the lock-in numbers
+            </h2>
+            <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.55 }}>
+              The pricing data didn&rsquo;t come back. This is usually momentary — try again in a few seconds.
+            </p>
+            <Link
+              href={retryHref}
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 20,
+                padding: "10px 20px",
+                borderRadius: 10,
+                background: "var(--accent)",
+                color: "#fff",
+                textDecoration: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Try again →
+            </Link>
+          </div>
+        )}
 
         {data && data.top.length > 0 && (
           <section style={{ marginBottom: 36 }}>

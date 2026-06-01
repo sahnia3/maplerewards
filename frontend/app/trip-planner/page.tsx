@@ -220,9 +220,8 @@ function TripPlannerInner() {
               gridTemplateColumns: "1fr auto 1fr",
               alignItems: "end",
               gap: 18,
-              flexWrap: "wrap" as never,
             }}
-            className="trip-itinerary-grid"
+            className="trip-itinerary-grid m-grid-1"
           >
             <div>
               <div className="eyebrow" style={{ marginBottom: 10 }}>From</div>
@@ -480,8 +479,9 @@ function TripPlannerInner() {
                   background: "transparent",
                   border: "1px solid var(--rule)",
                   borderRadius: 999,
-                  padding: "6px 14px",
-                  fontSize: 10,
+                  padding: "7px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
                   color: "var(--ink-2)",
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
@@ -675,18 +675,26 @@ function TripPlannerInner() {
         }
         /* Mobile: collapse the 5-column flight row to 2 columns so the price
          * + CPP cluster wraps below the program name instead of overflowing
-         * the viewport. Threshold 720px catches phones + small tablets. */
+         * the viewport. Threshold 720px catches phones + small tablets.
+         *
+         * Children are placed onto EXPLICIT rows/columns so the three
+         * right-hand cells (points, cash, CPP) stack deterministically beneath
+         * the program name. Without explicit grid-row assignments, forcing them
+         * all to grid-column 2 leaves their row to browser auto-placement,
+         * which can overlap the name or reorder the cells. This row owns its
+         * own mobile collapse (rather than the shared .m-grid-1 utility) so the
+         * two-column index|content layout stays intact on phones. */
         @media (max-width: 720px) {
           .flight-row {
             grid-template-columns: 36px 1fr !important;
+            align-items: start !important;
             row-gap: 8px;
           }
-          .flight-row > :nth-child(3),
-          .flight-row > :nth-child(4),
-          .flight-row > :nth-child(5) {
-            grid-column: 2;
-            text-align: left !important;
-          }
+          .flight-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+          .flight-row > :nth-child(2) { grid-column: 2; grid-row: 1; }
+          .flight-row > :nth-child(3) { grid-column: 2; grid-row: 2; text-align: left !important; }
+          .flight-row > :nth-child(4) { grid-column: 2; grid-row: 3; text-align: left !important; }
+          .flight-row > :nth-child(5) { grid-column: 2; grid-row: 4; text-align: left !important; }
         }
       `}</style>
     </div>
@@ -744,9 +752,9 @@ function FlightRow({
           gap: 18,
           padding: "20px 4px",
         }}
-        className="flight-row m-grid-1"
+        className="flight-row"
       >
-        <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+        <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.10em" }}>
           {String(index + 1).padStart(2, "0")}
         </div>
         <div style={{ minWidth: 0 }}>
@@ -756,7 +764,7 @@ function FlightRow({
               <span
                 className="mono"
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   marginLeft: 10,
                   padding: "2px 8px",
                   borderRadius: 999,
@@ -821,15 +829,16 @@ function FlightRow({
                 }}
                 className="mono"
                 style={{
-                  fontSize: 9,
-                  padding: "3px 9px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "4px 11px",
                   borderRadius: 999,
                   background: saved ? "var(--surface-2)" : "transparent",
                   color:
                     saveState === "error"
                       ? "var(--accent)"
                       : saved
-                        ? "var(--ink-3)"
+                        ? "var(--ink-2)"
                         : "var(--ink-2)",
                   border: `1px solid ${saveState === "error" ? "var(--accent)" : "var(--rule)"}`,
                   letterSpacing: "0.10em",
@@ -850,11 +859,12 @@ function FlightRow({
                 className="mono"
                 title="Pro members get saved-trip alerts when award space opens up."
                 style={{
-                  fontSize: 9,
-                  padding: "3px 9px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "4px 11px",
                   borderRadius: 999,
                   background: "transparent",
-                  color: "var(--ink-3)",
+                  color: "var(--ink-2)",
                   border: "1px dashed var(--rule)",
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
@@ -867,9 +877,9 @@ function FlightRow({
         </div>
         <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right", letterSpacing: "0.04em" }}>
           {flight.points_cost.toLocaleString()} pts
-          <div style={{ fontSize: 10, marginTop: 2 }}>{taxesNode}</div>
+          <div style={{ fontSize: 12, marginTop: 2 }}>{taxesNode}</div>
         </div>
-        <div className="mono" style={{ fontSize: 13, color: "var(--ink-3)", textAlign: "right" }}>
+        <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>
           ~${flight.cash_price_cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           <div
             className="serif"
@@ -879,11 +889,10 @@ function FlightRow({
                 : "Typical one-way cash fare for this route/cabin (Google Flights). A comparison benchmark — not this specific award flight's price."
             }
             style={{
-              fontSize: 9,
-              color: "var(--ink-3)",
+              fontSize: 12,
+              color: "var(--ink-2)",
               fontStyle: "italic",
               marginTop: 2,
-              opacity: 0.7,
             }}
           >
             {flight.cabin ?? "cabin"} cash · route benchmark{flight.cash_is_estimate ? " (est.)" : ""}
@@ -898,7 +907,7 @@ function FlightRow({
               <div
                 className="mono"
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color:
                     flight.value_rating === "excellent"
                       ? "var(--gain)"
@@ -917,15 +926,15 @@ function FlightRow({
             <div
               className="mono"
               title="No live cash fare for this route, so we won't show a ¢/pt value computed off a guessed number. The points cost is real — confirm the cash price yourself before judging value."
-              style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.03em", lineHeight: 1.25 }}
+              style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.03em", lineHeight: 1.25 }}
             >
               <div className="display" style={{ fontSize: 22, color: "var(--ink-3)", fontStyle: "italic" }}>
                 —
               </div>
-              <div style={{ textTransform: "uppercase", letterSpacing: "0.10em", fontSize: 9, marginTop: 2 }}>
+              <div style={{ textTransform: "uppercase", letterSpacing: "0.10em", fontSize: 12, marginTop: 2 }}>
                 rating n/a
               </div>
-              <div style={{ fontSize: 8.5, opacity: 0.7, marginTop: 2 }}>no live fare</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>no live fare</div>
             </div>
           )}
           {/* Secondary CPP vs economy cash — the "would I actually pay this in cash?"
@@ -941,18 +950,17 @@ function FlightRow({
                   : undefined
               }
               style={{
-                fontSize: 9,
-                color: "var(--ink-3)",
+                fontSize: 12,
+                color: "var(--ink-2)",
                 letterSpacing: "0.06em",
                 marginTop: 4,
-                opacity: 0.85,
               }}
             >
               {flight.realistic_cpp.toFixed(2)}¢ vs economy
             </div>
           )}
           {flight.return_leg && (
-            <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", marginTop: 4 }}>
+            <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}>
               RT · {flight.return_leg.cpp.toFixed(2)}¢
             </div>
           )}
@@ -965,8 +973,9 @@ function FlightRow({
               style={{
                 display: "inline-block",
                 marginTop: 8,
-                fontSize: 10,
-                padding: "4px 10px",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "5px 12px",
                 borderRadius: 999,
                 background: "var(--accent)",
                 color: "var(--paper)",
