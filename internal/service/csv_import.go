@@ -248,24 +248,32 @@ func (s *CSVImportService) Commit(ctx context.Context, sessionID, cardID, fallba
 		return 0, ErrCardNotInWallet
 	}
 
-	created := 0
+	// Build one request per parsed row, then persist the whole import in a
+	// SINGLE transaction on a SINGLE connection via LogSpendBatch. The old
+	// path looped LogSpend, which opened a fresh per-row transaction (~3
+	// queries each): a large file could exhaust the pgx pool, and a mid-file
+	// DB error left a partially-imported wallet. LogSpendBatch is all-or-
+	// nothing — on any error ZERO rows persist — and bounded (the maxCSVRows
+	// cap above plus the 5 MB body limit cap memory + query volume).
+	reqs := make([]model.SpendLogRequest, 0, len(txns))
 	for _, t := range txns {
 		category := t.Category
 		if category == "" {
 			category = fallbackCategorySlug
 		}
-		_, err := s.walletSvc.LogSpend(ctx, sessionID, model.SpendLogRequest{
+		reqs = append(reqs, model.SpendLogRequest{
 			CardID:       cardID,
 			CategorySlug: category,
 			Amount:       t.Amount,
 			Date:         t.Date,
 			Note:         truncateNote(t.Description, 200),
 		})
-		if err != nil {
-			// Stop on the first DB error so the user can see what broke.
-			return created, fmt.Errorf("row %s/%s: %w", t.Date, t.Description, err)
-		}
-		created++
+	}
+
+	created, err := s.walletSvc.LogSpendBatch(ctx, sessionID, reqs)
+	if err != nil {
+		// The batch rolled back, so created is 0 — nothing was persisted.
+		return created, fmt.Errorf("import failed, no rows saved: %w", err)
 	}
 	return created, nil
 }
