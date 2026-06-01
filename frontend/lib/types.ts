@@ -563,6 +563,38 @@ export interface ChurnPlan {
   total_potential_bonus_value_cad: number;
 }
 
+// ── Wallet simulator ──────────────────────────────────────────────────────────
+
+export interface SimulatorCardRef {
+  card_id: string;
+  card_name: string;
+  annual_fee: number;
+}
+
+export interface SimulatorCategoryChange {
+  category_name: string;
+  annual_spend: number;
+  before_card: string;
+  before_value: number;
+  after_card: string;
+  after_value: number;
+  delta_cad: number;
+}
+
+export interface SimulationResult {
+  baseline_annual_value: number;
+  simulated_annual_value: number;
+  value_delta_cad: number;
+  fee_delta_cad: number;
+  net_delta_after_fees_cad: number;
+  added: SimulatorCardRef[];
+  dropped: SimulatorCardRef[];
+  category_changes: SimulatorCategoryChange[];
+  ignored_already_held: string[];
+  ignored_not_held: string[];
+  note: string;
+}
+
 // ── Points-expiry guardian ───────────────────────────────────────────────────
 
 export interface ExpiryAccount {

@@ -23,6 +23,7 @@ import { AwardWatchTile } from "@/components/pro-tools/AwardWatchTile";
 import { StackTemplates } from "@/components/pro-tools/StackTemplates";
 import { StackTile } from "@/components/pro-tools/StackTile";
 import { ChurnPlannerTile } from "@/components/pro-tools/ChurnPlannerTile";
+import { SimulatorTile } from "@/components/pro-tools/SimulatorTile";
 import { BuyPointsTile } from "@/components/pro-tools/BuyPointsTile";
 import { CardOffersTile } from "@/components/pro-tools/CardOffersTile";
 import { DevaluationTile } from "@/components/pro-tools/DevaluationTile";
@@ -46,7 +47,7 @@ interface TabSpec {
 const TABS: TabSpec[] = [
   { key: "forensics", label: "Forensics", count: 6, hint: "What you missed, what to renew, what's expiring, what changed." },
   { key: "status", label: "Status & balances", count: 4, hint: "Aeroplan SQC, loyalty programs, points expiry, award watches." },
-  { key: "stacking", label: "Stacking & math", count: 5, hint: "Your next best card, card combos, portal stacks, buy-points, offers." },
+  { key: "stacking", label: "Stacking & math", count: 6, hint: "Your next best card, wallet swap simulator, card combos, portal stacks, buy-points, offers." },
   { key: "knowledge", label: "Knowledge", count: 3, hint: "Devaluations, India hotels, PC Optimum." },
 ];
 
@@ -207,6 +208,8 @@ export default function ProToolsPage() {
         {active === "stacking" && (
           <>
             <ChurnPlannerTile sessionId={sessionId} isReady={isReady} />
+            <LeafDivider />
+            <SimulatorTile sessionId={sessionId} isReady={isReady} />
             <LeafDivider />
             <StackTemplates sessionId={sessionId} />
             <LeafDivider />

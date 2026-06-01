@@ -297,6 +297,10 @@ func main() {
 	// reimplementing issuer rules.
 	churnSvc := service.NewChurnPlannerService(walletRepo, cardRepo, spendRepo, applicationSvc)
 	churnH := handler.NewChurnPlannerHandler(churnSvc)
+	// Pro: wallet simulator — net annual-value impact of adding and/or dropping
+	// cards, re-pricing logged spend per category against a hypothetical wallet.
+	simulatorSvc := service.NewSimulatorService(walletRepo, spendRepo, cardRepo)
+	simulatorH := handler.NewSimulatorHandler(simulatorSvc)
 	walletH := handler.NewWalletHandler(walletSvc)
 	optimizerH := handler.NewOptimizerHandler(optimizerSvc, walletRepo)
 	spendH := handler.NewSpendHandler(walletSvc)
@@ -667,6 +671,10 @@ func main() {
 			// Pro: welcome-bonus / churn planner — best next card to apply for,
 			// gated by issuer cooldown eligibility + min-spend feasibility
 			r.Get("/wallet/{sessionID}/churn-planner", churnH.GetPlan)
+
+			// Pro: wallet simulator — net annual-value impact of adding and/or
+			// dropping cards (re-prices logged spend per category, nets fees)
+			r.Post("/wallet/{sessionID}/simulator", simulatorH.Simulate)
 
 			// 2026 Aeroplan SQC projector
 			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)

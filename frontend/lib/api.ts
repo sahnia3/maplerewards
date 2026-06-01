@@ -718,6 +718,23 @@ export async function getChurnPlan(sessionId: string): Promise<ChurnPlan> {
   return request<ChurnPlan>(`/wallet/${sessionId}/churn-planner`);
 }
 
+// ── Wallet simulator ─────────────────────────────────────────────────────────
+
+import type { SimulationResult } from "./types";
+
+export async function getWalletSimulation(
+  sessionId: string,
+  opts: { addCardIds?: string[]; dropCardIds?: string[] },
+): Promise<SimulationResult> {
+  return request<SimulationResult>(`/wallet/${sessionId}/simulator`, {
+    method: "POST",
+    body: JSON.stringify({
+      add_card_ids: opts.addCardIds ?? [],
+      drop_card_ids: opts.dropCardIds ?? [],
+    }),
+  });
+}
+
 // ── Points-expiry guardian ───────────────────────────────────────────────────
 
 import type { ExpiryReport } from "./types";
