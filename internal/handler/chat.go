@@ -233,9 +233,11 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 //
 // Pro gating + monthly usage limits are enforced exactly as in Chat().
 func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
-	// Recover from panics in the tool-use loop or Apify response decode. Without
-	// this, a single nil-pointer in apify_awards.convertResults brings down the
-	// whole API process, manifesting client-side as ERR_INCOMPLETE_CHUNKED_ENCODING.
+	// Recover from panics anywhere in the tool-use loop. Defense-in-depth: the
+	// Apify award-search parse path (apify_awards.parseApifyResults) is now
+	// panic-proof on its own, but the broader streaming/tool loop still needs a
+	// backstop so an unexpected panic surfaces as an SSE error frame instead of
+	// killing the whole API process (client-side: ERR_INCOMPLETE_CHUNKED_ENCODING).
 	defer func() {
 		if rec := recover(); rec != nil {
 			slog.Error("[chat-stream] panic recovered",
