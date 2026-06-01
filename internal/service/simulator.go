@@ -213,8 +213,14 @@ func (s *SimulatorService) Simulate(ctx context.Context, sessionID string, addID
 				catID = cat.ID
 			}
 
-			base := s.bestForCategory(ctx, baselineIDs, cardByID, cppByProgram, catID, annualSpend)
-			sim := s.bestForCategory(ctx, simulatedIDs, cardByID, cppByProgram, catID, annualSpend)
+			base, err := s.bestForCategory(ctx, baselineIDs, cardByID, cppByProgram, catID, annualSpend)
+			if err != nil {
+				return nil, err
+			}
+			sim, err := s.bestForCategory(ctx, simulatedIDs, cardByID, cppByProgram, catID, annualSpend)
+			if err != nil {
+				return nil, err
+			}
 
 			baselineTotal += base.value
 			simulatedTotal += sim.value
@@ -267,20 +273,23 @@ func (s *SimulatorService) bestForCategory(
 	cppByProgram map[string]float64,
 	categoryID string,
 	annualSpend float64,
-) scoredCategory {
+) (scoredCategory, error) {
 	best := scoredCategory{cardName: "—", value: 0}
 	for _, id := range cardIDs {
 		c := cardByID[id]
 		if c == nil {
 			continue
 		}
-		rate := s.effectiveReturn(ctx, c, cppByProgram, categoryID)
+		rate, err := s.effectiveReturn(ctx, c, cppByProgram, categoryID)
+		if err != nil {
+			return best, err
+		}
 		val := annualSpend * rate
 		if val > best.value {
 			best = scoredCategory{cardName: c.Name, value: val}
 		}
 	}
-	return best
+	return best, nil
 }
 
 // effectiveReturn is a card's decimal return rate for a category (e.g. 0.04 =
@@ -292,28 +301,34 @@ func (s *SimulatorService) effectiveReturn(
 	c *model.Card,
 	cppByProgram map[string]float64,
 	categoryID string,
-) float64 {
+) (float64, error) {
 	var mult *model.CardMultiplier
 	if categoryID != "" {
 		m, err := s.card.GetMultiplierForCard(ctx, c.ID, categoryID)
 		if err == nil {
 			mult = m
 		} else if !errors.Is(err, pgx.ErrNoRows) {
-			// A real DB error: fall through to the everything-else lookup
-			// rather than fabricate a rate.
-			mult = nil
+			// A real DB error must NOT be silently priced as $0 — that corrupts
+			// best-card selection. Propagate it (matches optimizer behaviour).
+			return 0, fmt.Errorf("multiplier lookup (card %s, cat %s): %w", c.ID, categoryID, err)
 		}
 	}
 	if mult == nil {
 		m, err := s.card.GetEverythingElseMultiplier(ctx, c.ID)
-		if err != nil || m == nil {
-			return 0
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, nil // genuinely no rate for this card → 0 is correct
+			}
+			return 0, fmt.Errorf("everything-else multiplier (card %s): %w", c.ID, err)
+		}
+		if m == nil {
+			return 0, nil
 		}
 		mult = m
 	}
 
 	if mult.EarnType == "cashback_pct" {
-		return mult.EarnRate / 100
+		return mult.EarnRate / 100, nil
 	}
 	// points / miles / dollars: earn_rate × base_cpp / 100.
 	cpp := cppByProgram[c.LoyaltyProgramID]
@@ -322,7 +337,7 @@ func (s *SimulatorService) effectiveReturn(
 		// ListPrograms map (e.g. a freshly-added program).
 		cpp = c.LoyaltyProgram.BaseCPP
 	}
-	return mult.EarnRate * cpp / 100
+	return mult.EarnRate * cpp / 100, nil
 }
 
 // cleanIDs trims, drops blanks, and de-duplicates a list of card ids while

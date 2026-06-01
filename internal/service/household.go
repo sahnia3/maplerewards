@@ -194,7 +194,10 @@ func (s *HouseholdService) Analyze(ctx context.Context, sessionID string, partne
 			if ok {
 				catID = cat.ID
 			}
-			sc := s.scoreCategory(ctx, combined, cppByProgram, catID, annualSpend)
+			sc, err := s.scoreCategory(ctx, combined, cppByProgram, catID, annualSpend)
+			if err != nil {
+				return nil, err
+			}
 			if sc.bestID == "" {
 				// No card earns anything here (e.g. empty wallet) — nothing to
 				// cover, skip.
@@ -276,14 +279,18 @@ func (s *HouseholdService) scoreCategory(
 	cppByProgram map[string]float64,
 	categoryID string,
 	annualSpend float64,
-) householdScore {
+) (householdScore, error) {
 	var best householdScore
 	for _, hc := range cards {
 		c := hc.card
 		if c == nil {
 			continue
 		}
-		val := annualSpend * s.effectiveReturn(ctx, c, cppByProgram, categoryID)
+		rate, err := s.effectiveReturn(ctx, c, cppByProgram, categoryID)
+		if err != nil {
+			return best, err
+		}
+		val := annualSpend * rate
 		switch {
 		case val > best.bestValue:
 			best.secondBest = best.bestValue
@@ -295,7 +302,7 @@ func (s *HouseholdService) scoreCategory(
 			best.secondBest = val
 		}
 	}
-	return best
+	return best, nil
 }
 
 // effectiveReturn is a card's decimal return rate for a category (e.g. 0.04 =
@@ -308,28 +315,34 @@ func (s *HouseholdService) effectiveReturn(
 	c *model.Card,
 	cppByProgram map[string]float64,
 	categoryID string,
-) float64 {
+) (float64, error) {
 	var mult *model.CardMultiplier
 	if categoryID != "" {
 		m, err := s.card.GetMultiplierForCard(ctx, c.ID, categoryID)
 		if err == nil {
 			mult = m
 		} else if !errors.Is(err, pgx.ErrNoRows) {
-			// A real DB error: fall through to the everything-else lookup
-			// rather than fabricate a rate.
-			mult = nil
+			// A real DB error must NOT be silently priced as $0 — that would
+			// wrongly flag a card as redundant ("cancel it"). Propagate it.
+			return 0, fmt.Errorf("multiplier lookup (card %s, cat %s): %w", c.ID, categoryID, err)
 		}
 	}
 	if mult == nil {
 		m, err := s.card.GetEverythingElseMultiplier(ctx, c.ID)
-		if err != nil || m == nil {
-			return 0
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return 0, nil // genuinely no rate for this card → 0 is correct
+			}
+			return 0, fmt.Errorf("everything-else multiplier (card %s): %w", c.ID, err)
+		}
+		if m == nil {
+			return 0, nil
 		}
 		mult = m
 	}
 
 	if mult.EarnType == "cashback_pct" {
-		return mult.EarnRate / 100
+		return mult.EarnRate / 100, nil
 	}
 	// points / miles / dollars: earn_rate × base_cpp / 100.
 	cpp := cppByProgram[c.LoyaltyProgramID]
@@ -338,7 +351,7 @@ func (s *HouseholdService) effectiveReturn(
 		// ListPrograms map.
 		cpp = c.LoyaltyProgram.BaseCPP
 	}
-	return mult.EarnRate * cpp / 100
+	return mult.EarnRate * cpp / 100, nil
 }
 
 func householdRound(v float64) float64 { return math.Round(v*100) / 100 }

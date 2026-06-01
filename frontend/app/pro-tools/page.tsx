@@ -50,7 +50,7 @@ const TABS: TabSpec[] = [
   { key: "forensics", label: "Forensics", count: 6, hint: "What you missed, what to renew, what's expiring, what changed." },
   { key: "status", label: "Status & balances", count: 5, hint: "Aeroplan SQC, loyalty programs, transfer sweet-spots, points expiry, award watches." },
   { key: "stacking", label: "Stacking & math", count: 7, hint: "Your next best card, wallet swap simulator, household optimizer, card combos, portal stacks, buy-points, offers." },
-  { key: "knowledge", label: "Knowledge", count: 3, hint: "Devaluations, India hotels, PC Optimum." },
+  { key: "knowledge", label: "Knowledge", count: 2, hint: "Devaluations, PC Optimum." },
 ];
 
 export default function ProToolsPage() {
@@ -92,7 +92,7 @@ export default function ProToolsPage() {
               The <span style={{ fontStyle: "italic", color: "var(--accent)" }}>Pro</span> toolkit.
             </>
           }
-          lede="15 Canadian-rewards tools grouped by purpose. Forensics shows what you've missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead of program changes."
+          lede="20 Canadian-rewards tools grouped by purpose. Forensics shows what you've missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead of program changes."
         />
 
         <ProToolsPersonalStrip sessionId={sessionId} isReady={isReady} />
