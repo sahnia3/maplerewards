@@ -163,7 +163,10 @@ func (s *ApplicationService) evalEligibility(ctx context.Context, userID string,
 			cooldown := time.Duration(cooldownDays) * 24 * time.Hour
 			if gap < cooldown {
 				eligibleAt := last.Add(cooldown)
-				daysLeft := int(cooldown-gap)/int(24*time.Hour) + 1
+				// Ceiling of remaining time in days; the old floor+1 over-reported
+				// by a day when the remainder was an exact multiple of 24h.
+				day := 24 * time.Hour
+				daysLeft := int((cooldown - gap + day - 1) / day)
 				res.Severity = "warn"
 				res.EligibleAt = &eligibleAt
 				res.Reason = fmt.Sprintf("Last %s application was %d day(s) ago. The typical cooldown is %d days — wait ~%d more day(s) to clear it.",
@@ -183,12 +186,20 @@ func (s *ApplicationService) evalEligibility(ctx context.Context, userID string,
 			return nil, err
 		}
 		if count >= maxPerYear {
-			res.Severity = "warn"
 			if maxNote != "" {
 				res.IssuerRule = maxNote
 			}
-			res.Reason = fmt.Sprintf("You've recorded %d %s application(s) in the last 12 months; %s limits to ~%d per year. A new application now may be auto-declined.",
+			maxReason := fmt.Sprintf("You've recorded %d %s application(s) in the last 12 months; %s limits to ~%d per year. A new application now may be auto-declined.",
 				count, card.Issuer, card.Issuer, maxPerYear)
+			if res.EligibleAt != nil {
+				// Cooldown also fired (within-window warn): keep BOTH reasons so the
+				// binding constraint stays visible, and the cooldown EligibleAt
+				// remains a valid earliest-clear lower bound (no longer a mismatch).
+				res.Reason = res.Reason + " " + maxReason
+			} else {
+				res.Reason = maxReason
+			}
+			res.Severity = "warn"
 		}
 	}
 	return res, nil

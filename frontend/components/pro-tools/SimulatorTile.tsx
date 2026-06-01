@@ -158,8 +158,16 @@ export function SimulatorTile({ sessionId, isReady }: Props) {
 
                 {(result.ignored_already_held.length > 0 || result.ignored_not_held.length > 0) && (
                   <p className="serif" style={{ fontSize: 12.5, fontStyle: "italic", color: "#b8860b", margin: "8px 0 0" }}>
-                    {result.ignored_already_held.length > 0 && <>You already hold the card you tried to add. </>}
-                    {result.ignored_not_held.length > 0 && <>You don&apos;t hold the card you tried to drop.</>}
+                    {result.ignored_already_held.length > 0 && (
+                      <>{result.ignored_already_held.length === 1
+                        ? "You already hold the card you tried to add. "
+                        : `${result.ignored_already_held.length} of the cards you tried to add are already in your wallet. `}</>
+                    )}
+                    {result.ignored_not_held.length > 0 && (
+                      <>{result.ignored_not_held.length === 1
+                        ? "You don't hold the card you tried to drop."
+                        : `${result.ignored_not_held.length} of the cards you tried to drop aren't in your wallet.`}</>
+                    )}
                   </p>
                 )}
 
