@@ -231,12 +231,12 @@ export function Sidebar() {
           <div className="px-3 pt-4 pb-3 shrink-0">
             <div className="sidebar-portfolio">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="eyebrow" style={{ fontSize: 9, letterSpacing: "0.14em" }}>
+                <span className="eyebrow" style={{ letterSpacing: "0.14em" }}>
                   Portfolio
                 </span>
                 <span
                   className="mono inline-flex items-center gap-1"
-                  style={{ fontSize: 10, color: "var(--gain)" }}
+                  style={{ fontSize: 11, color: "var(--gain)" }}
                 >
                   <span
                     style={{
@@ -259,7 +259,7 @@ export function Sidebar() {
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2.5">
                 <div>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em" }}>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
                     POINTS
                   </div>
                   <div className="mono" style={{ fontSize: 12, color: "var(--ink)" }}>
@@ -267,7 +267,7 @@ export function Sidebar() {
                   </div>
                 </div>
                 <div>
-                  <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em" }}>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
                     CARDS
                   </div>
                   <div className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
@@ -386,11 +386,11 @@ export function Sidebar() {
               onClick={toggleSidebar}
               className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md transition-all mono"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 500,
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
-                color: "var(--ink-3)",
+                color: "var(--ink-2)",
                 background: "transparent",
                 border: "1px solid var(--rule)",
               }}
