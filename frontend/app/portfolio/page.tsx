@@ -481,10 +481,10 @@ export default function PortfolioPage() {
                     <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>${card.annual_fee.toFixed(0)}/yr fee</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[18px] font-bold tabular-nums" style={{ color: card.is_positive ? "#34D399" : "#F87171" }}>
+                    <div className="text-[18px] font-bold tabular-nums" style={{ color: card.is_positive ? "var(--gain)" : "var(--loss)" }}>
                       {card.net_ev_cad >= 0 ? "+" : ""}${card.net_ev_cad.toFixed(0)}
                     </div>
-                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>net of fee</div>
+                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-3)" }}>net of fee</div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -537,7 +537,7 @@ export default function PortfolioPage() {
                 {sqc.current_tier && (
                   <div
                     className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold"
-                    style={{ background: "var(--info-soft-2)", border: "1px solid var(--info-border)", color: "var(--accent)" }}
+                    style={{ background: "var(--accent-soft)", border: "1px solid var(--accent)", color: "var(--accent)" }}
                   >
                     Current: Aeroplan {sqc.current_tier}
                   </div>
@@ -547,7 +547,7 @@ export default function PortfolioPage() {
                 <div className="text-right">
                   <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Next tier</div>
                   <div className="display" style={{ fontSize: 22, fontStyle: "italic" }}>Aeroplan {sqc.next_tier}</div>
-                  <div className="text-[12px] mt-0.5" style={{ color: "#FBBF24" }}>
+                  <div className="text-[12px] mt-0.5" style={{ color: "var(--gold)" }}>
                     {sqc.sqc_to_next_tier?.toLocaleString()} SQC to go
                   </div>
                 </div>
@@ -676,16 +676,16 @@ export default function PortfolioPage() {
                             className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg"
                             style={{
                               background: urgent
-                                ? "rgba(239,68,68,0.1)"
+                                ? "var(--accent-soft)"
                                 : soon
-                                  ? "rgba(251,191,36,0.1)"
+                                  ? "var(--gold-tint)"
                                   : "var(--card-fill)",
-                              color: urgent ? "#F87171" : soon ? "#FBBF24" : "var(--text-tertiary)",
+                              color: urgent ? "var(--accent)" : soon ? "var(--gold)" : "var(--ink-3)",
                               border: urgent
-                                ? "1px solid rgba(239,68,68,0.25)"
+                                ? "1px solid var(--accent)"
                                 : soon
-                                  ? "1px solid rgba(251,191,36,0.25)"
-                                  : "1px solid rgba(255,255,255,0.06)",
+                                  ? "1px solid var(--gold-soft)"
+                                  : "1px solid var(--rule)",
                             }}
                           >
                             <CalendarClock size={11} />
@@ -704,7 +704,7 @@ export default function PortfolioPage() {
                           </span>
                           <span className="mono" style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>
                             ${totalRedeemed.toFixed(0)} / ${totalValue.toFixed(0)}
-                            <span className="ml-1.5 text-[11px]" style={{ color: totalRemaining > 0 ? "#FBBF24" : "#34D399" }}>
+                            <span className="ml-1.5 text-[11px]" style={{ color: totalRemaining > 0 ? "var(--gold)" : "var(--gain)" }}>
                               {totalRemaining > 0 ? `$${totalRemaining.toFixed(0)} unused` : "all used"}
                             </span>
                           </span>
@@ -714,7 +714,7 @@ export default function PortfolioPage() {
                             className="h-full rounded-full"
                             style={{
                               width: `${Math.min(percentRedeemed, 100)}%`,
-                              background: percentRedeemed >= 100 ? "#34D399" : "var(--accent)",
+                              background: percentRedeemed >= 100 ? "var(--gain)" : "var(--accent)",
                             }}
                           />
                         </div>
@@ -728,7 +728,7 @@ export default function PortfolioPage() {
                             className="flex items-center justify-between py-2 px-3 rounded-xl"
                             style={{
                               background: "var(--card-fill)",
-                              border: "1px solid rgba(255,255,255,0.04)",
+                              border: "1px solid var(--rule)",
                             }}
                           >
                             <div className="min-w-0 mr-3">
@@ -738,8 +738,8 @@ export default function PortfolioPage() {
                                   <span
                                     className="ml-1.5 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
                                     style={{
-                                      background: "rgba(255,255,255,0.05)",
-                                      color: "var(--text-tertiary)",
+                                      background: "var(--surface-2)",
+                                      color: "var(--ink-3)",
                                     }}
                                   >
                                     {c.recurrence}
@@ -756,7 +756,7 @@ export default function PortfolioPage() {
                               <div
                                 className="text-[12.5px] font-semibold tabular-nums"
                                 style={{
-                                  color: c.status === "redeemed" ? "#34D399" : c.status === "partial" ? "#FBBF24" : "white",
+                                  color: c.status === "redeemed" ? "var(--gain)" : c.status === "partial" ? "var(--gold)" : "var(--ink)",
                                 }}
                               >
                                 ${c.redeemed_amount.toFixed(0)} / ${c.value_cad.toFixed(0)}
@@ -801,10 +801,10 @@ export default function PortfolioPage() {
                     style={{
                       background: "var(--card-fill)",
                       border: isPositive
-                        ? "1px solid rgba(52,211,153,0.25)"
+                        ? "1px solid var(--gain-soft)"
                         : hasNoFee
-                          ? "1px solid var(--border-dim)"
-                          : "1px solid rgba(239,68,68,0.25)",
+                          ? "1px solid var(--rule)"
+                          : "1px solid var(--accent-soft)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -819,16 +819,16 @@ export default function PortfolioPage() {
                         className="label-xs px-2.5 py-1 rounded-full shrink-0"
                         style={{
                           background: isPositive
-                            ? "rgba(52,211,153,0.12)"
+                            ? "var(--gain-soft)"
                             : hasNoFee
                               ? "var(--rule)"
-                              : "rgba(239,68,68,0.12)",
-                          color: isPositive ? "#34D399" : hasNoFee ? "var(--text-tertiary)" : "#F87171",
+                              : "var(--accent-soft)",
+                          color: isPositive ? "var(--gain)" : hasNoFee ? "var(--ink-3)" : "var(--loss)",
                           border: isPositive
-                            ? "1px solid rgba(52,211,153,0.25)"
+                            ? "1px solid var(--gain-soft)"
                             : hasNoFee
-                              ? "1px solid var(--border-dim)"
-                              : "1px solid rgba(239,68,68,0.25)",
+                              ? "1px solid var(--rule)"
+                              : "1px solid var(--accent-soft)",
                         }}
                       >
                         {hasNoFee ? "Free" : isPositive ? `+$${card.net_roi.toFixed(0)}` : `-$${Math.abs(card.net_roi).toFixed(0)}`}
@@ -842,7 +842,7 @@ export default function PortfolioPage() {
                           <span style={{ color: "var(--text-tertiary)" }}>
                             ${card.value_earned.toFixed(0)} earned vs ${card.annual_fee} fee
                           </span>
-                          <span className="font-semibold" style={{ color: isPositive ? "#34D399" : "#F87171" }}>
+                          <span className="font-semibold" style={{ color: isPositive ? "var(--gain)" : "var(--loss)" }}>
                             {card.value_earned > 0
                               ? `${((card.value_earned / card.annual_fee) * 100).toFixed(0)}%`
                               : "0%"}
@@ -853,9 +853,7 @@ export default function PortfolioPage() {
                             className="h-full rounded-full transition-all duration-700"
                             style={{
                               width: `${Math.min((card.value_earned / Math.max(card.annual_fee, 1)) * 100, 100)}%`,
-                              background: isPositive
-                                ? "linear-gradient(90deg, #34D399, #10B981)"
-                                : "linear-gradient(90deg, #F87171, #EF4444)",
+                              background: isPositive ? "var(--gain)" : "var(--loss)",
                             }}
                           />
                         </div>
@@ -869,7 +867,7 @@ export default function PortfolioPage() {
                       </p>
                     )}
                     {hasNoFee && card.value_earned > 0 && (
-                      <p className="text-[11px]" style={{ color: "#34D399" }}>
+                      <p className="text-[11px]" style={{ color: "var(--gain)" }}>
                         Pure profit — ${card.value_earned.toFixed(2)} earned with no fee
                       </p>
                     )}
@@ -894,7 +892,7 @@ export default function PortfolioPage() {
       {hasWallet && (
         <AnimatedSection delay={0.2} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle size={16} style={{ color: "#FBBF24" }} />
+            <AlertTriangle size={16} style={{ color: "var(--gold)" }} />
             <h2 className="display" style={{ fontSize: 22 }}>Money Left on the Table</h2>
           </div>
 
@@ -945,30 +943,30 @@ export default function PortfolioPage() {
                       className="px-5 py-3.5 flex items-center justify-between"
                       style={{
                         background: "var(--card-fill)",
-                        borderTop: i > 0 ? "1px solid var(--border-dim)" : "none",
+                        borderTop: i > 0 ? "1px solid var(--rule)" : "none",
                       }}
                     >
                       <div className="min-w-0">
                         <p className="mono" style={{ fontSize: 13, color: "var(--ink)" }}>{entry.category_name}</p>
-                        <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        <p className="text-[11px] mt-0.5" style={{ color: "var(--ink-3)" }}>
                           Used: {entry.card_used}
                           {hasGap && entry.optimal_card !== entry.card_used && (
-                            <span style={{ color: "#FBBF24" }}> → Best: {entry.optimal_card}</span>
+                            <span style={{ color: "var(--gold)" }}> → Best: {entry.optimal_card}</span>
                           )}
                         </p>
                       </div>
                       <div className="text-right shrink-0 ml-3">
                         {hasGap ? (
                           <>
-                            <p className="text-[13px] font-bold" style={{ color: "#FBBF24" }}>
+                            <p className="text-[13px] font-bold" style={{ color: "var(--gold)" }}>
                               -${entry.gap.toFixed(2)}
                             </p>
-                            <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                            <p className="text-[10px]" style={{ color: "var(--ink-3)" }}>
                               on ${entry.total_spend.toFixed(0)} spend
                             </p>
                           </>
                         ) : (
-                          <p className="text-[12px] font-medium" style={{ color: "#34D399" }}>
+                          <p className="text-[12px] font-medium" style={{ color: "var(--gain)" }}>
                             Optimal ✓
                           </p>
                         )}
@@ -1057,23 +1055,23 @@ export default function PortfolioPage() {
                     className="rounded-xl px-4 py-3"
                     style={{
                       background: gap.is_covered
-                        ? "rgba(52,211,153,0.04)"
-                        : "rgba(239,68,68,0.04)",
+                        ? "var(--gain-soft)"
+                        : "var(--accent-wash)",
                       border: gap.is_covered
-                        ? "1px solid rgba(52,211,153,0.15)"
-                        : "1px solid rgba(239,68,68,0.15)",
+                        ? "1px solid var(--gain-soft)"
+                        : "1px solid var(--accent-soft)",
                     }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="mono" style={{ fontSize: 12, color: "var(--ink)", fontWeight: 600 }}>{gap.category_name}</span>
                       <span
                         className="text-[10px] font-bold"
-                        style={{ color: gap.is_covered ? "#34D399" : "#F87171" }}
+                        style={{ color: gap.is_covered ? "var(--gain)" : "var(--loss)" }}
                       >
                         {gap.wallet_return.toFixed(1)}%
                       </span>
                     </div>
-                    <p className="text-[10px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                    <p className="text-[10px] truncate" style={{ color: "var(--ink-3)" }}>
                       {gap.best_card_in_wallet || "No card"}
                     </p>
                   </div>
