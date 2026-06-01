@@ -913,16 +913,47 @@ func (s *AIService) registerTools() {
 		Description: "PRO ONLY. Project the user's Aeroplan 2026 SQC tier — current tier, gap to next, " +
 			"spend needed at best card rate to close the gap. The Aeroplan 2026 framework is brand-new " +
 			"and unique to MapleRewards; no other tool projects this. USE THIS when the user asks " +
-			"about Aeroplan elite status, SQC, or 'how do I make 35K status this year?'",
+			"about Aeroplan elite status, SQC, or 'how do I make 35K status this year?'. " +
+			"Aeroplan status needs BOTH enough SQC AND a minimum flight-revenue floor per tier — if the " +
+			"user mentions flights they've taken or plan to take, pass flight_sqc and flight_spend_cad so " +
+			"the projection reports the tier they TRULY qualify for (qualified_tier) and the revenue-floor gap.",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"flight_sqc": map[string]any{
+					"type":        "integer",
+					"description": "Optional. SQC the user has earned (or expects) from flights/partners this year. Default 0.",
+				},
+				"flight_spend_cad": map[string]any{
+					"type":        "number",
+					"description": "Optional. Flight revenue in CAD the user has spent (or expects) this year — counts toward the per-tier revenue floor. Default 0.",
+				},
+			},
+			"required": []string{},
 		},
-		Handler: func(ctx context.Context, sessionID string, _ bool, _ json.RawMessage) (json.RawMessage, error) {
+		Handler: func(ctx context.Context, sessionID string, _ bool, raw json.RawMessage) (json.RawMessage, error) {
 			if s.pro.SQC == nil {
 				return errResultJSON("service_unavailable", "SQC projector not configured."), nil
 			}
-			proj, err := s.pro.SQC.Project(ctx, sessionID)
+			// Optional flight inputs. Absent/invalid ⇒ zero-value struct ⇒
+			// legacy card-spend-only projection. Negatives are clamped to 0.
+			var args struct {
+				FlightSQC      int     `json:"flight_sqc"`
+				FlightSpendCAD float64 `json:"flight_spend_cad"`
+			}
+			if len(raw) > 0 {
+				_ = json.Unmarshal(raw, &args)
+			}
+			if args.FlightSQC < 0 {
+				args.FlightSQC = 0
+			}
+			if args.FlightSpendCAD < 0 {
+				args.FlightSpendCAD = 0
+			}
+			proj, err := s.pro.SQC.Project(ctx, sessionID, SQCFlightInputs{
+				FlightSQC:      args.FlightSQC,
+				FlightSpendCAD: args.FlightSpendCAD,
+			})
 			if err != nil {
 				return errResultJSON("project_failed", err.Error()), nil
 			}

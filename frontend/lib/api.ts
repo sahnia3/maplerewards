@@ -691,8 +691,39 @@ export async function recordCreditRedemption(
 
 import type { SQCProjection } from "./types";
 
-export async function getSQCProjection(sessionId: string): Promise<SQCProjection> {
-  return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection`);
+export async function getSQCProjection(
+  sessionId: string,
+  opts?: { flightSqc?: number; flightSpendCad?: number },
+): Promise<SQCProjection> {
+  const qs = new URLSearchParams();
+  if (opts?.flightSqc != null) qs.set("flight_sqc", String(opts.flightSqc));
+  if (opts?.flightSpendCad != null) qs.set("flight_spend_cad", String(opts.flightSpendCad));
+  const tail = qs.toString() ? `?${qs.toString()}` : "";
+  return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection${tail}`);
+}
+
+// ── Renewal optimizer ────────────────────────────────────────────────────────
+
+import type { RenewalReport } from "./types";
+
+export async function getRenewalReport(sessionId: string): Promise<RenewalReport> {
+  return request<RenewalReport>(`/wallet/${sessionId}/renewal-optimizer`);
+}
+
+// ── Welcome-bonus / churn planner ────────────────────────────────────────────
+
+import type { ChurnPlan } from "./types";
+
+export async function getChurnPlan(sessionId: string): Promise<ChurnPlan> {
+  return request<ChurnPlan>(`/wallet/${sessionId}/churn-planner`);
+}
+
+// ── Points-expiry guardian ───────────────────────────────────────────────────
+
+import type { ExpiryReport } from "./types";
+
+export async function getExpiryGuardian(sessionId: string): Promise<ExpiryReport> {
+  return request<ExpiryReport>(`/wallet/${sessionId}/expiry-guardian`);
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────

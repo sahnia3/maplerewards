@@ -63,45 +63,67 @@ func (s *ApplicationService) CheckEligibility(ctx context.Context, sessionID, ca
 	if err != nil {
 		return nil, fmt.Errorf("rules lookup: %w", err)
 	}
-	var cooldownDays int
-	var ruleNote string
+	var cooldownDays, maxPerYear int
+	var cooldownNote, maxNote string
 	for _, r := range rules {
-		if r.Issuer == card.Issuer && r.RuleType == "cooldown_days" {
-			cooldownDays = r.Value
-			ruleNote = r.Notes
-			break
+		if r.Issuer != card.Issuer {
+			continue
+		}
+		switch r.RuleType {
+		case "cooldown_days":
+			cooldownDays, cooldownNote = r.Value, r.Notes
+		case "max_per_year":
+			maxPerYear, maxNote = r.Value, r.Notes
 		}
 	}
-	if cooldownDays == 0 {
+	if cooldownDays == 0 && maxPerYear == 0 {
 		res.Severity = "unknown"
 		res.Reason = "No documented cooldown rule for " + card.Issuer + " — proceed at your own risk."
 		return res, nil
 	}
 
-	last, err := s.appRepo.LastApplicationForIssuer(ctx, user.ID, card.Issuer)
-	if err != nil {
-		return nil, err
-	}
-	if last.IsZero() {
-		res.Reason = fmt.Sprintf("%s typically requires %d days between approvals. No prior application on file.", card.Issuer, cooldownDays)
-		res.IssuerRule = ruleNote
-		return res, nil
+	// Cooldown rule — time since the last application to this issuer.
+	if cooldownDays > 0 {
+		last, err := s.appRepo.LastApplicationForIssuer(ctx, user.ID, card.Issuer)
+		if err != nil {
+			return nil, err
+		}
+		res.IssuerRule = cooldownNote
+		if last.IsZero() {
+			res.Reason = fmt.Sprintf("%s typically requires %d days between approvals. No prior application on file.", card.Issuer, cooldownDays)
+		} else {
+			res.LastAppliedAt = &last
+			gap := time.Since(last)
+			cooldown := time.Duration(cooldownDays) * 24 * time.Hour
+			if gap < cooldown {
+				eligibleAt := last.Add(cooldown)
+				daysLeft := int(cooldown-gap)/int(24*time.Hour) + 1
+				res.Severity = "warn"
+				res.EligibleAt = &eligibleAt
+				res.Reason = fmt.Sprintf("Last %s application was %d day(s) ago. The typical cooldown is %d days — wait ~%d more day(s) to clear it.",
+					card.Issuer, int(gap.Hours()/24), cooldownDays, daysLeft)
+			} else {
+				res.Reason = fmt.Sprintf("Last %s application was %d day(s) ago — past the %d-day cooldown.",
+					card.Issuer, int(gap.Hours()/24), cooldownDays)
+			}
+		}
 	}
 
-	res.LastAppliedAt = &last
-	res.IssuerRule = ruleNote
-	gap := time.Since(last)
-	cooldown := time.Duration(cooldownDays) * 24 * time.Hour
-	if gap < cooldown {
-		eligibleAt := last.Add(cooldown)
-		daysLeft := int(cooldown-gap)/int(24*time.Hour) + 1
-		res.Severity = "warn"
-		res.EligibleAt = &eligibleAt
-		res.Reason = fmt.Sprintf("Last %s application was %d day(s) ago. The typical cooldown is %d days — wait ~%d more day(s) to clear it.",
-			card.Issuer, int(gap.Hours()/24), cooldownDays, daysLeft)
-	} else {
-		res.Reason = fmt.Sprintf("Last %s application was %d day(s) ago — past the %d-day cooldown.",
-			card.Issuer, int(gap.Hours()/24), cooldownDays)
+	// Max-per-year rule — applications to this issuer in the trailing 12 months.
+	if maxPerYear > 0 {
+		windowStart := time.Now().AddDate(-1, 0, 0)
+		count, err := s.appRepo.CountApplicationsForIssuerSince(ctx, user.ID, card.Issuer, windowStart)
+		if err != nil {
+			return nil, err
+		}
+		if count >= maxPerYear {
+			res.Severity = "warn"
+			if maxNote != "" {
+				res.IssuerRule = maxNote
+			}
+			res.Reason = fmt.Sprintf("You've recorded %d %s application(s) in the last 12 months; %s limits to ~%d per year. A new application now may be auto-declined.",
+				count, card.Issuer, card.Issuer, maxPerYear)
+		}
 	}
 	return res, nil
 }

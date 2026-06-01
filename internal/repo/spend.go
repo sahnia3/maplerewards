@@ -286,6 +286,24 @@ func (r *SpendRepo) ListSpendEntries(ctx context.Context, userID string, limit, 
 	return entries, rows.Err()
 }
 
+// SpendMonthsObserved returns how many distinct calendar months the user has
+// logged spend in (across all cards/categories). The churn planner divides
+// total spend by this to estimate average monthly spend capacity, so a user
+// who logged $9k across 3 months reads as $3k/mo, not $9k/mo. Zero when the
+// user has no spend history at all.
+func (r *SpendRepo) SpendMonthsObserved(ctx context.Context, userID string) (int, error) {
+	var months int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT month)
+		FROM user_monthly_spend
+		WHERE user_id = $1
+	`, userID).Scan(&months)
+	if err != nil {
+		return 0, err
+	}
+	return months, nil
+}
+
 // GetSpendStats returns aggregated spend statistics for a user.
 func (r *SpendRepo) GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error) {
 	stats := &model.SpendStats{}

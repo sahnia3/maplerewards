@@ -66,6 +66,37 @@ func (r *CardRepo) ListCards(ctx context.Context) ([]model.Card, error) {
 	return cards, rows.Err()
 }
 
+// DowngradeCandidates returns active cards from the same issuer and loyalty
+// program with a lower annual fee than belowFee, excluding excludeCardID. Used by
+// the renewal optimizer to suggest product-change / downgrade targets.
+func (r *CardRepo) DowngradeCandidates(ctx context.Context, issuer, loyaltyProgramID string, belowFee float64, excludeCardID string) ([]model.Card, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, name, issuer, annual_fee
+		FROM cards
+		WHERE is_active = true
+		  AND issuer = $1
+		  AND loyalty_program_id = $2
+		  AND annual_fee < $3
+		  AND id <> $4
+		ORDER BY annual_fee ASC, name
+		LIMIT 3
+	`, issuer, loyaltyProgramID, belowFee, excludeCardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []model.Card
+	for rows.Next() {
+		var c model.Card
+		if err := rows.Scan(&c.ID, &c.Name, &c.Issuer, &c.AnnualFee); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *CardRepo) GetCard(ctx context.Context, id string) (*model.Card, error) {
 	c := &model.Card{LoyaltyProgram: &model.LoyaltyProgram{}}
 	var offerExpiresAt *time.Time

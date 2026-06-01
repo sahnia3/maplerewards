@@ -483,6 +483,105 @@ export interface SQCProjection {
   spend_to_next_tier?: number;
   best_card_for_gap?: string;
   wallet_has_no_aeroplan_cards: boolean;
+  /** Disclosure when the current/next tier also enforces a flight-revenue floor. */
+  revenue_floor_note?: string;
+  // ── Optional flight inputs (additive; default 0 ⇒ legacy behaviour) ──────
+  /** Echoed flight SQC the user self-reported. */
+  flight_sqc?: number;
+  /** Echoed flight revenue (CAD) the user self-reported. */
+  flight_spend_cad?: number;
+  /** Highest tier meeting BOTH the SQC threshold AND its flight-revenue floor. */
+  qualified_tier?: string;
+  /** min_revenue_cad for the next/target tier (0 if no floor). */
+  revenue_floor_cad?: number;
+  /** Whether reported flight revenue clears revenue_floor_cad. */
+  revenue_floor_met?: boolean;
+  /** Additional flight revenue (CAD) needed to clear the next tier's floor. */
+  revenue_floor_gap_cad?: number;
+}
+
+// ── Renewal optimizer ────────────────────────────────────────────────────────
+
+export interface RenewalDowngradeOption {
+  card_id: string;
+  card_name: string;
+  annual_fee: number;
+  fee_saved: number;
+}
+
+export interface RenewalAssessment {
+  card_id: string;
+  card_name: string;
+  issuer: string;
+  program_name: string;
+  annual_fee: number;
+  fee_renewal_date?: string;
+  days_to_renewal?: number;
+  spend_value: number;
+  credits_value: number;
+  credits_used: number;
+  realized_net: number;
+  potential_net: number;
+  verdict: string;
+  rationale: string;
+  downgrade_options?: RenewalDowngradeOption[];
+}
+
+export interface RenewalReport {
+  year: number;
+  assessments: RenewalAssessment[];
+  total_annual_fees: number;
+  total_net_value: number;
+  potential_savings: number;
+}
+
+// ── Welcome-bonus / churn planner ────────────────────────────────────────────
+
+export interface ChurnCandidate {
+  card_id: string;
+  card_name: string;
+  issuer: string;
+  program_name: string;
+  welcome_bonus_points: number;
+  welcome_bonus_value_cad: number;
+  annual_fee: number;
+  net_first_year_value_cad: number;
+  min_spend: number;
+  min_spend_months: number;
+  monthly_spend_needed_cad: number;
+  min_spend_feasible: boolean;
+  eligible: boolean;
+  block_reason?: string;
+  earliest_eligible_date?: string | null; // ISO YYYY-MM-DD, set when cooldown-blocked
+}
+
+export interface ChurnPlan {
+  year: number;
+  recommendations: ChurnCandidate[];
+  blocked: ChurnCandidate[];
+  best_next_card: string;
+  total_potential_bonus_value_cad: number;
+}
+
+// ── Points-expiry guardian ───────────────────────────────────────────────────
+
+export interface ExpiryAccount {
+  program_slug: string;
+  program_name: string;
+  account_label?: string | null;
+  balance: number;
+  effective_expiry?: string | null; // ISO date, null = never
+  days_to_expiry?: number | null;   // null = never
+  points_at_risk_cad: number;
+  risk: string; // critical | warning | watch | ok | none
+  reset_suggestion: string;
+}
+
+export interface ExpiryReport {
+  generated_year: number;
+  accounts: ExpiryAccount[];
+  total_points_at_risk_cad: number;
+  accounts_expiring_soon: number;
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────

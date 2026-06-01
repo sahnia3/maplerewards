@@ -44,6 +44,28 @@ func (r *LoyaltyAccountRepo) GetExpiryRule(ctx context.Context, programSlug stri
 	return &er, nil
 }
 
+// ListExpiryRules returns every per-program expiry policy, for callers that need
+// to classify a whole wallet of accounts in one pass (points-expiry guardian).
+func (r *LoyaltyAccountRepo) ListExpiryRules(ctx context.Context) ([]ExpiryRule, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT program_slug, inactivity_months, fixed_months_from_earn, COALESCE(notes,'')
+		FROM loyalty_expiry_rules
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExpiryRule
+	for rows.Next() {
+		var er ExpiryRule
+		if err := rows.Scan(&er.ProgramSlug, &er.InactivityMonths, &er.FixedMonthsFromEarn, &er.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, er)
+	}
+	return out, rows.Err()
+}
+
 func (r *LoyaltyAccountRepo) Create(ctx context.Context, userID string, req model.CreateLoyaltyAccountRequest) (*model.LoyaltyAccount, error) {
 	if req.ProgramSlug == "" {
 		return nil, fmt.Errorf("program_slug required")

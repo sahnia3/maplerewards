@@ -6,7 +6,7 @@ import { getSQCProjection } from "@/lib/api";
 import type { SQCProjection } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { Stat, fmtCAD, sectionStyle } from "./_shared";
+import { Stat, fmtCAD, fmtCAD2, FieldLabel, fieldStyle, ctaStyle, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -18,18 +18,48 @@ export function SQCTile({ sessionId, isReady }: Props) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isReady || !sessionId) return;
+  // Self-reported flight inputs. Kept as strings for controlled inputs; empty
+  // ⇒ omitted from the request ⇒ backend defaults to 0 (legacy projection).
+  const [flightSpend, setFlightSpend] = useState("");
+  const [flightSqc, setFlightSqc] = useState("");
+
+  function load(opts?: { flightSqc?: number; flightSpendCad?: number }) {
+    if (!sessionId) return;
     setLoading(true);
-    getSQCProjection(sessionId)
+    setErr(null);
+    getSQCProjection(sessionId, opts)
       .then(setProj)
       .catch((e) => setErr(e instanceof Error ? e.message : "Could not load SQC projection"))
       .finally(() => setLoading(false));
+  }
+
+  // Initial load uses NO opts so the default request stays identical to before.
+  useEffect(() => {
+    if (!isReady || !sessionId) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isReady]);
+
+  function applyFlightInputs(e: React.FormEvent) {
+    e.preventDefault();
+    const spend = flightSpend.trim() === "" ? undefined : Math.max(0, Number(flightSpend));
+    const sqc = flightSqc.trim() === "" ? undefined : Math.max(0, Math.round(Number(flightSqc)));
+    load({
+      flightSpendCad: spend != null && Number.isFinite(spend) ? spend : undefined,
+      flightSqc: sqc != null && Number.isFinite(sqc) ? sqc : undefined,
+    });
+  }
 
   const tierProgress = proj && proj.tiers.length > 0
     ? Math.min(100, (proj.total_sqc_earned / proj.tiers[proj.tiers.length - 1].sqc_required) * 100)
     : 0;
+
+  // The revenue floor blocks status even when SQC is there; surface it when the
+  // target tier carries a floor, or when the truly-qualified tier trails the
+  // SQC-cleared current tier.
+  const floorCAD = proj?.revenue_floor_cad ?? 0;
+  const showFloor = !!proj && (floorCAD > 0 || (!!proj.qualified_tier && proj.qualified_tier !== proj.current_tier));
+  const qualifiedDiffers = !!proj && !!proj.current_tier && proj.qualified_tier !== proj.current_tier;
 
   return (
     <section style={sectionStyle}>
@@ -91,6 +121,81 @@ export function SQCTile({ sessionId, isReady }: Props) {
                 Best card to close the gap: <strong style={{ color: "var(--ink)" }}>{proj.best_card_for_gap}</strong>
               </p>
             )}
+
+            {/* ── Revenue-floor requirement ───────────────────────────────── */}
+            {showFloor && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: "14px 16px",
+                  border: `1px solid ${proj.revenue_floor_met ? "var(--rule)" : "var(--accent)"}`,
+                  borderRadius: 10,
+                  background: "var(--card-fill)",
+                }}
+              >
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Flight-revenue floor</div>
+                {floorCAD > 0 ? (
+                  <p className="serif" style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.5, margin: 0 }}>
+                    {proj.next_tier ?? proj.current_tier} also needs{" "}
+                    <strong style={{ color: "var(--ink)" }}>{fmtCAD(floorCAD)}</strong> in flight revenue.{" "}
+                    {proj.revenue_floor_met ? (
+                      <span style={{ color: "var(--gain)" }}>Met with your reported {fmtCAD(proj.flight_spend_cad ?? 0)}.</span>
+                    ) : (
+                      <span>
+                        You&apos;ve reported {fmtCAD(proj.flight_spend_cad ?? 0)} —{" "}
+                        <strong style={{ color: "var(--accent)" }}>{fmtCAD2(proj.revenue_floor_gap_cad ?? floorCAD)}</strong> short.
+                      </span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="serif" style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.5, margin: 0 }}>
+                    This tier has no flight-revenue floor.
+                  </p>
+                )}
+                {qualifiedDiffers && (
+                  <p className="serif" style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.5, marginTop: 8, marginBottom: 0 }}>
+                    On SQC alone you&apos;ve cleared <strong style={{ color: "var(--ink)" }}>{proj.current_tier}</strong>, but your
+                    fully-qualified tier (SQC + flight revenue) is{" "}
+                    <strong style={{ color: "var(--ink)" }}>{proj.qualified_tier || "none yet"}</strong>.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ── Flight inputs ───────────────────────────────────────────── */}
+            <form onSubmit={applyFlightInputs} style={{ marginTop: 16, borderTop: "1px solid var(--rule)", paddingTop: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
+                <div>
+                  <FieldLabel>Expected flight spend (CAD)</FieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="100"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={flightSpend}
+                    onChange={(e) => setFlightSpend(e.target.value)}
+                    style={fieldStyle}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Flight SQC (optional)</FieldLabel>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1000"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={flightSqc}
+                    onChange={(e) => setFlightSqc(e.target.value)}
+                    style={fieldStyle}
+                  />
+                </div>
+                <button type="submit" style={ctaStyle} disabled={loading}>
+                  Recalc
+                </button>
+              </div>
+            </form>
 
             {proj.cards.length > 0 && (
               <div style={{ marginTop: 18, borderTop: "1px solid var(--rule)", paddingTop: 14 }}>
