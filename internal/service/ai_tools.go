@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/quota"
 )
 
 // ── Anthropic API types — block-based content ────────────────────────────────
@@ -219,35 +220,35 @@ func (r *toolRegistry) call(ctx context.Context, sessionID string, isPro bool, n
 // by passing "amex-mr-canada" (where DB has "amex-mr-ca"), "amex-mr", or "amex"
 // — each failure costs a wasted round.
 var programSlugAliases = map[string]string{
-	"amex-mr":          "amex-mr-ca",
-	"amex-mr-canada":   "amex-mr-ca",
-	"amex":             "amex-mr-ca",
-	"amex-membership":  "amex-mr-ca",
+	"amex-mr":            "amex-mr-ca",
+	"amex-mr-canada":     "amex-mr-ca",
+	"amex":               "amex-mr-ca",
+	"amex-membership":    "amex-mr-ca",
 	"membership-rewards": "amex-mr-ca",
-	"avios":            "ba-avios",
-	"british-airways":  "ba-avios",
-	"flying-blue":      "flying-blue",
-	"airfrance":        "flying-blue",
-	"air-france":       "flying-blue",
-	"klm":              "flying-blue",
-	"asia-miles":       "asia-miles",
-	"cathay":           "asia-miles",
-	"hyatt":            "world-of-hyatt",
-	"hilton":           "hilton-honors",
-	"marriott":         "marriott-bonvoy",
-	"bonvoy":           "marriott-bonvoy",
-	"scene":            "scene-plus",
-	"scene+":           "scene-plus",
-	"westjet":          "westjet-rewards",
-	"airmiles":         "air-miles",
-	"air-miles":        "air-miles",
-	"rbc":              "rbc-avion",
-	"avion":            "rbc-avion",
-	"aventura":         "cibc-aventura",
-	"cibc":             "cibc-aventura",
-	"td":               "td-rewards",
-	"bmo":              "bmo-rewards",
-	"scotia":           "scotia-rewards",
+	"avios":              "ba-avios",
+	"british-airways":    "ba-avios",
+	"flying-blue":        "flying-blue",
+	"airfrance":          "flying-blue",
+	"air-france":         "flying-blue",
+	"klm":                "flying-blue",
+	"asia-miles":         "asia-miles",
+	"cathay":             "asia-miles",
+	"hyatt":              "world-of-hyatt",
+	"hilton":             "hilton-honors",
+	"marriott":           "marriott-bonvoy",
+	"bonvoy":             "marriott-bonvoy",
+	"scene":              "scene-plus",
+	"scene+":             "scene-plus",
+	"westjet":            "westjet-rewards",
+	"airmiles":           "air-miles",
+	"air-miles":          "air-miles",
+	"rbc":                "rbc-avion",
+	"avion":              "rbc-avion",
+	"aventura":           "cibc-aventura",
+	"cibc":               "cibc-aventura",
+	"td":                 "td-rewards",
+	"bmo":                "bmo-rewards",
+	"scotia":             "scotia-rewards",
 }
 
 // canonicalProgramSlug normalizes a user/LLM-supplied slug into the DB slug.
@@ -895,14 +896,14 @@ func (s *AIService) registerTools() {
 				hotels = hotels[:8]
 			}
 			return mustJSON(map[string]any{
-				"status":         "ok",
-				"city":           args.City,
-				"checkin":        args.CheckIn,
-				"checkout":       args.CheckOut,
-				"currency":       "CAD",
-				"price_type":     "cash_per_night",
-				"note":           "These are live CASH nightly rates from Google Hotels. Quote prices + the booking link verbatim. Not points redemptions.",
-				"hotels":         hotels,
+				"status":     "ok",
+				"city":       args.City,
+				"checkin":    args.CheckIn,
+				"checkout":   args.CheckOut,
+				"currency":   "CAD",
+				"price_type": "cash_per_night",
+				"note":       "These are live CASH nightly rates from Google Hotels. Quote prices + the booking link verbatim. Not points redemptions.",
+				"hotels":     hotels,
 			}), nil
 		},
 	})
@@ -1317,9 +1318,9 @@ func (s *AIService) registerTools() {
 // catalog) live here.
 //
 // Returns 2 system blocks with cache_control:
-//   1. Instructions + tier routing + card catalog — stable across all users at
-//      this tier; high cache hit rate (~90%+ after warmup).
-//   2. Per-user wallet context — cached separately at default 5-min TTL.
+//  1. Instructions + tier routing + card catalog — stable across all users at
+//     this tier; high cache hit rate (~90%+ after warmup).
+//  2. Per-user wallet context — cached separately at default 5-min TTL.
 //
 // Today's date is in block 1 — Anthropic's training cutoff is months stale,
 // so without an injected date the model picks past dates and APIs reject them.
@@ -1418,11 +1419,12 @@ FREE TIER NOTE
 // non-streaming mode. The handler converts events to SSE wire format.
 //
 // Event names:
-//   "round_start"  {round int}
-//   "tool_start"   {id, name, args}
-//   "tool_done"    {id, name, summary}
-//   "tool_error"   {id, name, error}
-//   "round_end"    {round, has_more bool}
+//
+//	"round_start"  {round int}
+//	"tool_start"   {id, name, args}
+//	"tool_done"    {id, name, summary}
+//	"tool_error"   {id, name, error}
+//	"round_end"    {round, has_more bool}
 type EmitFn func(event string, data map[string]any)
 
 // ChatWithTools is the non-streaming wrapper. Calls the streaming variant with
@@ -1440,6 +1442,29 @@ func withProCtx(ctx context.Context, isPro bool) context.Context {
 func proFromCtx(ctx context.Context) bool {
 	v, _ := ctx.Value(proCtxKey{}).(bool)
 	return v
+}
+
+// quotaTierCtxKey carries the caller's subscription tier down to the paid-API
+// services (serpapi/tavily/apify), which charge it against the right per-tier
+// monthly cap. Same rationale as proCtxKey: per-request state that can't be a
+// parameter on the once-registered tools or deep helper chains.
+type quotaTierCtxKey struct{}
+
+// withQuotaTier attaches the resolved quota tier to ctx. Entry points
+// (ChatWithToolsStream, EvaluateTrip, AwardSearchService.Search) set it from
+// the most precise tier they know.
+func withQuotaTier(ctx context.Context, tier quota.Tier) context.Context {
+	return context.WithValue(ctx, quotaTierCtxKey{}, tier)
+}
+
+// quotaTierFromCtx reads the quota tier set by an entry point. It DEFAULTS TO
+// quota.TierFree (the tightest cap) when unset, so any unclassified paid call
+// is charged conservatively rather than against a generous bucket.
+func quotaTierFromCtx(ctx context.Context) quota.Tier {
+	if t, ok := ctx.Value(quotaTierCtxKey{}).(quota.Tier); ok {
+		return t
+	}
+	return quota.TierFree
 }
 
 // complexChatSignals are substrings that indicate a turn needs the strong
@@ -1480,15 +1505,15 @@ func (s *AIService) selectChatModel(req ChatRequest, isPro bool) string {
 	return s.fastModelID
 }
 
-func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bool) (*ChatResponse, error) {
-	return s.ChatWithToolsStream(ctx, req, isPro, nil)
+func (s *AIService) ChatWithTools(ctx context.Context, req ChatRequest, isPro bool, plan string) (*ChatResponse, error) {
+	return s.ChatWithToolsStream(ctx, req, isPro, plan, nil)
 }
 
 // ChatWithToolsStream runs the canonical Anthropic tool-use loop. If emit is
 // non-nil, intermediate events (tool calls firing, rounds completing) are
 // pushed to the caller as they happen — this is what powers the SSE streaming
 // endpoint and the tool-status pills in the chat UI.
-func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, isPro bool, emit EmitFn) (*ChatResponse, error) {
+func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, isPro bool, plan string, emit EmitFn) (*ChatResponse, error) {
 	if s.apiKey == "" {
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY not configured")
 	}
@@ -1499,6 +1524,10 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	// Carry Pro status to tool execution so search_award_space can Pro-gate
 	// the expensive live Apify scrape.
 	ctx = withProCtx(ctx, isPro)
+	// Carry the precise subscription tier so paid tools (serpapi/tavily/apify)
+	// charge the right per-tier monthly cap. plan is the authoritative source;
+	// isPro is the legacy fallback for tokens minted before the plan claim.
+	ctx = withQuotaTier(ctx, quota.TierForPlan(plan, isPro))
 
 	// Build static system layers.
 	walletCtx := s.buildWalletContext(ctx, req.SessionID)

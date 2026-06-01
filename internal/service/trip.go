@@ -16,6 +16,7 @@ import (
 	"maplerewards/internal/cache"
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
+	"maplerewards/internal/quota"
 )
 
 // TripService evaluates redemption options for flights/hotels using the user's
@@ -122,28 +123,28 @@ var airlineForProgram = map[string]string{
 
 // programForAirline maps airline names (lowercase) to program slugs.
 var programForAirline = map[string]string{
-	"air canada":          "aeroplan",
-	"british airways":     "avios",
-	"air france":          "flying-blue",
-	"klm":                 "flying-blue",
-	"klm royal dutch":     "flying-blue",
-	"united airlines":     "united",
-	"united":              "united",
-	"delta air lines":     "delta",
-	"delta":               "delta",
-	"american airlines":   "american",
-	"american":            "american",
-	"alaska airlines":     "alaska",
-	"alaska":              "alaska",
-	"lufthansa":           "lufthansa",
-	"singapore airlines":  "singapore",
-	"emirates":            "emirates",
-	"turkish airlines":    "turkish",
-	"qatar airways":       "qatar",
-	"etihad airways":      "etihad",
-	"etihad":              "etihad",
-	"virgin atlantic":     "virginatlantic",
-	"sas":                 "eurobonus",
+	"air canada":            "aeroplan",
+	"british airways":       "avios",
+	"air france":            "flying-blue",
+	"klm":                   "flying-blue",
+	"klm royal dutch":       "flying-blue",
+	"united airlines":       "united",
+	"united":                "united",
+	"delta air lines":       "delta",
+	"delta":                 "delta",
+	"american airlines":     "american",
+	"american":              "american",
+	"alaska airlines":       "alaska",
+	"alaska":                "alaska",
+	"lufthansa":             "lufthansa",
+	"singapore airlines":    "singapore",
+	"emirates":              "emirates",
+	"turkish airlines":      "turkish",
+	"qatar airways":         "qatar",
+	"etihad airways":        "etihad",
+	"etihad":                "etihad",
+	"virgin atlantic":       "virginatlantic",
+	"sas":                   "eurobonus",
 	"scandinavian airlines": "eurobonus",
 }
 
@@ -305,6 +306,10 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 	// Carry Pro status down to resolveFlightPoints so the live Apify probe
 	// only fires for Pro users (free users get the KB/zone estimate).
 	ctx = withProCtx(ctx, req.IsPro)
+	// Charge paid lookups (serpapi/apify/tavily) against the caller's tier cap.
+	// Only is_pro is available here, so pro_plus/lifetime fall back to the Pro
+	// cap (conservative); the chat path threads the precise plan.
+	ctx = withQuotaTier(ctx, quota.TierForPlan("", req.IsPro))
 
 	// ── Compute Nights from Date / CheckoutDate ─────────────────────────
 	if req.TripType == "hotel" && req.Date != "" && req.CheckoutDate != "" {
@@ -723,9 +728,9 @@ func (s *TripService) resolveFlightPoints(ctx context.Context, yamlKey, slug, or
 	if !ok {
 		// Avios uses "north_america_transatlantic" instead of "atlantic"
 		alternates := map[string][]string{
-			"atlantic":          {"north_america_transatlantic", "europe_short_haul"},
-			"north_america":     {"north_america_short"},
-			"pacific":           {"asia"},
+			"atlantic":           {"north_america_transatlantic", "europe_short_haul"},
+			"north_america":      {"north_america_short"},
+			"pacific":            {"asia"},
 			"middle_east_africa": {"middle_east"},
 		}
 		for _, alt := range alternates[zone] {

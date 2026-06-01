@@ -12,15 +12,16 @@
 //
 // Run with:    go run ./cmd/worker
 // Configure via env:
-//   DATABASE_URL                — required
-//   REDIS_ADDR                  — default localhost:6379
-//   APIFY_TOKEN                 — required for live probes; empty disables
-//   SEATSAERO_API_KEY           — optional secondary source
-//   SERPAPI_KEY                 — optional cash-price enrichment
-//   AWARD_WATCH_TICK_HOURS      — default 24 hours between sweeps
-//   AWARD_WATCH_BATCH_SIZE      — default 50 watches per sweep
-//   AWARD_WATCH_GAP_THRESHOLD   — default 5000; alert when last_min_points
-//                                 drops by at least this many points.
+//
+//	DATABASE_URL                — required
+//	REDIS_ADDR                  — default localhost:6379
+//	APIFY_TOKEN                 — required for live probes; empty disables
+//	SEATSAERO_API_KEY           — optional secondary source
+//	SERPAPI_KEY                 — optional cash-price enrichment
+//	AWARD_WATCH_TICK_HOURS      — default 24 hours between sweeps
+//	AWARD_WATCH_BATCH_SIZE      — default 50 watches per sweep
+//	AWARD_WATCH_GAP_THRESHOLD   — default 5000; alert when last_min_points
+//	                              drops by at least this many points.
 package main
 
 import (
@@ -264,22 +265,26 @@ func safely(log *slog.Logger, name string, fn func()) {
 const workerApifyReservePct = 30
 
 // awardSweepAllowed reports whether the worker may run its paid award sweep
-// this cycle. Unlike the user-facing path (which fails OPEN on a Redis error to
-// keep chat/search available), this BACKGROUND sweep fails CLOSED when the
+// this cycle. The sweep probes run as Pro (runAwardSweep sets IsPro=true), so
+// the Apify cost is charged against the Pro per-tier bucket — this gate reads
+// that SAME bucket (RemainingTier ... TierPro) so the reserve math matches what
+// the sweep actually spends. Always-fully-finite now (no unlimited tier).
+//
+// Unlike the user-facing path, this BACKGROUND sweep fails CLOSED when the
 // quota is unreadable: with no way to verify remaining budget, skipping is the
 // safe choice — it protects against blind paid spend during a Redis outage,
 // and the sweep simply resumes next cycle once Redis recovers (alerts are
-// delayed, never lost). Unlimited (-1) is allowed.
+// delayed, never lost).
 func awardSweepAllowed(ctx context.Context, log *slog.Logger, q *quota.Client) bool {
-	rem, err := q.Remaining(ctx, "apify")
+	rem, err := q.RemainingTier(ctx, "apify", quota.TierPro)
 	if err != nil {
 		log.Warn("award sweep skipped — quota unreadable; failing closed to protect paid spend", "err", err)
 		return false
 	}
-	if rem < 0 {
-		return true // unlimited provider
-	}
-	reserve := quota.FreeTierLimits["apify"] * workerApifyReservePct / 100
+	// Reserve a slice of the Pro monthly Apify cap for interactive (chat /
+	// award-search) Pro users so a large award_watch table can't black out
+	// live availability for paying customers mid-month.
+	reserve := quota.TierCap("apify", quota.TierPro) * workerApifyReservePct / 100
 	if rem <= reserve {
 		log.Warn("award sweep skipped — reserving Apify quota for interactive users",
 			"remaining", rem, "reserve", reserve)

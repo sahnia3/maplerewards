@@ -62,9 +62,9 @@ type apifyActorInput struct {
 // apifyRunResponse is the response from starting an actor run.
 type apifyRunResponse struct {
 	Data struct {
-		ID                string `json:"id"`
-		Status            string `json:"status"`
-		DefaultDatasetID  string `json:"defaultDatasetId"`
+		ID               string `json:"id"`
+		Status           string `json:"status"`
+		DefaultDatasetID string `json:"defaultDatasetId"`
 	} `json:"data"`
 }
 
@@ -109,16 +109,18 @@ func (s *ApifyAwardService) SearchAwards(
 		}
 	}
 
-	// Hard monthly ceiling on paid actor runs. Mirrors the SerpAPI gate:
-	// fail CLOSED when the cap is hit (don't run another paid scrape), but
-	// fail OPEN on a quota-infra error (a Redis blip shouldn't take the
-	// premium feature down). Checked here — after the cheap validations,
-	// before the expensive actor run.
+	// Per-tier monthly ceiling on paid actor runs. FAILS CLOSED on BOTH an
+	// exhausted cap AND a quota-infra error: Apify is the most expensive paid
+	// provider, so a Redis outage must NOT let scrapes run uncapped. Denying on
+	// error degrades gracefully — award_search still returns Seats.aero +
+	// SerpAPI. Checked after the cheap validations, before the expensive run.
 	if s.quota != nil {
-		_, exhausted, qErr := s.quota.Spend(ctx, "apify")
+		_, exhausted, qErr := s.quota.SpendTier(ctx, "apify", quotaTierFromCtx(ctx))
 		if qErr != nil {
-			slog.Warn("[apify-awards] quota check failed, allowing request", "err", qErr)
-		} else if exhausted {
+			slog.Warn("[apify-awards] quota system degraded; denying paid scrape (fail-closed)", "err", qErr)
+			return nil, ErrQuotaExhausted
+		}
+		if exhausted {
 			slog.Warn("[apify-awards] monthly Apify cap reached — skipping scrape")
 			return nil, ErrQuotaExhausted
 		}

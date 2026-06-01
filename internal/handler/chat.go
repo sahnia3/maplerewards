@@ -154,7 +154,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro)
+	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro, plan)
 	if err != nil {
 		// P0: do NOT leak Anthropic error bodies / tool-call internals to the
 		// client. Log full error server-side, return a stable code + short
@@ -224,12 +224,13 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 //	data: <json>
 //
 // Events emitted:
-//   round_start  {round}
-//   tool_start   {id, name, args}
-//   tool_done    {id, name, summary}
-//   round_end    {round, has_more}
-//   done         {reply, history, conversation_id}
-//   error        {message}
+//
+//	round_start  {round}
+//	tool_start   {id, name, args}
+//	tool_done    {id, name, summary}
+//	round_end    {round, has_more}
+//	done         {reply, history, conversation_id}
+//	error        {message}
 //
 // Pro gating + monthly usage limits are enforced exactly as in Chat().
 func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
@@ -383,7 +384,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	resp, err := h.svc.ChatWithToolsStream(r.Context(), req.ChatRequest, isPro, emit)
+	resp, err := h.svc.ChatWithToolsStream(r.Context(), req.ChatRequest, isPro, plan, emit)
 	if err != nil {
 		// Log server-side too — emit() only reaches the client via SSE, and if
 		// the client already disconnected (which produces ctx.Canceled errors),

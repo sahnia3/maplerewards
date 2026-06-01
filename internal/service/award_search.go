@@ -12,6 +12,7 @@ import (
 
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
+	"maplerewards/internal/quota"
 )
 
 // AwardCache is the minimal cache contract award search needs. Satisfied by
@@ -141,6 +142,13 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 	if req.Cabin == "" {
 		req.Cabin = "economy"
 	}
+
+	// Charge any paid upstream (apify/serpapi) this fan-out makes against the
+	// caller's per-tier monthly cap. Set on ctx before the data-source
+	// goroutines (which call the paid services); the cache-hit path below
+	// returns earlier and never reaches SpendTier, so cache hits aren't
+	// charged. Only is_pro is known here → pro_plus/lifetime use the Pro cap.
+	ctx = withQuotaTier(ctx, quota.TierForPlan("", req.IsPro))
 
 	slog.Info("[award-search] starting",
 		"origin", req.Origin, "dest", req.Destination,
@@ -712,16 +720,16 @@ func (s *AwardSearchService) loadWalletBalances(ctx context.Context, sessionID s
 // slugToIssuer maps DB program slugs to award scraper issuer keys.
 func slugToIssuer(slug string) string {
 	m := map[string]string{
-		"aeroplan":     "aeroplan",
-		"avios":        "avios",
-		"flying-blue":  "flyingblue",
-		"united":       "united",
-		"delta":        "delta",
-		"american":     "american",
-		"alaska":       "alaska",
-		"eurobonus":    "eurobonus",
-		"lufthansa":    "lufthansa",
-		"singapore":    "singapore",
+		"aeroplan":    "aeroplan",
+		"avios":       "avios",
+		"flying-blue": "flyingblue",
+		"united":      "united",
+		"delta":       "delta",
+		"american":    "american",
+		"alaska":      "alaska",
+		"eurobonus":   "eurobonus",
+		"lufthansa":   "lufthansa",
+		"singapore":   "singapore",
 	}
 	if v, ok := m[slug]; ok {
 		return v
