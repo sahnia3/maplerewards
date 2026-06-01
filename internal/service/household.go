@@ -2,13 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 
 	"maplerewards/internal/model"
 )
@@ -27,8 +24,10 @@ type householdCardRepo interface {
 	GetCard(ctx context.Context, id string) (*model.Card, error)
 	ListCategories(ctx context.Context) ([]model.Category, error)
 	ListPrograms(ctx context.Context) ([]model.LoyaltyProgram, error)
-	GetMultiplierForCard(ctx context.Context, cardID, categoryID string) (*model.CardMultiplier, error)
-	GetEverythingElseMultiplier(ctx context.Context, cardID string) (*model.CardMultiplier, error)
+	// ListMultipliersForCard returns a card's full active multiplier set in ONE
+	// query, so the combined wallet scores every (card × category) pair from
+	// memory with zero per-pair DB round-trips.
+	ListMultipliersForCard(ctx context.Context, cardID string) ([]model.MultiplierRow, error)
 }
 
 // householdMaxPartnerCards bounds the partner-card array. Keeps the per-category
@@ -175,6 +174,19 @@ func (s *HouseholdService) Analyze(ctx context.Context, sessionID string, partne
 		out.PartnerCardCount++
 	}
 
+	// Load each combined card's FULL multiplier set ONCE (one query per card
+	// instead of two per card × category), so the per-category scan below does
+	// zero DB work. A real DB error here is propagated — never silently $0,
+	// which would wrongly flag a card as redundant.
+	cardByID := make(map[string]*model.Card, len(combined))
+	for _, hc := range combined {
+		cardByID[hc.card.ID] = hc.card
+	}
+	rateTables, err := buildRateTables(ctx, s.card, cardByID, cppByProgram)
+	if err != nil {
+		return nil, fmt.Errorf("household: load multipliers: %w", err)
+	}
+
 	// Score each spend category once across the whole combined wallet. We keep
 	// the full score (winner + runner-up) so the redundancy pass is O(cards ×
 	// categories) without re-scoring.
@@ -189,15 +201,13 @@ func (s *HouseholdService) Analyze(ctx context.Context, sessionID string, partne
 			if annualSpend <= 0 {
 				continue
 			}
-			cat, ok := catByName[strings.ToLower(cs.CategoryName)]
-			catID := ""
-			if ok {
-				catID = cat.ID
+			// Resolve the spend category to its catalog slug once; "" (unknown
+			// category) makes every card fall back to everything-else.
+			catSlug := ""
+			if cat, ok := catByName[strings.ToLower(cs.CategoryName)]; ok {
+				catSlug = cat.Slug
 			}
-			sc, err := s.scoreCategory(ctx, combined, cppByProgram, catID, annualSpend)
-			if err != nil {
-				return nil, err
-			}
+			sc := scoreCategory(combined, rateTables, catSlug, annualSpend)
 			if sc.bestID == "" {
 				// No card earns anything here (e.g. empty wallet) — nothing to
 				// cover, skip.
@@ -270,27 +280,27 @@ func (s *HouseholdService) Analyze(ctx context.Context, sessionID string, partne
 }
 
 // scoreCategory finds the best and second-best household card (by annual dollar
-// value) for one category's annual spend. Caps are intentionally not applied —
-// this is a hypothetical estimate (see householdNote). The runner-up value lets
-// the caller decide whether the winner is the *sole* cover for the category.
-func (s *HouseholdService) scoreCategory(
-	ctx context.Context,
+// value) for one category's annual spend, scoring from the pre-loaded rate
+// tables (zero DB calls). Caps are intentionally not applied — this is a
+// hypothetical estimate (see householdNote). The runner-up value lets the caller
+// decide whether the winner is the *sole* cover for the category.
+func scoreCategory(
 	cards []householdCard,
-	cppByProgram map[string]float64,
-	categoryID string,
+	rateTables map[string]*cardRateTable,
+	categorySlug string,
 	annualSpend float64,
-) (householdScore, error) {
+) householdScore {
 	var best householdScore
 	for _, hc := range cards {
 		c := hc.card
 		if c == nil {
 			continue
 		}
-		rate, err := s.effectiveReturn(ctx, c, cppByProgram, categoryID)
-		if err != nil {
-			return best, err
+		t := rateTables[c.ID]
+		if t == nil {
+			continue
 		}
-		val := annualSpend * rate
+		val := annualSpend * t.effectiveReturn(categorySlug)
 		switch {
 		case val > best.bestValue:
 			best.secondBest = best.bestValue
@@ -302,56 +312,7 @@ func (s *HouseholdService) scoreCategory(
 			best.secondBest = val
 		}
 	}
-	return best, nil
-}
-
-// effectiveReturn is a card's decimal return rate for a category (e.g. 0.04 =
-// 4%). Identical scoring to the simulator: cashback uses the percentage
-// directly; points/miles/dollars convert the earn rate through the program's
-// base_cpp; falls back to the card's everything-else multiplier when no
-// category-specific multiplier exists.
-func (s *HouseholdService) effectiveReturn(
-	ctx context.Context,
-	c *model.Card,
-	cppByProgram map[string]float64,
-	categoryID string,
-) (float64, error) {
-	var mult *model.CardMultiplier
-	if categoryID != "" {
-		m, err := s.card.GetMultiplierForCard(ctx, c.ID, categoryID)
-		if err == nil {
-			mult = m
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			// A real DB error must NOT be silently priced as $0 — that would
-			// wrongly flag a card as redundant ("cancel it"). Propagate it.
-			return 0, fmt.Errorf("multiplier lookup (card %s, cat %s): %w", c.ID, categoryID, err)
-		}
-	}
-	if mult == nil {
-		m, err := s.card.GetEverythingElseMultiplier(ctx, c.ID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, nil // genuinely no rate for this card → 0 is correct
-			}
-			return 0, fmt.Errorf("everything-else multiplier (card %s): %w", c.ID, err)
-		}
-		if m == nil {
-			return 0, nil
-		}
-		mult = m
-	}
-
-	if mult.EarnType == "cashback_pct" {
-		return mult.EarnRate / 100, nil
-	}
-	// points / miles / dollars: earn_rate × base_cpp / 100.
-	cpp := cppByProgram[c.LoyaltyProgramID]
-	if cpp == 0 && c.LoyaltyProgram != nil {
-		// Fall back to the program embedded on the card if it wasn't in the
-		// ListPrograms map.
-		cpp = c.LoyaltyProgram.BaseCPP
-	}
-	return mult.EarnRate * cpp / 100, nil
+	return best
 }
 
 func householdRound(v float64) float64 { return math.Round(v*100) / 100 }

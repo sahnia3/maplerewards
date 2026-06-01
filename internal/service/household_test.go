@@ -30,9 +30,9 @@ func (m *mockHHSpend) GetSpendStats(_ context.Context, _ string) (*model.SpendSt
 }
 
 // mockHHCard backs a tiny in-memory catalog: cards by id, categories, programs,
-// and a per-(cardID,categoryID) multiplier table. Missing category multiplier →
-// pgx.ErrNoRows (so the service falls back to everything-else), mirroring the
-// real CardRepo.
+// and a per-(cardID,categoryID) multiplier table. ListMultipliersForCard
+// synthesises the batched rows the service now consumes (see below), mirroring
+// the real CardRepo.
 type mockHHCard struct {
 	cards      map[string]*model.Card
 	categories []model.Category
@@ -54,19 +54,32 @@ func (m *mockHHCard) ListCategories(_ context.Context) ([]model.Category, error)
 func (m *mockHHCard) ListPrograms(_ context.Context) ([]model.LoyaltyProgram, error) {
 	return m.programs, nil
 }
-func (m *mockHHCard) GetMultiplierForCard(_ context.Context, cardID, categoryID string) (*model.CardMultiplier, error) {
-	if byCat, ok := m.mults[cardID]; ok {
-		if mult, ok := byCat[categoryID]; ok {
-			return mult, nil
-		}
+
+// ListMultipliersForCard synthesises the batched multiplier set (one query per
+// card) from the per-(cardID,categoryID) table plus the everything-else map,
+// mirroring the real CardRepo. Rows are keyed by category SLUG (the batched
+// scorer keys on slug), so we map category id → slug via the catalog.
+func (m *mockHHCard) ListMultipliersForCard(_ context.Context, cardID string) ([]model.MultiplierRow, error) {
+	slugByCatID := make(map[string]string, len(m.categories))
+	for _, c := range m.categories {
+		slugByCatID[c.ID] = c.Slug
 	}
-	return nil, pgx.ErrNoRows
-}
-func (m *mockHHCard) GetEverythingElseMultiplier(_ context.Context, cardID string) (*model.CardMultiplier, error) {
-	if mult, ok := m.everyElse[cardID]; ok {
-		return mult, nil
+	var rows []model.MultiplierRow
+	for catID, mult := range m.mults[cardID] {
+		rows = append(rows, model.MultiplierRow{
+			CategorySlug: slugByCatID[catID],
+			EarnRate:     mult.EarnRate,
+			EarnType:     mult.EarnType,
+		})
 	}
-	return &model.CardMultiplier{EarnRate: 1.0, EarnType: "points", FallbackEarnRate: 1.0}, nil
+	if ee, ok := m.everyElse[cardID]; ok {
+		rows = append(rows, model.MultiplierRow{
+			CategorySlug: "everything-else",
+			EarnRate:     ee.EarnRate,
+			EarnType:     ee.EarnType,
+		})
+	}
+	return rows, nil
 }
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

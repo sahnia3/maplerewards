@@ -2,13 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 
 	"maplerewards/internal/model"
 )
@@ -27,8 +24,10 @@ type simulatorCardRepo interface {
 	GetCard(ctx context.Context, id string) (*model.Card, error)
 	ListCategories(ctx context.Context) ([]model.Category, error)
 	ListPrograms(ctx context.Context) ([]model.LoyaltyProgram, error)
-	GetMultiplierForCard(ctx context.Context, cardID, categoryID string) (*model.CardMultiplier, error)
-	GetEverythingElseMultiplier(ctx context.Context, cardID string) (*model.CardMultiplier, error)
+	// ListMultipliersForCard returns a card's full active multiplier set in ONE
+	// query, so a request scores every (card × category) pair from memory with
+	// zero per-pair DB round-trips.
+	ListMultipliersForCard(ctx context.Context, cardID string) ([]model.MultiplierRow, error)
 }
 
 // simulatorMaxCards bounds each of the add / drop arrays. Keeps the per-category
@@ -199,6 +198,14 @@ func (s *SimulatorService) Simulate(ctx context.Context, sessionID string, addID
 		simulatedIDs = append(simulatedIDs, id)
 	}
 
+	// Load each involved card's FULL multiplier set ONCE (one query per card
+	// instead of two per card × category), so the per-category scan below does
+	// zero DB work. A real DB error here is propagated — never silently $0.
+	rateTables, err := buildRateTables(ctx, s.card, cardByID, cppByProgram)
+	if err != nil {
+		return nil, fmt.Errorf("simulator: load multipliers: %w", err)
+	}
+
 	// Price every spend category against both sets and accumulate the deltas.
 	var baselineTotal, simulatedTotal float64
 	if stats != nil {
@@ -207,20 +214,15 @@ func (s *SimulatorService) Simulate(ctx context.Context, sessionID string, addID
 			if annualSpend <= 0 {
 				continue
 			}
-			cat, ok := catByName[strings.ToLower(cs.CategoryName)]
-			catID := ""
-			if ok {
-				catID = cat.ID
+			// Resolve the spend category to its catalog slug once; "" (unknown
+			// category) makes every card fall back to everything-else.
+			catSlug := ""
+			if cat, ok := catByName[strings.ToLower(cs.CategoryName)]; ok {
+				catSlug = cat.Slug
 			}
 
-			base, err := s.bestForCategory(ctx, baselineIDs, cardByID, cppByProgram, catID, annualSpend)
-			if err != nil {
-				return nil, err
-			}
-			sim, err := s.bestForCategory(ctx, simulatedIDs, cardByID, cppByProgram, catID, annualSpend)
-			if err != nil {
-				return nil, err
-			}
+			base := bestForCategory(baselineIDs, rateTables, catSlug, annualSpend)
+			sim := bestForCategory(simulatedIDs, rateTables, catSlug, annualSpend)
 
 			baselineTotal += base.value
 			simulatedTotal += sim.value
@@ -264,80 +266,27 @@ func (s *SimulatorService) Simulate(ctx context.Context, sessionID string, addID
 }
 
 // bestForCategory returns the highest-earning card (by annual dollar value) in
-// the given set for one category's annual spend. Caps are intentionally not
-// applied — this is a hypothetical estimate (see simulatorNote).
-func (s *SimulatorService) bestForCategory(
-	ctx context.Context,
+// the given set for one category's annual spend, scoring from the pre-loaded
+// rate tables (zero DB calls). Caps are intentionally not applied — this is a
+// hypothetical estimate (see simulatorNote).
+func bestForCategory(
 	cardIDs []string,
-	cardByID map[string]*model.Card,
-	cppByProgram map[string]float64,
-	categoryID string,
+	rateTables map[string]*cardRateTable,
+	categorySlug string,
 	annualSpend float64,
-) (scoredCategory, error) {
+) scoredCategory {
 	best := scoredCategory{cardName: "—", value: 0}
 	for _, id := range cardIDs {
-		c := cardByID[id]
-		if c == nil {
+		t := rateTables[id]
+		if t == nil {
 			continue
 		}
-		rate, err := s.effectiveReturn(ctx, c, cppByProgram, categoryID)
-		if err != nil {
-			return best, err
-		}
-		val := annualSpend * rate
+		val := annualSpend * t.effectiveReturn(categorySlug)
 		if val > best.value {
-			best = scoredCategory{cardName: c.Name, value: val}
+			best = scoredCategory{cardName: t.name, value: val}
 		}
 	}
-	return best, nil
-}
-
-// effectiveReturn is a card's decimal return rate for a category (e.g. 0.04 =
-// 4%). Cashback uses the percentage directly; points/miles/dollars convert the
-// earn rate through the program's base_cpp. Falls back to the card's
-// everything-else multiplier when no category-specific multiplier exists.
-func (s *SimulatorService) effectiveReturn(
-	ctx context.Context,
-	c *model.Card,
-	cppByProgram map[string]float64,
-	categoryID string,
-) (float64, error) {
-	var mult *model.CardMultiplier
-	if categoryID != "" {
-		m, err := s.card.GetMultiplierForCard(ctx, c.ID, categoryID)
-		if err == nil {
-			mult = m
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			// A real DB error must NOT be silently priced as $0 — that corrupts
-			// best-card selection. Propagate it (matches optimizer behaviour).
-			return 0, fmt.Errorf("multiplier lookup (card %s, cat %s): %w", c.ID, categoryID, err)
-		}
-	}
-	if mult == nil {
-		m, err := s.card.GetEverythingElseMultiplier(ctx, c.ID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, nil // genuinely no rate for this card → 0 is correct
-			}
-			return 0, fmt.Errorf("everything-else multiplier (card %s): %w", c.ID, err)
-		}
-		if m == nil {
-			return 0, nil
-		}
-		mult = m
-	}
-
-	if mult.EarnType == "cashback_pct" {
-		return mult.EarnRate / 100, nil
-	}
-	// points / miles / dollars: earn_rate × base_cpp / 100.
-	cpp := cppByProgram[c.LoyaltyProgramID]
-	if cpp == 0 && c.LoyaltyProgram != nil {
-		// Fall back to the program embedded on the card if it wasn't in the
-		// ListPrograms map (e.g. a freshly-added program).
-		cpp = c.LoyaltyProgram.BaseCPP
-	}
-	return mult.EarnRate * cpp / 100, nil
+	return best
 }
 
 // cleanIDs trims, drops blanks, and de-duplicates a list of card ids while

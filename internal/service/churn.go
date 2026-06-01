@@ -26,11 +26,12 @@ type churnSpendRepo interface {
 }
 
 // churnEligibilityChecker is the existing application-eligibility logic, reused
-// rather than reimplemented. *ApplicationService satisfies this; CheckEligibility
-// already consults issuer_rules (cooldown_days) + the user's application history
-// and returns the cooldown verdict. The planner only interprets that verdict.
+// rather than reimplemented. *ApplicationService satisfies this; CheckEligibilityBatch
+// consults issuer_rules (cooldown_days) + the user's application history and
+// returns the cooldown verdict per card, loading the rules table ONCE for the
+// whole candidate set (not per card). The planner only interprets the verdict.
 type churnEligibilityChecker interface {
-	CheckEligibility(ctx context.Context, sessionID, cardID string) (*EligibilityResult, error)
+	CheckEligibilityBatch(ctx context.Context, sessionID string, cardIDs []string) (map[string]*EligibilityResult, error)
 }
 
 // churnMaxRecommendations caps the eligible list so the tile stays readable; the
@@ -105,22 +106,29 @@ func (s *ChurnPlannerService) Plan(ctx context.Context, sessionID string) (*mode
 		avgMonthlySpend = stats.TotalSpend / float64(months)
 	}
 
-	var eligible, blocked []model.ChurnCandidate
+	// Score every candidate first, collecting their ids so eligibility can be
+	// resolved in ONE batch (issuer rules loaded once, not per candidate).
+	var candidates []model.ChurnCandidate
+	candidateIDs := make([]string, 0, len(catalog))
 	for _, c := range catalog {
 		// Candidate = active card the user does NOT already hold, with a bonus.
 		if heldCardIDs[c.ID] || !c.IsActive || c.WelcomeBonusPoints <= 0 {
 			continue
 		}
+		candidates = append(candidates, s.scoreCandidate(c, avgMonthlySpend))
+		candidateIDs = append(candidateIDs, c.ID)
+	}
 
-		cand := s.scoreCandidate(c, avgMonthlySpend)
+	// Reuse existing eligibility logic, batched across all candidates.
+	eligByCard, err := s.eligibility.CheckEligibilityBatch(ctx, sessionID, candidateIDs)
+	if err != nil {
+		return nil, fmt.Errorf("churn: eligibility: %w", err)
+	}
 
-		// Reuse existing eligibility logic per candidate.
-		elig, err := s.eligibility.CheckEligibility(ctx, sessionID, c.ID)
-		if err != nil {
-			return nil, fmt.Errorf("churn: eligibility for %s: %w", c.ID, err)
-		}
-		applyEligibility(&cand, elig)
-
+	var eligible, blocked []model.ChurnCandidate
+	for i := range candidates {
+		cand := candidates[i]
+		applyEligibility(&cand, eligByCard[cand.CardID])
 		if cand.Eligible {
 			eligible = append(eligible, cand)
 		} else {

@@ -44,11 +44,16 @@ func (m *mockChurnSpend) SpendMonthsObserved(_ context.Context, _ string) (int, 
 // from the map are treated as eligible ("ok").
 type mockChurnEligibility struct{ byCard map[string]*EligibilityResult }
 
-func (m *mockChurnEligibility) CheckEligibility(_ context.Context, _, cardID string) (*EligibilityResult, error) {
-	if r, ok := m.byCard[cardID]; ok {
-		return r, nil
+func (m *mockChurnEligibility) CheckEligibilityBatch(_ context.Context, _ string, cardIDs []string) (map[string]*EligibilityResult, error) {
+	out := make(map[string]*EligibilityResult, len(cardIDs))
+	for _, id := range cardIDs {
+		if r, ok := m.byCard[id]; ok {
+			out[id] = r
+		} else {
+			out[id] = &EligibilityResult{CardID: id, Severity: "ok", Reason: "No known restriction."}
+		}
 	}
-	return &EligibilityResult{CardID: cardID, Severity: "ok", Reason: "No known restriction."}, nil
+	return out, nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -96,9 +101,9 @@ func TestChurn_RankingAndExclusions(t *testing.T) {
 	cards := &mockChurnCards{catalog: []model.Card{
 		// All feasible (low min-spend), distinct net values.
 		churnCard("c-held", "Held Card", "BMO", "BMO Rewards", "bank", 1.0, 50000, 1000, 6, 120),
-		churnCard("c-high", "High Net", "American Express", "Amex MR", "bank", 2.0, 100000, 1000, 6, 150),   // value 2000, net 1850
-		churnCard("c-mid", "Mid Net", "Scotiabank", "Scene+", "bank", 1.0, 100000, 1000, 6, 100),           // value 1000, net 900
-		churnCard("c-nobonus", "No Bonus", "CIBC", "Aventura", "bank", 1.0, 0, 0, 0, 120),                  // excluded (no bonus)
+		churnCard("c-high", "High Net", "American Express", "Amex MR", "bank", 2.0, 100000, 1000, 6, 150), // value 2000, net 1850
+		churnCard("c-mid", "Mid Net", "Scotiabank", "Scene+", "bank", 1.0, 100000, 1000, 6, 100),          // value 1000, net 900
+		churnCard("c-nobonus", "No Bonus", "CIBC", "Aventura", "bank", 1.0, 0, 0, 0, 120),                 // excluded (no bonus)
 	}}
 	// 12 months of $24k total = $2k/mo → covers $1000/6mo ($167/mo) easily.
 	spend := &mockChurnSpend{stats: &model.SpendStats{TotalSpend: 24000}, months: 12}
