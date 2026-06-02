@@ -166,12 +166,12 @@ export default function LoyaltyPage() {
                   <span
                     className="mono"
                     style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 600,
                       padding: "1px 7px",
                       borderRadius: 999,
                       background: isActive ? "var(--accent-wash)" : "var(--surface-2)",
-                      color: isActive ? "var(--accent)" : "var(--ink-3)",
+                      color: isActive ? "var(--accent)" : "var(--ink-2)",
                     }}
                   >
                     {count}
@@ -350,7 +350,7 @@ export default function LoyaltyPage() {
                         style={{
                           padding: "3px 10px",
                           borderRadius: 999,
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 600,
                           letterSpacing: "0.04em",
                           background: "var(--accent-wash)",

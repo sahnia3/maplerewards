@@ -101,46 +101,50 @@ export default function AdminUsersPage() {
         <p className="serif" style={{ color: "var(--ink-2)", fontStyle: "italic" }}>No users match.</p>
       ) : (
         <div style={{ border: "1px solid var(--rule)", borderRadius: 14, overflow: "hidden" }}>
-          {/* header row */}
-          <div className="mono" style={{
-            display: "grid", gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr", gap: 12,
-            padding: "12px 18px", borderBottom: "1px solid var(--rule)",
-            fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)",
-          }}>
-            <span>User</span><span>Plan</span><span style={{ textAlign: "right" }}>Cards</span>
-            <span style={{ textAlign: "right" }}>Entries</span><span style={{ textAlign: "right" }}>Last spend</span>
+          <div className="m-scroll-x">
+            <div style={{ minWidth: 560 }}>
+              {/* header row */}
+              <div className="mono" style={{
+                display: "grid", gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr", gap: 12,
+                padding: "12px 18px", borderBottom: "1px solid var(--rule)",
+                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)",
+              }}>
+                <span>User</span><span>Plan</span><span style={{ textAlign: "right" }}>Cards</span>
+                <span style={{ textAlign: "right" }}>Entries</span><span style={{ textAlign: "right" }}>Last spend</span>
+              </div>
+              {rows.map((u) => (
+                <Link
+                  key={u.id}
+                  href={`/admin/${u.id}`}
+                  style={{
+                    display: "grid", gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr", gap: 12, alignItems: "center",
+                    padding: "14px 18px", borderTop: "1px solid var(--rule)", textDecoration: "none",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div className="serif" style={{ fontSize: 15, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {u.email || u.display_name || "(anonymous)"}
+                    </div>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
+                      {u.auth_provider} · joined {fmtDate(u.created_at)}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="mono" style={{
+                      fontSize: 12, padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: "0.06em",
+                      border: `1px solid ${u.is_pro ? "var(--accent)" : "var(--rule)"}`,
+                      color: u.is_pro ? "var(--accent)" : "var(--ink-2)",
+                    }}>{u.plan}</span>
+                  </div>
+                  <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>{u.card_count}</div>
+                  <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>{u.entry_count}</div>
+                  <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>{fmtDate(u.last_spend)}</div>
+                </Link>
+              ))}
+            </div>
           </div>
-          {rows.map((u) => (
-            <Link
-              key={u.id}
-              href={`/admin/${u.id}`}
-              style={{
-                display: "grid", gridTemplateColumns: "2fr 1fr 0.8fr 0.8fr 1fr", gap: 12, alignItems: "center",
-                padding: "14px 18px", borderTop: "1px solid var(--rule)", textDecoration: "none",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div className="serif" style={{ fontSize: 15, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.email || u.display_name || "(anonymous)"}
-                </div>
-                <div className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
-                  {u.auth_provider} · joined {fmtDate(u.created_at)}
-                </div>
-              </div>
-              <div>
-                <span className="mono" style={{
-                  fontSize: 10, padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: "0.06em",
-                  border: `1px solid ${u.is_pro ? "var(--accent)" : "var(--rule)"}`,
-                  color: u.is_pro ? "var(--accent)" : "var(--ink-3)",
-                }}>{u.plan}</span>
-              </div>
-              <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>{u.card_count}</div>
-              <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>{u.entry_count}</div>
-              <div className="mono" style={{ fontSize: 12, color: "var(--ink-3)", textAlign: "right" }}>{fmtDate(u.last_spend)}</div>
-            </Link>
-          ))}
         </div>
       )}
 

@@ -229,6 +229,12 @@ export default function WalletPage() {
           .wallet-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
           .wallet-stat-strip > div { border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
         }
+        /* The 360px column min overflows on 320–400px viewports (common Android
+           sizes). Collapse to a single fluid column so cards never exceed the
+           viewport width. */
+        @media (max-width: 420px) {
+          .wallet-grid { grid-template-columns: minmax(0, 1fr) !important; }
+        }
       `}</style>
     </div>
   );

@@ -16,6 +16,7 @@ import (
 	"maplerewards/internal/cache"
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
+	"maplerewards/internal/quota"
 )
 
 // TripService evaluates redemption options for flights/hotels using the user's
@@ -122,28 +123,28 @@ var airlineForProgram = map[string]string{
 
 // programForAirline maps airline names (lowercase) to program slugs.
 var programForAirline = map[string]string{
-	"air canada":          "aeroplan",
-	"british airways":     "avios",
-	"air france":          "flying-blue",
-	"klm":                 "flying-blue",
-	"klm royal dutch":     "flying-blue",
-	"united airlines":     "united",
-	"united":              "united",
-	"delta air lines":     "delta",
-	"delta":               "delta",
-	"american airlines":   "american",
-	"american":            "american",
-	"alaska airlines":     "alaska",
-	"alaska":              "alaska",
-	"lufthansa":           "lufthansa",
-	"singapore airlines":  "singapore",
-	"emirates":            "emirates",
-	"turkish airlines":    "turkish",
-	"qatar airways":       "qatar",
-	"etihad airways":      "etihad",
-	"etihad":              "etihad",
-	"virgin atlantic":     "virginatlantic",
-	"sas":                 "eurobonus",
+	"air canada":            "aeroplan",
+	"british airways":       "avios",
+	"air france":            "flying-blue",
+	"klm":                   "flying-blue",
+	"klm royal dutch":       "flying-blue",
+	"united airlines":       "united",
+	"united":                "united",
+	"delta air lines":       "delta",
+	"delta":                 "delta",
+	"american airlines":     "american",
+	"american":              "american",
+	"alaska airlines":       "alaska",
+	"alaska":                "alaska",
+	"lufthansa":             "lufthansa",
+	"singapore airlines":    "singapore",
+	"emirates":              "emirates",
+	"turkish airlines":      "turkish",
+	"qatar airways":         "qatar",
+	"etihad airways":        "etihad",
+	"etihad":                "etihad",
+	"virgin atlantic":       "virginatlantic",
+	"sas":                   "eurobonus",
 	"scandinavian airlines": "eurobonus",
 }
 
@@ -189,28 +190,59 @@ var middleEastAfricaAirports = map[string]bool{
 	"JNB": true, "CPT": true, "CMN": true,
 }
 
-// classifyRoute maps an origin-destination pair to an award chart zone.
+// airportRegion classifies a single IATA code into a coarse geographic region,
+// or "" when the airport isn't in any of our maps. Used by classifyRoute so the
+// zone reflects BOTH endpoints rather than the destination alone.
+func airportRegion(code string) string {
+	switch {
+	case northAmericaAirports[code]:
+		return "north_america"
+	case europeAirports[code]:
+		return "europe"
+	case asiaAirports[code]:
+		return "asia"
+	case middleEastAfricaAirports[code]:
+		return "middle_east_africa"
+	}
+	return ""
+}
+
+// classifyRoute maps an origin-destination pair to an award chart zone using
+// BOTH endpoints. Award pricing is symmetric and depends on the city pair, not
+// just where you land — a Tokyo→London ticket is a Europe⇄Asia long-haul, not
+// the "atlantic" (North-America⇄Europe) zone the dest-only classifier returned.
+// Both regions are considered so off-list and non-NA-origin routes stop
+// defaulting to transatlantic pricing.
 func classifyRoute(origin, dest string) string {
 	orig := strings.ToUpper(origin)
 	dst := strings.ToUpper(dest)
 
-	origNA := northAmericaAirports[orig]
-	dstNA := northAmericaAirports[dst]
+	origRegion := airportRegion(orig)
+	dstRegion := airportRegion(dst)
 
-	if origNA && dstNA {
-		return "north_america"
+	// When one endpoint is unknown, fall back to the known endpoint's region so
+	// we still avoid the blanket transatlantic default where possible.
+	if origRegion == "" {
+		origRegion = dstRegion
 	}
-	if europeAirports[dst] {
+	if dstRegion == "" {
+		dstRegion = origRegion
+	}
+
+	switch {
+	case origRegion == "north_america" && dstRegion == "north_america":
+		return "north_america"
+	case origRegion == "asia" || dstRegion == "asia":
+		// Anything touching Asia (incl. Europe⇄Asia, ME⇄Asia) prices as pacific
+		// long-haul — the most expensive realistic baseline, never understated.
+		return "pacific"
+	case origRegion == "middle_east_africa" || dstRegion == "middle_east_africa":
+		return "middle_east_africa"
+	case origRegion == "europe" || dstRegion == "europe":
+		// Europe paired with North America (or an unknown endpoint) → transatlantic.
 		return "atlantic"
 	}
-	if asiaAirports[dst] {
-		return "pacific"
-	}
-	if middleEastAfricaAirports[dst] {
-		return "middle_east_africa"
-	}
-	// Default: assume transatlantic-like pricing
-	_ = orig
+	// Both endpoints unknown: assume transatlantic-like pricing.
 	return "atlantic"
 }
 
@@ -305,6 +337,10 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 	// Carry Pro status down to resolveFlightPoints so the live Apify probe
 	// only fires for Pro users (free users get the KB/zone estimate).
 	ctx = withProCtx(ctx, req.IsPro)
+	// Charge paid lookups (serpapi/apify/tavily) against the caller's tier cap.
+	// Only is_pro is available here, so pro_plus/lifetime fall back to the Pro
+	// cap (conservative); the chat path threads the precise plan.
+	ctx = withQuotaTier(ctx, quota.TierForPlan("", req.IsPro))
 
 	// ── Compute Nights from Date / CheckoutDate ─────────────────────────
 	if req.TripType == "hotel" && req.Date != "" && req.CheckoutDate != "" {
@@ -723,9 +759,9 @@ func (s *TripService) resolveFlightPoints(ctx context.Context, yamlKey, slug, or
 	if !ok {
 		// Avios uses "north_america_transatlantic" instead of "atlantic"
 		alternates := map[string][]string{
-			"atlantic":          {"north_america_transatlantic", "europe_short_haul"},
-			"north_america":     {"north_america_short"},
-			"pacific":           {"asia"},
+			"atlantic":           {"north_america_transatlantic", "europe_short_haul"},
+			"north_america":      {"north_america_short"},
+			"pacific":            {"asia"},
 			"middle_east_africa": {"middle_east"},
 		}
 		for _, alt := range alternates[zone] {

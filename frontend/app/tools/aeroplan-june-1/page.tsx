@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { BASE_URL } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -38,8 +39,7 @@ interface LockInResponse {
  * saves $250-$300 per ticket. This page makes that delta obvious.
  */
 
-export const dynamic = "force-dynamic";
-export const revalidate = 3600; // 1h cache — chart only changes on deploy
+export const revalidate = 3600; // 1h ISR cache — chart only changes on deploy
 
 export const metadata = {
   title: "Aeroplan June 1 Lock-In Calculator — Maple Rewards",
@@ -81,19 +81,53 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
 
   const data = await fetchLockIn({ airport, region, cabin });
   const daysUntil = data?.days_until ?? 0;
+  // The hike is dated June 1, 2026. Once that date passes the backend's
+  // days_until (computed server-side) goes to 0/negative — the chart itself is
+  // still returned in full, but the "book before May 31" urgency framing is no
+  // longer true. Pivot the copy to honest past tense off that server value
+  // rather than reading the clock here (keeps this render pure + lets the
+  // backend own "now"). The page never needs a redeploy to flip.
+  const isPast = daysUntil <= 0;
+  // Human-readable hike date for past-tense copy, e.g. "June 1, 2026". Built
+  // from the server-supplied hike_date (YYYY-MM-DD), parsed as UTC so the
+  // displayed day can't drift by a timezone.
+  const hikeDate = data?.hike_date ? new Date(`${data.hike_date}T00:00:00Z`) : null;
+  const hikeDateLabel = hikeDate
+    ? hikeDate.toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })
+    : "June 1, 2026";
+
+  // Preserve the user's filter selection on the retry link so a refresh
+  // re-runs the same query rather than dropping them back to defaults.
+  const retryQs = new URLSearchParams();
+  if (airport) retryQs.set("airport", airport);
+  if (region) retryQs.set("region", region);
+  if (cabin) retryQs.set("cabin", cabin);
+  const retryHref = retryQs.toString()
+    ? `/tools/aeroplan-june-1?${retryQs.toString()}`
+    : "/tools/aeroplan-june-1";
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 920, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         <PageMasthead
           eyebrow="Free tool"
-          eyebrowEnd={daysUntil > 0 ? `${daysUntil} days to lock in` : "Hike effective"}
+          eyebrowEnd={isPast ? "Hike in effect" : `${daysUntil} days to lock in`}
           title={
-            <>
-              Aeroplan is hiking long-haul business prices <span style={{ fontStyle: "italic" }}>June 1.</span>
-            </>
+            isPast ? (
+              <>
+                Aeroplan hiked long-haul business prices <span style={{ fontStyle: "italic" }}>June 1.</span>
+              </>
+            ) : (
+              <>
+                Aeroplan is hiking long-haul business prices <span style={{ fontStyle: "italic" }}>June 1.</span>
+              </>
+            )
           }
-          lede="Long-haul business class on Aeroplan goes up ~17% on June 1, 2026 — that's $250-$300 per ticket. Filter to your home airport and we'll show the routings cheapest to book today vs after the hike."
+          lede={
+            isPast
+              ? `Long-haul business class on Aeroplan went up ~17% on ${hikeDateLabel} — about $250-$300 more per ticket. Here's what changed by routing, and what the pre-hike pricing was. Tickets booked before the hike kept their old cost.`
+              : "Long-haul business class on Aeroplan goes up ~17% on June 1, 2026 — that's $250-$300 per ticket. Filter to your home airport and we'll show the routings cheapest to book today vs after the hike."
+          }
         />
 
         <LeafDivider />
@@ -141,14 +175,73 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
           </button>
         </form>
 
+        {data === null && (
+          <div
+            role="alert"
+            style={{
+              background: "var(--card-fill)",
+              border: "1px solid var(--accent)",
+              borderRadius: 14,
+              padding: "32px 28px",
+              textAlign: "center",
+              boxShadow: "var(--shadow-1)",
+              marginBottom: 36,
+            }}
+          >
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 999,
+                margin: "0 auto 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--accent-wash)",
+                border: "1px solid var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              <AlertTriangle size={22} strokeWidth={1.5} />
+            </div>
+            <h2 className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+              Couldn&rsquo;t load the lock-in numbers
+            </h2>
+            <p className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginTop: 8, lineHeight: 1.55 }}>
+              The pricing data didn&rsquo;t come back. This is usually momentary — try again in a few seconds.
+            </p>
+            <Link
+              href={retryHref}
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 20,
+                padding: "10px 20px",
+                borderRadius: 10,
+                background: "var(--accent)",
+                color: "#fff",
+                textDecoration: "none",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Try again →
+            </Link>
+          </div>
+        )}
+
         {data && data.top.length > 0 && (
           <section style={{ marginBottom: 36 }}>
             <h2 className="display" style={{ fontSize: "clamp(22px, 2.6vw, 30px)", marginBottom: 16 }}>
-              The highest-savings lock-ins for you
+              {isPast ? "The biggest increases by routing" : "The highest-savings lock-ins for you"}
             </h2>
             <div style={{ display: "grid", gap: 14 }}>
               {data.top.map((r, i) => (
-                <RoutingCard key={i} r={r} highlight={i === 0} />
+                <RoutingCard key={i} r={r} highlight={i === 0} isPast={isPast} />
               ))}
             </div>
           </section>
@@ -186,14 +279,23 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
             gap: 12,
           }}
         >
-          <div className="eyebrow" style={{ color: "var(--accent)" }}>How to book</div>
+          <div className="eyebrow" style={{ color: "var(--accent)" }}>{isPast ? "Booking now" : "How to book"}</div>
           <p className="serif" style={{ margin: 0, fontSize: 15, lineHeight: 1.55, color: "var(--ink-2)" }}>
             Search award space on{" "}
             <a href="https://www.aircanada.com/aeroplan" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>
               aircanada.com/aeroplan
-            </a>{" "}
-            for any date through May 31, 2026 — once the booking is confirmed, the points cost is locked in even if you fly post-June 1.
-            Star Alliance partners (Lufthansa, SWISS, ANA, EVA) typically open business award space ~355 days out.
+            </a>
+            {isPast ? (
+              <>
+                . The {hikeDateLabel} chart prices above are now in effect — the &ldquo;before&rdquo; column is shown
+                for reference. Star Alliance partners (Lufthansa, SWISS, ANA, EVA) typically open business award space ~355 days out.
+              </>
+            ) : (
+              <>
+                {" "}for any date through May 31, 2026 — once the booking is confirmed, the points cost is locked in even if you fly post-June 1.
+                Star Alliance partners (Lufthansa, SWISS, ANA, EVA) typically open business award space ~355 days out.
+              </>
+            )}
           </p>
           <p className="serif" style={{ margin: 0, fontSize: 13, fontStyle: "italic", color: "var(--ink-3)" }}>
             Numbers assume 2.0¢/point valuation. Real CPP varies — check our{" "}
@@ -206,7 +308,7 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
   );
 }
 
-function RoutingCard({ r, highlight }: { r: Routing; highlight: boolean }) {
+function RoutingCard({ r, highlight, isPast }: { r: Routing; highlight: boolean; isPast: boolean }) {
   return (
     <article
       style={{
@@ -220,14 +322,18 @@ function RoutingCard({ r, highlight }: { r: Routing; highlight: boolean }) {
         {r.origin_label} → {r.destination_label} · {r.cabin.toUpperCase()}
       </div>
       <div className="display" style={{ fontSize: "clamp(22px, 2.4vw, 28px)", marginBottom: 8 }}>
-        Save <span style={{ color: "var(--accent)" }}>${r.savings_cad.toFixed(0)}</span> by booking before May 31
+        {isPast ? (
+          <>This routing now costs <span style={{ color: "var(--accent)" }}>${r.savings_cad.toFixed(0)}</span> more</>
+        ) : (
+          <>Save <span style={{ color: "var(--accent)" }}>${r.savings_cad.toFixed(0)}</span> by booking before May 31</>
+        )}
       </div>
       <div
         className="serif"
         style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.5 }}
       >
-        Today: <strong>{r.points_before.toLocaleString()} pts</strong> &nbsp;·&nbsp;
-        After June 1: <strong>{r.points_after.toLocaleString()} pts</strong> &nbsp;·&nbsp;
+        {isPast ? "Before June 1" : "Today"}: <strong>{r.points_before.toLocaleString()} pts</strong> &nbsp;·&nbsp;
+        {isPast ? "Now" : "After June 1"}: <strong>{r.points_after.toLocaleString()} pts</strong> &nbsp;·&nbsp;
         Difference: <strong>{r.points_saved.toLocaleString()} pts</strong>
       </div>
       {r.notes && (

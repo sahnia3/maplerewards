@@ -9,21 +9,26 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"maplerewards/internal/quota"
 )
 
 // stubQuota implements QuotaSpender via function fields — matches the repo's
-// mock-by-interface convention. Spend records every call so tests can assert.
+// mock-by-interface convention. SpendTier records every call so tests can
+// assert provider + tier, and defaults to "allowed" when no func is set.
 type stubQuota struct {
-	spendFn func(ctx context.Context, provider string) (int, bool, error)
-	calls   []string
+	spendFn func(ctx context.Context, provider string, tier quota.Tier) (int, bool, error)
+	calls   []string     // provider names, in call order
+	tiers   []quota.Tier // tier per call, parallel to calls
 }
 
-func (s *stubQuota) Spend(ctx context.Context, provider string) (int, bool, error) {
+func (s *stubQuota) SpendTier(ctx context.Context, provider string, tier quota.Tier) (int, bool, error) {
 	s.calls = append(s.calls, provider)
+	s.tiers = append(s.tiers, tier)
 	if s.spendFn == nil {
 		return 1, false, nil
 	}
-	return s.spendFn(ctx, provider)
+	return s.spendFn(ctx, provider, tier)
 }
 
 // fakeSerpJSON returns the smallest valid SerpAPI Google Flights payload so
@@ -38,7 +43,7 @@ const fakeSerpJSON = `{
 
 func TestSearchFlights_QuotaExhausted(t *testing.T) {
 	qs := &stubQuota{
-		spendFn: func(ctx context.Context, provider string) (int, bool, error) {
+		spendFn: func(ctx context.Context, provider string, tier quota.Tier) (int, bool, error) {
 			if provider != "serpapi" {
 				t.Errorf("unexpected provider: %s", provider)
 			}

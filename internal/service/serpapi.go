@@ -19,11 +19,16 @@ import (
 // rather than retry — the next reset is on the 1st of the next month.
 var ErrQuotaExhausted = errors.New("serpapi monthly quota exhausted")
 
-// QuotaSpender is the minimal interface SerpAPIService needs from the
-// quota client. Kept narrow so tests can inject a fake without touching
-// Redis.
+// QuotaSpender is the minimal interface the paid-API services need from the
+// quota client. Kept narrow so tests can inject a fake without touching Redis.
+//
+// SpendTier charges one paid call against the caller's tier and FAILS CLOSED:
+// on a Redis/infra error it returns exhausted=true (alongside err), so the
+// caller must treat any non-nil error as "deny the paid call". This is the
+// denial-of-wallet guarantee — a Redis outage degrades the feature, it never
+// uncaps spend.
 type QuotaSpender interface {
-	Spend(ctx context.Context, provider string) (remaining int, exhausted bool, err error)
+	SpendTier(ctx context.Context, provider string, tier quota.Tier) (remaining int, exhausted bool, err error)
 }
 
 // SerpAPIService calls the SerpAPI Google Flights engine for real cash flight prices.
@@ -57,25 +62,25 @@ func (s *SerpAPIService) IsAvailable() bool {
 type serpFlightsResponse struct {
 	BestFlights  []serpFlightGroup `json:"best_flights"`
 	OtherFlights []serpFlightGroup `json:"other_flights"`
-	Error        string           `json:"error"`
+	Error        string            `json:"error"`
 }
 
 type serpFlightGroup struct {
 	Flights       []serpFlight `json:"flights"`
-	TotalDuration int         `json:"total_duration"` // minutes
-	Price         int         `json:"price"`          // integer CAD
-	Type          string      `json:"type"`           // "One way"
+	TotalDuration int          `json:"total_duration"` // minutes
+	Price         int          `json:"price"`          // integer CAD
+	Type          string       `json:"type"`           // "One way"
 }
 
 type serpFlight struct {
-	Airline          string     `json:"airline"`
-	AirlineLogo      string     `json:"airline_logo"`
-	FlightNumber     string     `json:"flight_number"`
+	Airline          string      `json:"airline"`
+	AirlineLogo      string      `json:"airline_logo"`
+	FlightNumber     string      `json:"flight_number"`
 	DepartureAirport serpAirport `json:"departure_airport"`
 	ArrivalAirport   serpAirport `json:"arrival_airport"`
-	Duration         int        `json:"duration"` // minutes
-	Airplane         string     `json:"airplane"`
-	TravelClass      string     `json:"travel_class"`
+	Duration         int         `json:"duration"` // minutes
+	Airplane         string      `json:"airplane"`
+	TravelClass      string      `json:"travel_class"`
 }
 
 type serpAirport struct {
@@ -132,18 +137,23 @@ func (s *SerpAPIService) SearchFlightsReq(
 		return nil, fmt.Errorf("SERPAPI_KEY not configured")
 	}
 
-	// Quota check — only when wired in. nil client means tests/dev override.
+	// Paid-API spend gate — only when wired in. nil client means tests/dev
+	// override. FAILS CLOSED: a Redis/quota error denies the paid call (it is
+	// surfaced as exhausted=true), so a Redis outage can never uncap SerpAPI
+	// spend. The caller (award_search etc.) degrades gracefully on
+	// ErrQuotaExhausted — other data sources still run.
 	if s.quota != nil {
-		remaining, exhausted, err := s.quota.Spend(ctx, "serpapi")
+		remaining, exhausted, err := s.quota.SpendTier(ctx, "serpapi", quotaTierFromCtx(ctx))
 		if err != nil {
-			slog.Warn("[serpapi] quota check failed; allowing request", "err", err)
-		} else if exhausted {
+			slog.Warn("[serpapi] quota system degraded; denying paid call (fail-closed)", "err", err)
+			return nil, ErrQuotaExhausted
+		}
+		if exhausted {
 			slog.Warn("[serpapi] monthly quota exhausted; skipping HTTP call",
 				"remaining", remaining)
 			return nil, ErrQuotaExhausted
-		} else {
-			slog.Info("[serpapi] quota debited", "remaining", remaining)
 		}
+		slog.Info("[serpapi] quota debited", "remaining", remaining)
 	}
 
 	start := time.Now()
@@ -294,20 +304,20 @@ func serpCabinClass(cabin string) string {
 // the AI layer is told to label them honestly.
 
 type HotelResult struct {
-	Name        string  `json:"name"`
-	Type        string  `json:"type"`         // "hotel" | "vacation rental"
-	PricePerNt  float64 `json:"price_per_night_cad"`
-	TotalCAD    float64 `json:"total_cad"`
-	Rating      float64 `json:"rating"`       // overall_rating, 0 if absent
-	HotelClass  string  `json:"hotel_class"`  // e.g. "4-star hotel"
-	Link        string  `json:"link"`
+	Name       string  `json:"name"`
+	Type       string  `json:"type"` // "hotel" | "vacation rental"
+	PricePerNt float64 `json:"price_per_night_cad"`
+	TotalCAD   float64 `json:"total_cad"`
+	Rating     float64 `json:"rating"`      // overall_rating, 0 if absent
+	HotelClass string  `json:"hotel_class"` // e.g. "4-star hotel"
+	Link       string  `json:"link"`
 }
 
 type serpHotelsResponse struct {
 	Properties []struct {
-		Name        string `json:"name"`
-		Type        string `json:"type"`
-		RatePerNt   struct {
+		Name      string `json:"name"`
+		Type      string `json:"type"`
+		RatePerNt struct {
 			ExtractedLowest float64 `json:"extracted_lowest"`
 		} `json:"rate_per_night"`
 		TotalRate struct {
@@ -335,10 +345,12 @@ func (s *SerpAPIService) SearchHotels(
 		adults = 1
 	}
 	if s.quota != nil {
-		remaining, exhausted, err := s.quota.Spend(ctx, "serpapi")
+		remaining, exhausted, err := s.quota.SpendTier(ctx, "serpapi", quotaTierFromCtx(ctx))
 		if err != nil {
-			slog.Warn("[serpapi-hotels] quota check failed; allowing request", "err", err)
-		} else if exhausted {
+			slog.Warn("[serpapi-hotels] quota system degraded; denying paid call (fail-closed)", "err", err)
+			return nil, ErrQuotaExhausted
+		}
+		if exhausted {
 			slog.Warn("[serpapi-hotels] monthly quota exhausted; skipping HTTP call", "remaining", remaining)
 			return nil, ErrQuotaExhausted
 		}

@@ -10,9 +10,10 @@ import { LeafDivider } from "@/components/editorial/leaf-divider";
 /**
  * /unsubscribe — CASL one-click opt-out landing.
  *
- * The email footer links here with ?u=<userID>&t=<hmac>. We process it on
- * mount (no button to click — the link IS the consent action) and call the
- * public, token-authenticated backend endpoint. No login required.
+ * The email footer links here with ?u=<userID>&e=<email>&t=<hmac>. All three
+ * params are required by the backend endpoint. We process the link on mount
+ * (no button to click — the link IS the consent action) and call the public,
+ * token-authenticated backend endpoint. No login required.
  */
 function UnsubscribeInner() {
   const params = useSearchParams();
@@ -32,6 +33,13 @@ function UnsubscribeInner() {
       window.history.replaceState(null, "", "/unsubscribe");
     }
     if (!u || !e || !t) {
+      // Distinct diagnostic when ONLY `e` is missing: that almost always means
+      // the email template dropped the &e= param, which would silently break
+      // unsubscribe for every recipient — not a user-tampered link. Surface it
+      // so it's identifiable rather than indistinguishable from a bad link.
+      if (u && t && !e && typeof console !== "undefined") {
+        console.error("[unsubscribe] missing `e` (email) param — check the email template's unsubscribe URL");
+      }
       setState("error");
       return;
     }

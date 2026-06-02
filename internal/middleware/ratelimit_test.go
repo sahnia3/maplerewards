@@ -140,6 +140,59 @@ func TestRateLimiter_WindowResets(t *testing.T) {
 	}
 }
 
+// Regression for the production-hardening change: the paid-API quota gate was
+// made to FAIL CLOSED on a Redis error, but the general per-IP request limiter
+// must keep its FAIL-OPEN availability behavior. This limiter is purely
+// in-memory (no Redis dependency at all): it must never deny a request for an
+// infrastructure reason — the only denial is a genuine 429 under load. We
+// assert that an unbounded-rate limiter (the degenerate "limiter can't enforce"
+// shape) lets every request through rather than blocking, and that a fresh
+// bucket always serves the first request. This is the "didn't regress
+// availability" guard.
+func TestRateLimiter_FailsOpenForAvailability(t *testing.T) {
+	// A very high rate stands in for "limiter effectively can't constrain" —
+	// every request must pass (fail open), never a 5xx or a spurious 429.
+	rl := NewRateLimiter(1_000_000, time.Minute)
+	handler := rl.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for i := 0; i < 50; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "203.0.113.7:4444"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: per-IP limiter must fail OPEN (got %d, want 200)", i+1, w.Code)
+		}
+	}
+
+	// A brand-new IP (no prior bucket state — the closest analogue to "state
+	// unavailable") is always served on its first hit.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "198.51.100.9:1212"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("new client first request must be served (fail open), got %d", w.Code)
+	}
+}
+
+// Same availability guarantee for the per-user limiter: anonymous requests pass
+// straight through, and a high rate never blocks an authenticated user.
+func TestUserRateLimiter_FailsOpenForAvailability(t *testing.T) {
+	url := NewUserRateLimiter(1_000_000, 1_000_000, time.Minute)
+	handler := url.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	// Anonymous (no userID in ctx) — passes through unchanged.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("anonymous request must pass through user limiter, got %d", w.Code)
+	}
+}
+
 // Regression: a fixed-window limiter would let an attacker fire `rate`
 // requests at the end of one window and `rate` again right after the
 // boundary, doubling the configured throughput. The token bucket should not.

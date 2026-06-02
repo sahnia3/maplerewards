@@ -19,29 +19,29 @@ type LoyaltyProgram struct {
 // ── Cards ────────────────────────────────────────────────────────────────────
 
 type Card struct {
-	ID                          string          `json:"id"`
-	Name                        string          `json:"name"`
-	Issuer                      string          `json:"issuer"`
-	Network                     string          `json:"network"` // visa | mastercard | amex
-	LoyaltyProgramID            string          `json:"loyalty_program_id"`
-	LoyaltyProgram              *LoyaltyProgram `json:"loyalty_program,omitempty"`
-	AnnualFee                   float64         `json:"annual_fee"`
-	WelcomeBonusPoints          int             `json:"welcome_bonus_points"`
-	WelcomeBonusMinSpend        float64         `json:"welcome_bonus_min_spend"`
-	WelcomeBonusMonths          int             `json:"welcome_bonus_months"`
+	ID                   string          `json:"id"`
+	Name                 string          `json:"name"`
+	Issuer               string          `json:"issuer"`
+	Network              string          `json:"network"` // visa | mastercard | amex
+	LoyaltyProgramID     string          `json:"loyalty_program_id"`
+	LoyaltyProgram       *LoyaltyProgram `json:"loyalty_program,omitempty"`
+	AnnualFee            float64         `json:"annual_fee"`
+	WelcomeBonusPoints   int             `json:"welcome_bonus_points"`
+	WelcomeBonusMinSpend float64         `json:"welcome_bonus_min_spend"`
+	WelcomeBonusMonths   int             `json:"welcome_bonus_months"`
 	// WelcomeBonusOfferExpiresAt is the *card's* public-offer end date — when
 	// the issuer's promotional welcome bonus reverts to the standard amount.
 	// Distinct from user_card_bonuses.deadline_at which is the user's spend
 	// deadline after activating their personal bonus.
-	WelcomeBonusOfferExpiresAt *string         `json:"welcome_bonus_offer_expires_at,omitempty"`
-	WelcomeBonusOfferSource    *string         `json:"welcome_bonus_offer_source,omitempty"`
+	WelcomeBonusOfferExpiresAt *string `json:"welcome_bonus_offer_expires_at,omitempty"`
+	WelcomeBonusOfferSource    *string `json:"welcome_bonus_offer_source,omitempty"`
 	// AffiliateURL is the per-card apply-now link. Nullable: only set when we
 	// have a commercial relationship for this card. Surfaced so the frontend
 	// can decide whether to render the Apply CTA.
-	AffiliateURL                *string         `json:"affiliate_url,omitempty"`
-	Country                     string          `json:"country"` // ISO 3166-1 alpha-2 (CA, US, etc.)
-	IsActive                    bool            `json:"is_active"`
-	CreatedAt                   time.Time       `json:"created_at"`
+	AffiliateURL *string   `json:"affiliate_url,omitempty"`
+	Country      string    `json:"country"` // ISO 3166-1 alpha-2 (CA, US, etc.)
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // ── Welcome Bonus Tracking ───────────────────────────────────────────────────
@@ -125,11 +125,11 @@ type TokenPair struct {
 }
 
 type RefreshToken struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	TokenHash string    `json:"-"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id"`
+	UserID    string     `json:"user_id"`
+	TokenHash string     `json:"-"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 
@@ -189,7 +189,7 @@ type TransferPartner struct {
 	FromProgram       *LoyaltyProgram `json:"from_program,omitempty"`
 	ToProgramID       string          `json:"to_program_id"`
 	ToProgram         *LoyaltyProgram `json:"to_program,omitempty"`
-	TransferRatio     float64         `json:"transfer_ratio"`    // 1.0 = 1:1
+	TransferRatio     float64         `json:"transfer_ratio"` // 1.0 = 1:1
 	MinimumTransfer   int             `json:"minimum_transfer"`
 	TransferIncrement int             `json:"transfer_increment"`
 	ProcessingDays    int             `json:"processing_days"`
@@ -302,7 +302,7 @@ type CardDetail struct {
 // ── Chat / AI ────────────────────────────────────────────────────────────────
 
 type ChatMessage struct {
-	Role    string `json:"role"`    // "user" or "assistant"
+	Role    string `json:"role"` // "user" or "assistant"
 	Content string `json:"content"`
 }
 
@@ -356,8 +356,8 @@ type CardFeeROI struct {
 	ValueEarned    float64 `json:"value_earned"`
 	TotalSpend     float64 `json:"total_spend"`
 	AvgReturn      float64 `json:"avg_return"`      // percentage
-	NetROI         float64 `json:"net_roi"`          // value_earned - annual_fee
-	BreakevenSpend float64 `json:"breakeven_spend"`  // monthly spend needed to justify fee
+	NetROI         float64 `json:"net_roi"`         // value_earned - annual_fee
+	BreakevenSpend float64 `json:"breakeven_spend"` // monthly spend needed to justify fee
 }
 
 type DollarGapAnalysis struct {
@@ -398,11 +398,16 @@ type AwardSearchRequest struct {
 	SessionID   string `json:"session_id"`
 	Origin      string `json:"origin"`
 	Destination string `json:"destination"`
-	Date        string `json:"date"`      // YYYY-MM-DD — center date
+	Date        string `json:"date"`      // YYYY-MM-DD — outbound center date
 	FlexDays    int    `json:"flex_days"` // ±days around Date (default 0)
-	Cabin       string `json:"cabin"`     // economy|business|first
-	Passengers  int    `json:"passengers"` // default 1
-	Refresh     bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
+	// ReturnDate, when set (YYYY-MM-DD), turns this into a round-trip search:
+	// the service runs a second leg destination→origin on this date and folds a
+	// ReturnLeg + combined round-trip points/taxes/CPP into each result. Empty
+	// → one-way (behaviour identical to before this field existed).
+	ReturnDate string `json:"return_date,omitempty"`
+	Cabin      string `json:"cabin"`             // economy|business|first
+	Passengers int    `json:"passengers"`        // default 1
+	Refresh    bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
 	// IsPro is set server-side from the auth context (json:"-" so a client
 	// cannot forge it). Live Apify award scraping is the premium data path
 	// and is gated to Pro; free users still get Seats.aero + SerpAPI.
@@ -417,29 +422,41 @@ type AwardSearchRequest struct {
 // FetchedAt and SourceLabel let the frontend render a freshness chip and a
 // provenance line ("Seats.aero, 8 min ago") on every card.
 type AwardSearchResult struct {
-	Date            string             `json:"date"`
-	Program         string             `json:"program"`           // issuer slug (e.g. "aeroplan")
-	ProgramName     string             `json:"program_name"`
-	Cabin           string             `json:"cabin"`             // cabin the points/cash baseline is quoted in
-	PointsCost      int                `json:"points_cost"`
-	TaxesCash       *float64           `json:"taxes_cash,omitempty"`
-	TaxesIncluded   bool               `json:"taxes_included"`
-	CashPriceCAD    float64            `json:"cash_price_cad"`     // ROUTE/cabin cash benchmark — NOT a per-flight price (award seats have none). One number per search.
-	CashIsEstimate  bool               `json:"cash_is_estimate"`   // true when CashPriceCAD is a zone-fallback guess (SerpAPI returned nothing), not a real fare
-	EconomyCashCAD  float64            `json:"economy_cash_cad,omitempty"` // economy cash for the same route — populated when cabin != "economy"
-	CPP             float64            `json:"cpp"`               // cents per point against CashPriceCAD — 0 when !Rated
-	RealisticCPP    float64            `json:"realistic_cpp,omitempty"` // cents per point against economy cash — the "would I actually pay this?" figure
-	Rated           bool               `json:"rated"`             // true ONLY when points are live AND cash is a real fare; false → frontend hides CPP/ValueRating
-	ValueRating     string             `json:"value_rating"`      // "excellent"|"good"|"poor" — empty when !Rated
-	SeatsAvailable  int                `json:"seats_available"`
-	Source          string             `json:"source"`            // "live" | "estimated"
-	SourceLabel     string             `json:"source_label"`      // "Google Flights" | "Seats.aero" | "Apify" | "estimate"
-	FetchedAt       time.Time          `json:"fetched_at"`
-	BookingURL      string             `json:"booking_url"`
-	PointsAvailable int64              `json:"points_available"`  // from user's wallet
-	CanAfford       bool               `json:"can_afford"`
-	CardBreakdowns  []CardContribution `json:"card_breakdowns"`
-	Segments        []AwardSegmentInfo `json:"segments"`
+	Date                string             `json:"date"`
+	Program             string             `json:"program"` // issuer slug (e.g. "aeroplan")
+	ProgramName         string             `json:"program_name"`
+	Cabin               string             `json:"cabin"` // cabin the points/cash baseline is quoted in
+	PointsCost          int                `json:"points_cost"`
+	TaxesCash           *float64           `json:"taxes_cash,omitempty"`
+	TaxesIncluded       bool               `json:"taxes_included"`
+	CashPriceCAD        float64            `json:"cash_price_cad"`             // ROUTE/cabin cash benchmark — NOT a per-flight price (award seats have none). One number per search.
+	CashIsEstimate      bool               `json:"cash_is_estimate"`           // true when CashPriceCAD is a zone-fallback guess (SerpAPI returned nothing), not a real fare
+	EconomyCashCAD      float64            `json:"economy_cash_cad,omitempty"` // economy cash for the same route — populated when cabin != "economy"
+	CPP                 float64            `json:"cpp"`                        // cents per point against CashPriceCAD — 0 when !Rated
+	RealisticCPP        float64            `json:"realistic_cpp,omitempty"`    // cents per point against economy cash — the "would I actually pay this?" figure
+	Rated               bool               `json:"rated"`                      // true ONLY when points are live AND cash is a real fare; false → frontend hides CPP/ValueRating
+	ValueRating         string             `json:"value_rating"`               // "excellent"|"good"|"poor" — empty when !Rated
+	SeatsAvailable      int                `json:"seats_available"`
+	Source              string             `json:"source"`       // "live" | "estimated"
+	SourceLabel         string             `json:"source_label"` // "Google Flights" | "Seats.aero" | "Apify" | "estimate"
+	FetchedAt           time.Time          `json:"fetched_at"`
+	BookingURL          string             `json:"booking_url"`
+	PointsAvailable     int64              `json:"points_available"` // from user's wallet
+	CanAfford           bool               `json:"can_afford"`
+	BestTransferPartner string             `json:"best_transfer_partner,omitempty"` // program to transfer INTO this award's currency for the "Boost via …" CTA
+	CardBreakdowns      []CardContribution `json:"card_breakdowns"`
+	Segments            []AwardSegmentInfo `json:"segments"`
+
+	// ── Round-trip (populated only when the request carried a return_date) ────
+	// ReturnLeg is the best same-program return option (destination→origin on
+	// the return date), mirroring the outbound row shape so the UI can render
+	// both legs identically. Nil on one-way searches and on outbound rows whose
+	// program had no return availability. The RoundTrip* fields summarise the
+	// outbound+return pair so the SPA can show one combined price/value.
+	ReturnLeg           *AwardSearchResult `json:"return_leg,omitempty"`
+	RoundTripPointsCost int                `json:"round_trip_points_cost,omitempty"` // outbound + return points
+	RoundTripTaxesCash  *float64           `json:"round_trip_taxes_cash,omitempty"`  // outbound + return cash taxes; nil when neither leg reported taxes
+	RoundTripCPP        float64            `json:"round_trip_cpp,omitempty"`         // ¢/pt over both legs' net cash vs combined points; 0 unless both legs rated
 }
 
 // AwardSegmentInfo is one flight leg within an award itinerary.
@@ -484,16 +501,16 @@ type RedemptionOption struct {
 
 	PointsRequired  int64              `json:"points_required"`
 	CanAfford       bool               `json:"can_afford"`
-	SavingsRating   string             `json:"savings_rating"`   // "good"|"fair"|"bad"
+	SavingsRating   string             `json:"savings_rating"` // "good"|"fair"|"bad"
 	ValuePerPoint   float64            `json:"value_per_point"`
 	PropertiesCount int                `json:"properties_count"`
 	CardBreakdowns  []CardContribution `json:"card_breakdowns"`
 
-	CashPriceCAD  float64 `json:"cash_price_cad"`  // Real cash price for comparison
-	DataSource    string  `json:"data_source"`     // "live_search" | "knowledge_base" | "estimated"
-	PropertyName  string  `json:"property_name"`   // Hotels: specific property name
-	HotelCategory int     `json:"hotel_category"`  // Hotels: category/tier number
-	AirlineName   string  `json:"airline_name"`    // Flights: airline name (e.g. "Air Canada")
+	CashPriceCAD  float64 `json:"cash_price_cad"` // Real cash price for comparison
+	DataSource    string  `json:"data_source"`    // "live_search" | "knowledge_base" | "estimated"
+	PropertyName  string  `json:"property_name"`  // Hotels: specific property name
+	HotelCategory int     `json:"hotel_category"` // Hotels: category/tier number
+	AirlineName   string  `json:"airline_name"`   // Flights: airline name (e.g. "Air Canada")
 }
 
 // CardContribution shows how a specific card contributes to a redemption
@@ -518,11 +535,11 @@ type MissedRewardEntry struct {
 	Amount          float64 `json:"amount"`
 	ActualCardID    string  `json:"actual_card_id"`
 	ActualCardName  string  `json:"actual_card_name"`
-	ActualValue     float64 `json:"actual_value"`     // CAD earned on the card used
+	ActualValue     float64 `json:"actual_value"` // CAD earned on the card used
 	OptimalCardID   string  `json:"optimal_card_id"`
 	OptimalCardName string  `json:"optimal_card_name"`
-	OptimalValue    float64 `json:"optimal_value"`    // CAD that would have been earned
-	Gap             float64 `json:"gap"`              // optimal_value − actual_value (CAD)
+	OptimalValue    float64 `json:"optimal_value"` // CAD that would have been earned
+	Gap             float64 `json:"gap"`           // optimal_value − actual_value (CAD)
 }
 
 // CategoryMissed is per-category aggregate of missed rewards.
@@ -540,16 +557,16 @@ type CategoryMissed struct {
 
 // MissedRewardsReport is the full output of GET /wallet/{sid}/missed-rewards.
 type MissedRewardsReport struct {
-	Since           string              `json:"since"`            // ISO date floor
-	TotalSpend      float64             `json:"total_spend"`
-	TotalActual     float64             `json:"total_actual_value"`
-	TotalOptimal    float64             `json:"total_optimal_value"`
-	TotalGap        float64             `json:"total_gap"`
-	EntryCount      int                 `json:"entry_count"`
-	MissedCount     int                 `json:"missed_count"`
-	ByCategory      []CategoryMissed    `json:"by_category"`
-	TopMissed       []MissedRewardEntry `json:"top_missed"` // top N entries by gap
-	WalletSnapshot  string              `json:"wallet_snapshot"` // "current" — caveat for users
+	Since          string              `json:"since"` // ISO date floor
+	TotalSpend     float64             `json:"total_spend"`
+	TotalActual    float64             `json:"total_actual_value"`
+	TotalOptimal   float64             `json:"total_optimal_value"`
+	TotalGap       float64             `json:"total_gap"`
+	EntryCount     int                 `json:"entry_count"`
+	MissedCount    int                 `json:"missed_count"`
+	ByCategory     []CategoryMissed    `json:"by_category"`
+	TopMissed      []MissedRewardEntry `json:"top_missed"`      // top N entries by gap
+	WalletSnapshot string              `json:"wallet_snapshot"` // "current" — caveat for users
 }
 
 // ── Card Credits + Annual-Fee Countdown ─────────────────────────────────────
@@ -557,26 +574,26 @@ type MissedRewardsReport struct {
 // CardCreditStatus is one credit definition joined with this user's redemption
 // status for the current anniversary year, plus annual-fee renewal countdown.
 type CardCreditStatus struct {
-	CreditDefID     string   `json:"credit_def_id"`
-	CardID          string   `json:"card_id"`
-	CardName        string   `json:"card_name"`
-	CardAnnualFee   float64  `json:"card_annual_fee"`
-	FeeRenewalDate  *string  `json:"fee_renewal_date,omitempty"`  // ISO YYYY-MM-DD
-	DaysToRenewal   *int     `json:"days_to_renewal,omitempty"`
+	CreditDefID    string  `json:"credit_def_id"`
+	CardID         string  `json:"card_id"`
+	CardName       string  `json:"card_name"`
+	CardAnnualFee  float64 `json:"card_annual_fee"`
+	FeeRenewalDate *string `json:"fee_renewal_date,omitempty"` // ISO YYYY-MM-DD
+	DaysToRenewal  *int    `json:"days_to_renewal,omitempty"`
 
-	Name            string   `json:"name"`        // "Travel Credit"
-	Description     string   `json:"description,omitempty"`
-	ValueCAD        float64  `json:"value_cad"`
-	Recurrence      string   `json:"recurrence"`  // annual|biennial|quadrennial|once
-	SortOrder       int      `json:"sort_order"`
+	Name        string  `json:"name"` // "Travel Credit"
+	Description string  `json:"description,omitempty"`
+	ValueCAD    float64 `json:"value_cad"`
+	Recurrence  string  `json:"recurrence"` // annual|biennial|quadrennial|once
+	SortOrder   int     `json:"sort_order"`
 
-	UserCreditID    string   `json:"user_credit_id,omitempty"` // empty if no row yet
-	AnniversaryYear int      `json:"anniversary_year"`
-	RedeemedAmount  float64  `json:"redeemed_amount"`
-	RedeemedAt      *string  `json:"redeemed_at,omitempty"`
-	Remaining       float64  `json:"remaining"`
-	Status          string   `json:"status"` // unused|partial|redeemed
-	Note            string   `json:"note,omitempty"`
+	UserCreditID    string  `json:"user_credit_id,omitempty"` // empty if no row yet
+	AnniversaryYear int     `json:"anniversary_year"`
+	RedeemedAmount  float64 `json:"redeemed_amount"`
+	RedeemedAt      *string `json:"redeemed_at,omitempty"`
+	Remaining       float64 `json:"remaining"`
+	Status          string  `json:"status"` // unused|partial|redeemed
+	Note            string  `json:"note,omitempty"`
 }
 
 // CreditRedemptionRequest is the body for POST /wallet/{sid}/credits/{credit_def_id}/redeem
@@ -602,16 +619,16 @@ type CreateCreditRequest struct {
 type SQCCardContribution struct {
 	CardID        string  `json:"card_id"`
 	CardName      string  `json:"card_name"`
-	DollarsPerSQC int     `json:"dollars_per_sqc"`  // e.g. 15 = "$15 spend → 1 SQC"
+	DollarsPerSQC int     `json:"dollars_per_sqc"` // e.g. 15 = "$15 spend → 1 SQC"
 	YTDSpend      float64 `json:"ytd_spend"`
 	SQCEarned     int     `json:"sqc_earned"`
 }
 
 // SQCTier: one row from aeroplan_status_thresholds.
 type SQCTier struct {
-	StatusLevel   string  `json:"status_level"`     // "25K" | "35K" | "50K" | "75K" | "Super Elite"
+	StatusLevel   string  `json:"status_level"` // "25K" | "35K" | "50K" | "75K" | "Super Elite"
 	SQCRequired   int     `json:"sqc_required"`
-	MinRevenueCAD float64 `json:"min_revenue_cad"`  // 0 if no revenue floor
+	MinRevenueCAD float64 `json:"min_revenue_cad"` // 0 if no revenue floor
 }
 
 // SQCProjection: the API output of GET /wallet/{sid}/sqc-projection.
@@ -620,11 +637,11 @@ type SQCProjection struct {
 	TotalSQCEarned   int                   `json:"total_sqc_earned"`
 	Cards            []SQCCardContribution `json:"cards"`
 	Tiers            []SQCTier             `json:"tiers"`
-	CurrentTier      string                `json:"current_tier,omitempty"`     // highest tier the user has cleared
-	NextTier         string                `json:"next_tier,omitempty"`        // first tier above current SQC
-	SQCToNextTier    int                   `json:"sqc_to_next_tier,omitempty"` // SQC still needed
+	CurrentTier      string                `json:"current_tier,omitempty"`       // highest tier the user has cleared
+	NextTier         string                `json:"next_tier,omitempty"`          // first tier above current SQC
+	SQCToNextTier    int                   `json:"sqc_to_next_tier,omitempty"`   // SQC still needed
 	SpendToNextTier  float64               `json:"spend_to_next_tier,omitempty"` // CAD spend at user's BEST card rate to clear gap
-	BestCardForGap   string                `json:"best_card_for_gap,omitempty"` // which card minimises spend-to-tier
+	BestCardForGap   string                `json:"best_card_for_gap,omitempty"`  // which card minimises spend-to-tier
 	WalletHasNoCards bool                  `json:"wallet_has_no_aeroplan_cards"` // true if no SQC-earning card in wallet
 	// RevenueFloorNote is set when the current or next tier also enforces a
 	// minimum flight-revenue floor (SQCTier.MinRevenueCAD > 0) that this
@@ -661,11 +678,11 @@ type AwardWatch struct {
 	UserID           string    `json:"user_id,omitempty"`
 	Origin           string    `json:"origin"`
 	Destination      string    `json:"destination"`
-	DepartDate       string    `json:"depart_date"`     // YYYY-MM-DD
+	DepartDate       string    `json:"depart_date"` // YYYY-MM-DD
 	FlexDays         int       `json:"flex_days"`
-	Cabin            string    `json:"cabin"`           // economy|business|first
+	Cabin            string    `json:"cabin"` // economy|business|first
 	MaxPoints        *int      `json:"max_points,omitempty"`
-	ProgramSlug      string    `json:"program_slug"`    // default 'aeroplan'
+	ProgramSlug      string    `json:"program_slug"` // default 'aeroplan'
 	IsActive         bool      `json:"is_active"`
 	LastCheckedAt    *string   `json:"last_checked_at,omitempty"`
 	LastMinPoints    *int      `json:"last_min_points,omitempty"`
@@ -687,36 +704,36 @@ type CreateAwardWatchRequest struct {
 // ── Buy-points break-even calculator ─────────────────────────────────────────
 
 type BuyPromo struct {
-	ProgramSlug        string  `json:"program_slug"`
-	PromoLabel         string  `json:"promo_label"`
-	BaseCentsPerPoint  float64 `json:"base_cents_per_point"`
-	PromoCentsPerPoint float64 `json:"promo_cents_per_point"`
-	ValidFrom          time.Time `json:"valid_from"`
+	ProgramSlug        string     `json:"program_slug"`
+	PromoLabel         string     `json:"promo_label"`
+	BaseCentsPerPoint  float64    `json:"base_cents_per_point"`
+	PromoCentsPerPoint float64    `json:"promo_cents_per_point"`
+	ValidFrom          time.Time  `json:"valid_from"`
 	ValidTo            *time.Time `json:"valid_to,omitempty"`
-	SourceURL          string  `json:"source_url,omitempty"`
+	SourceURL          string     `json:"source_url,omitempty"`
 	// MaxPurchasablePerYear is the program's published annual point-purchase
 	// ceiling (per account). NULL → fall back to defaultMaxAnnualPointsPurchase.
 	MaxPurchasablePerYear *int `json:"max_purchasable_per_year,omitempty"`
 }
 
 type BuyPointsRequest struct {
-	ProgramSlug      string  `json:"program_slug"`
-	PointsNeeded     int     `json:"points_needed"`
-	CashAlternative  float64 `json:"cash_alternative_cad"` // what user would otherwise pay in CAD
+	ProgramSlug     string  `json:"program_slug"`
+	PointsNeeded    int     `json:"points_needed"`
+	CashAlternative float64 `json:"cash_alternative_cad"` // what user would otherwise pay in CAD
 }
 
 type BuyPointsVerdict struct {
-	ProgramSlug          string  `json:"program_slug"`
-	PointsNeeded         int     `json:"points_needed"`
-	CashAlternative      float64 `json:"cash_alternative_cad"`
+	ProgramSlug            string  `json:"program_slug"`
+	PointsNeeded           int     `json:"points_needed"`
+	CashAlternative        float64 `json:"cash_alternative_cad"`
 	BreakEvenCentsPerPoint float64 `json:"break_even_cents_per_point"` // cash_alt / points
-	CurrentPromoCPP      float64 `json:"current_promo_cents_per_point"`
-	BasePurchaseCPP      float64 `json:"base_purchase_cents_per_point"`
-	BuyCostCAD           float64 `json:"buy_cost_cad"`
-	Verdict              string  `json:"verdict"`        // 'buy'|'earn'|'pay_cash'
-	Rationale            string  `json:"rationale"`
-	PromoLabel           string  `json:"promo_label,omitempty"`
-	SourceURL            string  `json:"source_url,omitempty"`
+	CurrentPromoCPP        float64 `json:"current_promo_cents_per_point"`
+	BasePurchaseCPP        float64 `json:"base_purchase_cents_per_point"`
+	BuyCostCAD             float64 `json:"buy_cost_cad"`
+	Verdict                string  `json:"verdict"` // 'buy'|'earn'|'pay_cash'
+	Rationale              string  `json:"rationale"`
+	PromoLabel             string  `json:"promo_label,omitempty"`
+	SourceURL              string  `json:"source_url,omitempty"`
 }
 
 // ── Devaluation events ───────────────────────────────────────────────────────
@@ -730,7 +747,7 @@ type DevaluationEvent struct {
 	EffectiveDate string `json:"effective_date"` // YYYY-MM-DD
 	PostedAt      string `json:"posted_at"`
 	SourceURL     string `json:"source_url,omitempty"`
-	DaysUntil     int    `json:"days_until"`     // can be negative if past
+	DaysUntil     int    `json:"days_until"`         // can be negative if past
 	UserHolds     bool   `json:"user_holds_balance"` // true if user has cards in this program
 }
 
@@ -739,22 +756,22 @@ type DevaluationEvent struct {
 // ── Card-linked offer tracker (Amex Offers / RBC Offers / Scene+) ──────────
 
 type CardOffer struct {
-	ID           string   `json:"id,omitempty"`
-	UserID       string   `json:"user_id,omitempty"`
-	CardID       string   `json:"card_id"`
-	CardName     string   `json:"card_name,omitempty"`     // joined for UI
-	Source       string   `json:"source"`                   // amex_offers|rbc_offers|scene_plus|other
-	Merchant     string   `json:"merchant"`
-	Description  *string  `json:"description,omitempty"`
-	EarnAmount   *float64 `json:"earn_amount,omitempty"`
-	MinSpend     *float64 `json:"min_spend,omitempty"`
-	ActivatedAt  *string  `json:"activated_at,omitempty"`   // YYYY-MM-DD
-	ExpiresAt    *string  `json:"expires_at,omitempty"`
-	IsUsed       bool     `json:"is_used"`
-	UsedAt       *string  `json:"used_at,omitempty"`
-	Notes        *string  `json:"notes,omitempty"`
+	ID          string   `json:"id,omitempty"`
+	UserID      string   `json:"user_id,omitempty"`
+	CardID      string   `json:"card_id"`
+	CardName    string   `json:"card_name,omitempty"` // joined for UI
+	Source      string   `json:"source"`              // amex_offers|rbc_offers|scene_plus|other
+	Merchant    string   `json:"merchant"`
+	Description *string  `json:"description,omitempty"`
+	EarnAmount  *float64 `json:"earn_amount,omitempty"`
+	MinSpend    *float64 `json:"min_spend,omitempty"`
+	ActivatedAt *string  `json:"activated_at,omitempty"` // YYYY-MM-DD
+	ExpiresAt   *string  `json:"expires_at,omitempty"`
+	IsUsed      bool     `json:"is_used"`
+	UsedAt      *string  `json:"used_at,omitempty"`
+	Notes       *string  `json:"notes,omitempty"`
 	// Derived:
-	DaysToExpiry *int     `json:"days_to_expiry,omitempty"`
+	DaysToExpiry *int `json:"days_to_expiry,omitempty"`
 }
 
 type CreateCardOfferRequest struct {
@@ -772,18 +789,18 @@ type CreateCardOfferRequest struct {
 // ── Loyalty account aggregation (programs without a co-branded card) ───────
 
 type LoyaltyAccount struct {
-	ID             string  `json:"id,omitempty"`
-	UserID         string  `json:"user_id,omitempty"`
-	ProgramSlug    string  `json:"program_slug"`
-	ProgramName    string  `json:"program_name,omitempty"`     // joined for UI
-	AccountLabel   *string `json:"account_label,omitempty"`
-	Balance        int64   `json:"balance"`
-	ExpiresAt      *string `json:"expires_at,omitempty"`        // YYYY-MM-DD
-	LastActivity   *string `json:"last_activity,omitempty"`     // YYYY-MM-DD
-	Notes          *string `json:"notes,omitempty"`
+	ID           string  `json:"id,omitempty"`
+	UserID       string  `json:"user_id,omitempty"`
+	ProgramSlug  string  `json:"program_slug"`
+	ProgramName  string  `json:"program_name,omitempty"` // joined for UI
+	AccountLabel *string `json:"account_label,omitempty"`
+	Balance      int64   `json:"balance"`
+	ExpiresAt    *string `json:"expires_at,omitempty"`    // YYYY-MM-DD
+	LastActivity *string `json:"last_activity,omitempty"` // YYYY-MM-DD
+	Notes        *string `json:"notes,omitempty"`
 	// Derived (set by service):
 	DaysToExpiry   *int    `json:"days_to_expiry,omitempty"`
-	ExpiryRuleNote *string `json:"expiry_rule_note,omitempty"`  // "expires 18 mo after last activity"
+	ExpiryRuleNote *string `json:"expiry_rule_note,omitempty"` // "expires 18 mo after last activity"
 }
 
 type CreateLoyaltyAccountRequest struct {
@@ -805,15 +822,15 @@ type UpdateLoyaltyAccountRequest struct {
 // ── Issuer page diff-watch (live monitoring of issuer pages for changes) ────
 
 type IssuerPage struct {
-	ID             string  `json:"id"`
-	Label          string  `json:"label"`
-	URL            string  `json:"url"`
-	ProgramSlug    *string `json:"program_slug,omitempty"`
-	CardID         *string `json:"card_id,omitempty"`
-	IsActive       bool    `json:"is_active"`
-	LastCheckedAt  *string `json:"last_checked_at,omitempty"`
-	LastHash       *string `json:"last_hash,omitempty"`
-	CheckFailures  int     `json:"check_failures"`
+	ID            string  `json:"id"`
+	Label         string  `json:"label"`
+	URL           string  `json:"url"`
+	ProgramSlug   *string `json:"program_slug,omitempty"`
+	CardID        *string `json:"card_id,omitempty"`
+	IsActive      bool    `json:"is_active"`
+	LastCheckedAt *string `json:"last_checked_at,omitempty"`
+	LastHash      *string `json:"last_hash,omitempty"`
+	CheckFailures int     `json:"check_failures"`
 }
 
 type IssuerPageChange struct {
@@ -840,11 +857,11 @@ type Merchant struct {
 }
 
 type PortalRate struct {
-	Portal     string  `json:"portal"`        // 'rakuten_ca'|'gcr'|'topcashback'
-	Merchant   string  `json:"merchant_slug"`
-	RatePct    float64 `json:"rate_pct"`
-	SourceURL  string  `json:"source_url,omitempty"`
-	ScrapedAt  string  `json:"scraped_at,omitempty"`
+	Portal    string  `json:"portal"` // 'rakuten_ca'|'gcr'|'topcashback'
+	Merchant  string  `json:"merchant_slug"`
+	RatePct   float64 `json:"rate_pct"`
+	SourceURL string  `json:"source_url,omitempty"`
+	ScrapedAt string  `json:"scraped_at,omitempty"`
 }
 
 type NetworkOffer struct {
@@ -866,30 +883,30 @@ type NetworkOffer struct {
 }
 
 type StackRecommendRequest struct {
-	SessionID   string  `json:"session_id"`
+	SessionID    string  `json:"session_id"`
 	MerchantSlug string  `json:"merchant_slug"`
 	SpendAmount  float64 `json:"spend_amount"`
 }
 
 type StackComponent struct {
-	Layer      string  `json:"layer"`         // 'portal'|'card'|'network_offer'|'loyalty'
-	Source     string  `json:"source"`        // human-readable label
-	ValueCAD   float64 `json:"value_cad"`     // dollars earned/saved on this layer
-	Detail     string  `json:"detail,omitempty"`
-	SourceURL  string  `json:"source_url,omitempty"`
+	Layer     string  `json:"layer"`     // 'portal'|'card'|'network_offer'|'loyalty'
+	Source    string  `json:"source"`    // human-readable label
+	ValueCAD  float64 `json:"value_cad"` // dollars earned/saved on this layer
+	Detail    string  `json:"detail,omitempty"`
+	SourceURL string  `json:"source_url,omitempty"`
 }
 
 type StackRecommendation struct {
-	MerchantSlug    string           `json:"merchant_slug"`
-	MerchantName    string           `json:"merchant_name"`
-	SpendAmount     float64          `json:"spend_amount"`
-	BestPortal      *PortalRate      `json:"best_portal,omitempty"`
+	MerchantSlug    string              `json:"merchant_slug"`
+	MerchantName    string              `json:"merchant_name"`
+	SpendAmount     float64             `json:"spend_amount"`
+	BestPortal      *PortalRate         `json:"best_portal,omitempty"`
 	BestCard        *CardRecommendation `json:"best_card,omitempty"`
-	NetworkOffers   []NetworkOffer   `json:"network_offers"`
-	Components      []StackComponent `json:"components"`
-	TotalValueCAD   float64          `json:"total_value_cad"`
-	EffectiveReturn float64          `json:"effective_return_pct"`
-	Warnings        []string         `json:"warnings,omitempty"`
+	NetworkOffers   []NetworkOffer      `json:"network_offers"`
+	Components      []StackComponent    `json:"components"`
+	TotalValueCAD   float64             `json:"total_value_cad"`
+	EffectiveReturn float64             `json:"effective_return_pct"`
+	Warnings        []string            `json:"warnings,omitempty"`
 }
 
 // ── Annual card value comparison ─────────────────────────────────────────────
@@ -902,13 +919,13 @@ type CardValueComponent struct {
 }
 
 type CardValueSummary struct {
-	CardID       string               `json:"card_id"`
-	CardName     string               `json:"card_name"`
-	AnnualFee    float64              `json:"annual_fee"`
-	Components   []CardValueComponent `json:"components"`
-	TotalEVCAD   float64              `json:"total_ev_cad"`
-	NetEVCAD     float64              `json:"net_ev_cad"`     // total_ev - fee
-	IsPositive   bool                 `json:"is_positive"`
+	CardID     string               `json:"card_id"`
+	CardName   string               `json:"card_name"`
+	AnnualFee  float64              `json:"annual_fee"`
+	Components []CardValueComponent `json:"components"`
+	TotalEVCAD float64              `json:"total_ev_cad"`
+	NetEVCAD   float64              `json:"net_ev_cad"` // total_ev - fee
+	IsPositive bool                 `json:"is_positive"`
 }
 
 // ── Tangerine MCC resolver ───────────────────────────────────────────────────

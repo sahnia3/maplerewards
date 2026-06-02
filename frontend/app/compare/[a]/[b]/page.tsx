@@ -370,14 +370,16 @@ function SpecTable({
   ];
 
   return (
-    <table
-      style={{
-        width: "100%",
-        borderCollapse: "collapse",
-        fontSize: 14,
-      }}
-    >
-      <thead>
+    <div className="m-scroll-x">
+      <table
+        style={{
+          width: "100%",
+          minWidth: 520,
+          borderCollapse: "collapse",
+          fontSize: 14,
+        }}
+      >
+        <thead>
         <tr>
           <th style={{ textAlign: "left", padding: "10px 14px", color: "var(--ink-3)", borderBottom: "1px solid var(--ink)" }}>
             Spec
@@ -423,7 +425,8 @@ function SpecTable({
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 }
 

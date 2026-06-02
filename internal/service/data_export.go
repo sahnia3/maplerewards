@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -103,15 +104,18 @@ func (s *DataExportService) Export(ctx context.Context, userID string) (*ExportP
 		WHERE a.user_id = $1 ORDER BY a.applied_at DESC
 	`, userID)
 	payload.WelcomeBonuses = collectRows(ctx, s.pool, `
-		SELECT id, card_id, target_points, target_spend, deadline_at, activated_at, created_at
+		SELECT id, card_id, activated_at, deadline_at, min_spend, current_spend,
+		       bonus_points, is_completed, completed_at, created_at
 		FROM user_card_bonuses WHERE user_id = $1
 	`, userID)
 	payload.LoyaltyAccounts = collectRows(ctx, s.pool, `
-		SELECT id, program_id, account_number_hash, point_balance, last_synced_at, created_at
+		SELECT id, program_slug, account_label, balance, expires_at, last_activity, notes, created_at
 		FROM loyalty_accounts WHERE user_id = $1
 	`, userID)
 	payload.AwardWatches = collectRows(ctx, s.pool, `
-		SELECT id, origin, destination, cabin, start_date, end_date, last_probed_at, last_min_points, created_at
+		SELECT id, origin, destination, depart_date, flex_days, cabin, max_points,
+		       program_slug, is_active, last_checked_at, last_min_points,
+		       last_alert_at, last_alert_message, created_at
 		FROM award_watch WHERE user_id = $1
 	`, userID)
 	payload.ChatConversations = collectRows(ctx, s.pool, `
@@ -136,6 +140,11 @@ func (s *DataExportService) Export(ctx context.Context, userID string) (*ExportP
 func collectRows(ctx context.Context, pool *pgxpool.Pool, query string, args ...any) []map[string]any {
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
+		// Non-fatal so one broken table can't sink the whole export — but log
+		// loudly. Silently swallowing is exactly what let a column-name drift
+		// drop entire categories (loyalty_accounts/award_watch/bonuses) from
+		// users' DSAR exports unnoticed.
+		slog.Error("data_export.collectRows: query failed; table omitted from export", "err", err, "query", query)
 		return []map[string]any{}
 	}
 	defer rows.Close()

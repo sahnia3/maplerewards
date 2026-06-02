@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
@@ -32,6 +33,9 @@ func (m *mockMissedSpendRepo) CreateSpendEntry(ctx context.Context, entry model.
 }
 func (m *mockMissedSpendRepo) RecordSpend(ctx context.Context, entry model.SpendEntry, month time.Time, bonusAmount float64, applyBonus bool) (*model.SpendEntry, error) {
 	return &entry, nil
+}
+func (m *mockMissedSpendRepo) RecordSpendBatch(ctx context.Context, rows []repo.BatchSpendRow, applyBonus bool) (int, error) {
+	return len(rows), nil
 }
 func (m *mockMissedSpendRepo) ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error) {
 	if offset >= len(m.entries) {

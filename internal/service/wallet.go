@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 type WalletService struct {
@@ -60,13 +61,38 @@ func (s *WalletService) GetWallet(ctx context.Context, sessionID string) ([]mode
 	return cards, nil
 }
 
-func (s *WalletService) AddCard(ctx context.Context, sessionID, cardID string) error {
+// freeMaxCards caps the free tier's wallet size. Mirrors FREE_LIMITS.maxCards
+// in frontend/lib/pro-features.ts; Pro is unlimited.
+const freeMaxCards = 5
+
+func (s *WalletService) AddCard(ctx context.Context, sessionID, cardID string, isPro bool) error {
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("session lookup: %w", err)
 	}
 	if user == nil {
 		return fmt.Errorf("session not found")
+	}
+	// Enforce the free-tier card cap server-side (it was advertised but never
+	// enforced). Re-adding a card already in the wallet is idempotent and never
+	// blocked — only a net-new card beyond the cap is rejected.
+	if !isPro {
+		cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
+		if err != nil {
+			return fmt.Errorf("card count: %w", err)
+		}
+		if len(cards) >= freeMaxCards {
+			owned := false
+			for _, c := range cards {
+				if c.CardID == cardID {
+					owned = true
+					break
+				}
+			}
+			if !owned {
+				return ErrCardLimitReached
+			}
+		}
 	}
 	if _, err := s.walletRepo.AddCard(ctx, user.ID, cardID); err != nil {
 		return err
@@ -165,17 +191,86 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 		return nil, fmt.Errorf("session not found")
 	}
 
+	entry, month, err := s.buildSpendEntry(ctx, user.ID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Atomically insert the spend entry and, only if it is a genuinely new
+	// row, increment the monthly cap aggregate and welcome-bonus tracker —
+	// all in one transaction. Previously the two follow-up writes were
+	// fire-and-forget goroutines on context.Background() with discarded
+	// errors: a crash lost cap/bonus progress, a deduped re-import
+	// double-counted both, and failures were silent. The bonus UPDATE is a
+	// no-op when the card has no bonus row, so applyBonus simply tracks
+	// whether bonus tracking is wired at all.
+	saved, err := s.spendRepo.RecordSpend(ctx, entry, month, req.Amount, s.bonusRepo != nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record spend: %w", err)
+	}
+
+	return saved, nil
+}
+
+// LogSpendBatch records many spend entries (one CSV import) in ONE transaction
+// on ONE DB connection. It is the atomic, pool-safe replacement for looping
+// LogSpend: looping opened a fresh per-row transaction (RecordSpend) and so a
+// large file could pin the whole connection pool, while a mid-file failure left
+// a partially-imported wallet. Here every accepted row is computed first, then
+// the entire DB write runs through SpendRepository.RecordSpendBatch as a single
+// begin→insert-all→commit (rolled back as a unit on any error).
+//
+// Per-row value math is identical to LogSpend (shared buildSpendEntry), so a
+// row imported via CSV stores the same capped points/dollar value it would if
+// logged manually. Returns the number of rows newly inserted (deduped rows are
+// not counted), matching LogSpend's per-row created semantics.
+func (s *WalletService) LogSpendBatch(ctx context.Context, sessionID string, reqs []model.SpendLogRequest) (int, error) {
+	if len(reqs) == 0 {
+		return 0, nil
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil {
+		return 0, fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return 0, fmt.Errorf("session not found")
+	}
+
+	rows := make([]repo.BatchSpendRow, 0, len(reqs))
+	for _, req := range reqs {
+		entry, month, bErr := s.buildSpendEntry(ctx, user.ID, req)
+		if bErr != nil {
+			// Validation/computation happens before any DB write, so a bad
+			// request aborts the import without persisting anything.
+			return 0, bErr
+		}
+		rows = append(rows, repo.BatchSpendRow{Entry: entry, Month: month, BonusAmount: req.Amount})
+	}
+
+	created, err := s.spendRepo.RecordSpendBatch(ctx, rows, s.bonusRepo != nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to record spend batch: %w", err)
+	}
+	return created, nil
+}
+
+// buildSpendEntry resolves the category, parses/defaults the date, and computes
+// the cap-bounded points/dollar value for a single spend request. Shared by
+// LogSpend and LogSpendBatch so the per-row value math (and the round-on-write
+// money discipline) can never drift between the manual and CSV paths. Returns
+// the entry and its month bucket for the monthly-spend aggregate.
+func (s *WalletService) buildSpendEntry(ctx context.Context, userID string, req model.SpendLogRequest) (model.SpendEntry, time.Time, error) {
 	// Resolve category
 	category, err := s.cardRepo.GetCategoryBySlug(ctx, req.CategorySlug)
 	if err != nil {
-		return nil, fmt.Errorf("category %q not found: %w", req.CategorySlug, err)
+		return model.SpendEntry{}, time.Time{}, fmt.Errorf("category %q not found: %w", req.CategorySlug, err)
 	}
 
 	// Parse date or default to today
 	spentAt := time.Now().Format("2006-01-02")
 	if req.Date != "" {
 		if _, err := time.Parse("2006-01-02", req.Date); err != nil {
-			return nil, fmt.Errorf("invalid date format, use YYYY-MM-DD: %w", err)
+			return model.SpendEntry{}, time.Time{}, fmt.Errorf("invalid date format, use YYYY-MM-DD: %w", err)
 		}
 		spentAt = req.Date
 	}
@@ -219,7 +314,7 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 	dollarValue = roundMoney(dollarValue)
 
 	entry := model.SpendEntry{
-		UserID:       user.ID,
+		UserID:       userID,
 		CardID:       req.CardID,
 		CategoryID:   category.ID,
 		CategorySlug: category.Slug,
@@ -231,22 +326,9 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 		Note:         req.Note,
 	}
 
-	// Atomically insert the spend entry and, only if it is a genuinely new
-	// row, increment the monthly cap aggregate and welcome-bonus tracker —
-	// all in one transaction. Previously the two follow-up writes were
-	// fire-and-forget goroutines on context.Background() with discarded
-	// errors: a crash lost cap/bonus progress, a deduped re-import
-	// double-counted both, and failures were silent. The bonus UPDATE is a
-	// no-op when the card has no bonus row, so applyBonus simply tracks
-	// whether bonus tracking is wired at all.
 	parsedDate, _ := time.Parse("2006-01-02", spentAt)
 	month := time.Date(parsedDate.Year(), parsedDate.Month(), 1, 0, 0, 0, 0, time.UTC)
-	saved, err := s.spendRepo.RecordSpend(ctx, entry, month, req.Amount, s.bonusRepo != nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to record spend: %w", err)
-	}
-
-	return saved, nil
+	return entry, month, nil
 }
 
 // GetSpendHistory returns paginated spend entries for a user.

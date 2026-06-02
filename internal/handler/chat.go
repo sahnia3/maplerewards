@@ -23,11 +23,12 @@ import (
 )
 
 // freeChatMonthlyCap is the per-user monthly cap on AI chat messages for the
-// free tier. Pro users are unlimited (no Redis check). Set to 2: chat is a
-// paid feature; free users get a minimal taste (a question or two a month)
-// to drive conversion, not an ongoing free assistant. Deliberately low to
-// keep free-tier Anthropic spend negligible at scale.
-const freeChatMonthlyCap int64 = 2
+// free tier. Pro users are unlimited (no Redis check). Set to 10: a 2-message
+// taste was too thin to demonstrate the assistant's value and throttled the
+// conversion funnel. Ten lets a free user reach real utility before the wall
+// while keeping free-tier Anthropic spend modest — the per-request token
+// budget in ai_budget.go still bounds the cost of each individual message.
+const freeChatMonthlyCap int64 = 10
 
 // chatRequestBody is the wire shape for /chat and /chat/stream POSTs. It
 // extends service.ChatRequest with an optional conversation_id so authenticated
@@ -144,7 +145,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
-			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+			slog.Warn("aibudget check errored; allowing (non-quota error path)", "err", err, "user_id", userID)
 		} else if exhausted {
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
 			jsonErrorCode(w, "DAILY_LIMIT",
@@ -154,7 +155,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro)
+	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro, plan)
 	if err != nil {
 		// P0: do NOT leak Anthropic error bodies / tool-call internals to the
 		// client. Log full error server-side, return a stable code + short
@@ -224,18 +225,21 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 //	data: <json>
 //
 // Events emitted:
-//   round_start  {round}
-//   tool_start   {id, name, args}
-//   tool_done    {id, name, summary}
-//   round_end    {round, has_more}
-//   done         {reply, history, conversation_id}
-//   error        {message}
+//
+//	round_start  {round}
+//	tool_start   {id, name, args}
+//	tool_done    {id, name, summary}
+//	round_end    {round, has_more}
+//	done         {reply, history, conversation_id}
+//	error        {message}
 //
 // Pro gating + monthly usage limits are enforced exactly as in Chat().
 func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
-	// Recover from panics in the tool-use loop or Apify response decode. Without
-	// this, a single nil-pointer in apify_awards.convertResults brings down the
-	// whole API process, manifesting client-side as ERR_INCOMPLETE_CHUNKED_ENCODING.
+	// Recover from panics anywhere in the tool-use loop. Defense-in-depth: the
+	// Apify award-search parse path (apify_awards.parseApifyResults) is now
+	// panic-proof on its own, but the broader streaming/tool loop still needs a
+	// backstop so an unexpected panic surfaces as an SSE error frame instead of
+	// killing the whole API process (client-side: ERR_INCOMPLETE_CHUNKED_ENCODING).
 	defer func() {
 		if rec := recover(); rec != nil {
 			slog.Error("[chat-stream] panic recovered",
@@ -308,7 +312,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
-			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+			slog.Warn("aibudget check errored; allowing (non-quota error path)", "err", err, "user_id", userID)
 		} else if exhausted {
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
 			jsonErrorCode(w, "DAILY_LIMIT",
@@ -381,7 +385,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	resp, err := h.svc.ChatWithToolsStream(r.Context(), req.ChatRequest, isPro, emit)
+	resp, err := h.svc.ChatWithToolsStream(r.Context(), req.ChatRequest, isPro, plan, emit)
 	if err != nil {
 		// Log server-side too — emit() only reaches the client via SSE, and if
 		// the client already disconnected (which produces ctx.Canceled errors),

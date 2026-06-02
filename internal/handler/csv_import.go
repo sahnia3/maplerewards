@@ -85,11 +85,11 @@ func (h *CSVImportHandler) Commit(w http.ResponseWriter, r *http.Request) {
 			jsonErrorCode(w, "FORBIDDEN", "the supplied card is not in your wallet", http.StatusForbidden)
 			return
 		}
-		// Partial success — report how many made it before the failure.
-		jsonOK(w, map[string]any{
-			"created": created,
-			"error":   "some rows could not be imported — the rest were saved",
-		})
+		// All-or-nothing: the import now runs in a single transaction, so any
+		// failure rolls back every row (created is 0). Report that nothing was
+		// saved rather than the old "the rest were saved" half-truth, and use a
+		// 4xx so the frontend treats it as a failed import, not a success.
+		jsonMaskedError(w, "csv_import.commit", err, "import failed — no rows were saved; please try again", http.StatusUnprocessableEntity)
 		return
 	}
 	jsonOK(w, map[string]any{"created": created})

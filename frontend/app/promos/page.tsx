@@ -124,7 +124,7 @@ function PromoCard({ promo }: { promo: TransferBonusEvent }) {
         {daysLeft !== null && (
           <span>{daysLeft === 0 ? "ENDS TODAY" : `${daysLeft}D LEFT`}</span>
         )}
-        {!daysLeft && !expires && <span>ONGOING</span>}
+        {daysLeft === null && <span>ONGOING</span>}
       </div>
       <a
         href={promo.source_url}

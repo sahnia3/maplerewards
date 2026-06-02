@@ -54,11 +54,18 @@ export default function WeeklyDigestPage({
 
   const weekStart = isoWeekStart(parsed.year, parsed.week);
   const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6); // Sunday — the displayed end date
+
+  // Half-open window [Monday 00:00, next-Monday 00:00). Computing the exclusive
+  // upper bound directly from weekStart (rather than weekEnd + 1 day) avoids the
+  // off-by-a-millisecond boundary where a next-Monday-midnight article could be
+  // mis-bucketed. Articles from Sunday 23:59:59.999 still fall inside the window.
+  const nextWeekStart = new Date(weekStart);
+  nextWeekStart.setUTCDate(nextWeekStart.getUTCDate() + 7);
 
   const inWindow = (articles ?? []).filter((a) => {
     const t = new Date(a.published_at).getTime();
-    return t >= weekStart.getTime() && t < weekEnd.getTime() + 24 * 60 * 60 * 1000;
+    return t >= weekStart.getTime() && t < nextWeekStart.getTime();
   });
 
   const byCategory: Record<string, FeedArticle[]> = {};
@@ -92,7 +99,7 @@ export default function WeeklyDigestPage({
 
         {err && <p style={{ color: "var(--accent)" }}>{err}</p>}
         {!articles && !err && (
-          <p className="eyebrow" style={{ color: "var(--ink-3)" }}>LOADING…</p>
+          <p className="eyebrow">LOADING…</p>
         )}
 
         {articles && inWindow.length === 0 && (
@@ -124,23 +131,45 @@ export default function WeeklyDigestPage({
         >
           <Link
             href={`/feed/weekly/${formatWeek(parsed.year, parsed.week - 1)}`}
-            className="mono"
+            className="sans"
             style={navLinkStyle}
           >
             ← Previous week
           </Link>
-          <Link href="/feed" className="mono" style={navLinkStyle}>
+          <Link href="/feed" className="sans" style={navLinkStyle}>
             All articles
           </Link>
           <Link
             href={`/feed/weekly/${formatWeek(parsed.year, parsed.week + 1)}`}
-            className="mono"
+            className="sans"
             style={navLinkStyle}
           >
             Next week →
           </Link>
         </nav>
       </div>
+      <style jsx global>{`
+        /* Article title links read as plain headings until interacted with.
+         * Give them a clear pointer cue + hover/focus affordance so users know
+         * the headline is clickable and keyboard users get a visible focus. */
+        .weekly-article-link {
+          color: var(--ink);
+          text-decoration: none;
+          transition: color 160ms ease;
+        }
+        .weekly-article-link:hover {
+          color: var(--accent);
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          text-decoration-thickness: 1px;
+        }
+        .weekly-article-link:focus-visible {
+          color: var(--accent);
+          outline: 2px solid var(--accent);
+          outline-offset: 3px;
+          border-radius: 2px;
+        }
+      `}</style>
     </div>
   );
 }
@@ -191,7 +220,7 @@ function CategorySection({
                 href={a.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "var(--ink)", textDecoration: "none" }}
+                className="weekly-article-link"
               >
                 {a.title}
               </a>
@@ -215,7 +244,8 @@ function CategorySection({
 }
 
 const navLinkStyle: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 13,
+  fontWeight: 600,
   letterSpacing: "0.14em",
   textTransform: "uppercase",
   color: "var(--accent)",

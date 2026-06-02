@@ -12,15 +12,16 @@
 //
 // Run with:    go run ./cmd/worker
 // Configure via env:
-//   DATABASE_URL                — required
-//   REDIS_ADDR                  — default localhost:6379
-//   APIFY_TOKEN                 — required for live probes; empty disables
-//   SEATSAERO_API_KEY           — optional secondary source
-//   SERPAPI_KEY                 — optional cash-price enrichment
-//   AWARD_WATCH_TICK_HOURS      — default 24 hours between sweeps
-//   AWARD_WATCH_BATCH_SIZE      — default 50 watches per sweep
-//   AWARD_WATCH_GAP_THRESHOLD   — default 5000; alert when last_min_points
-//                                 drops by at least this many points.
+//
+//	DATABASE_URL                — required
+//	REDIS_ADDR                  — default localhost:6379
+//	APIFY_TOKEN                 — required for live probes; empty disables
+//	SEATSAERO_API_KEY           — optional secondary source
+//	SERPAPI_KEY                 — optional cash-price enrichment
+//	AWARD_WATCH_TICK_HOURS      — default 24 hours between sweeps
+//	AWARD_WATCH_BATCH_SIZE      — default 50 watches per sweep
+//	AWARD_WATCH_GAP_THRESHOLD   — default 5000; alert when last_min_points
+//	                              drops by at least this many points.
 package main
 
 import (
@@ -54,7 +55,23 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, mustEnv("DATABASE_URL"))
+	// Explicit pool sizing — mirrors cmd/api. pgxpool defaults to
+	// GREATEST(4, NumCPU), and a worker sweep burst (award/issuer/digest
+	// sweeps each opening connections) sharing the same Postgres as the API
+	// could otherwise exhaust max_connections. Defaults are smaller than the
+	// API's 25 because the worker is batch-serial, not request-concurrent, but
+	// it honors the same env knobs so ops can tune both processes uniformly.
+	pgxCfg, err := pgxpool.ParseConfig(mustEnv("DATABASE_URL"))
+	if err != nil {
+		log.Error("postgres parse config failed", "err", err)
+		os.Exit(1)
+	}
+	pgxCfg.MaxConns = int32(getEnvInt("WORKER_DB_MAX_CONNS", 10))
+	pgxCfg.MinConns = int32(getEnvInt("WORKER_DB_MIN_CONNS", 1))
+	pgxCfg.MaxConnLifetime = time.Duration(getEnvInt("DB_MAX_CONN_LIFETIME_SEC", 3600)) * time.Second
+	pgxCfg.MaxConnIdleTime = time.Duration(getEnvInt("DB_MAX_CONN_IDLE_SEC", 1800)) * time.Second
+	pgxCfg.HealthCheckPeriod = 60 * time.Second
+	pool, err := pgxpool.NewWithConfig(ctx, pgxCfg)
 	if err != nil {
 		log.Error("postgres connect failed", "err", err)
 		os.Exit(1)
@@ -102,7 +119,10 @@ func main() {
 	apify := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), workerQuota)
 	serp := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), workerQuota)
 	seatsAero := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
-	awardSearch := service.NewAwardSearchService(apify, seatsAero, serp, walletRepo, kb, redisCache)
+	// Transfer/program lookups are nil here: the worker's award sweep doesn't
+	// render the "Boost via {partner}" hint (that's a frontend trip-planner
+	// concern), so the producer is intentionally omitted.
+	awardSearch := service.NewAwardSearchService(apify, seatsAero, serp, walletRepo, kb, redisCache, nil, nil)
 	issuerWatch := service.NewIssuerWatchService(issuerPageRepo, getEnv("ANTHROPIC_API_KEY", ""))
 
 	// Shared notification rail. Picks ResendMailer when RESEND_API_KEY is set,
@@ -264,22 +284,26 @@ func safely(log *slog.Logger, name string, fn func()) {
 const workerApifyReservePct = 30
 
 // awardSweepAllowed reports whether the worker may run its paid award sweep
-// this cycle. Unlike the user-facing path (which fails OPEN on a Redis error to
-// keep chat/search available), this BACKGROUND sweep fails CLOSED when the
+// this cycle. The sweep probes run as Pro (runAwardSweep sets IsPro=true), so
+// the Apify cost is charged against the Pro per-tier bucket — this gate reads
+// that SAME bucket (RemainingTier ... TierPro) so the reserve math matches what
+// the sweep actually spends. Always-fully-finite now (no unlimited tier).
+//
+// Unlike the user-facing path, this BACKGROUND sweep fails CLOSED when the
 // quota is unreadable: with no way to verify remaining budget, skipping is the
 // safe choice — it protects against blind paid spend during a Redis outage,
 // and the sweep simply resumes next cycle once Redis recovers (alerts are
-// delayed, never lost). Unlimited (-1) is allowed.
+// delayed, never lost).
 func awardSweepAllowed(ctx context.Context, log *slog.Logger, q *quota.Client) bool {
-	rem, err := q.Remaining(ctx, "apify")
+	rem, err := q.RemainingTier(ctx, "apify", quota.TierPro)
 	if err != nil {
 		log.Warn("award sweep skipped — quota unreadable; failing closed to protect paid spend", "err", err)
 		return false
 	}
-	if rem < 0 {
-		return true // unlimited provider
-	}
-	reserve := quota.FreeTierLimits["apify"] * workerApifyReservePct / 100
+	// Reserve a slice of the Pro monthly Apify cap for interactive (chat /
+	// award-search) Pro users so a large award_watch table can't black out
+	// live availability for paying customers mid-month.
+	reserve := quota.TierCap("apify", quota.TierPro) * workerApifyReservePct / 100
 	if rem <= reserve {
 		log.Warn("award sweep skipped — reserving Apify quota for interactive users",
 			"remaining", rem, "reserve", reserve)

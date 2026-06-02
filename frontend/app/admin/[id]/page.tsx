@@ -81,7 +81,7 @@ export default function AdminUserDetailPage() {
 
   const p = data.profile || {};
   const cell = { padding: "10px 12px", borderBottom: "1px solid var(--rule)", fontSize: 13, color: "var(--ink-2)" } as const;
-  const th = { padding: "10px 12px", fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", textAlign: "left" } as const;
+  const th = { padding: "10px 12px", fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-2)", textAlign: "left" } as const;
 
   return shell(
     <>
@@ -105,7 +105,7 @@ export default function AdminUserDetailPage() {
             ["Created", fmtDate(p["created_at"])],
           ].map(([k, v]) => (
             <div key={k} style={{ border: "1px solid var(--rule)", borderRadius: 10, padding: "10px 12px" }}>
-              <div className="mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>{k}</div>
+              <div className="eyebrow">{k}</div>
               <div className="serif" style={{ fontSize: 14, color: "var(--ink)", marginTop: 3, overflowWrap: "anywhere" }}>{v}</div>
             </div>
           ))}
@@ -115,7 +115,8 @@ export default function AdminUserDetailPage() {
       {/* Wallet */}
       <Section title="Wallet" count={data.wallet?.length ?? 0}>
         {(data.wallet?.length ?? 0) === 0 ? <Empty /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
+          <div className="m-scroll-x">
+          <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
             <thead><tr style={{ borderBottom: "1px solid var(--rule)" }}><th style={th}>Card</th><th style={th}>Points</th><th style={th}>Added</th></tr></thead>
             <tbody>
               {data.wallet.map((c, i) => {
@@ -130,13 +131,15 @@ export default function AdminUserDetailPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Section>
 
       {/* Spend history */}
       <Section title="Spend history" count={data.spend_history?.length ?? 0}>
         {(data.spend_history?.length ?? 0) === 0 ? <Empty /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
+          <div className="m-scroll-x">
+          <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
             <thead><tr style={{ borderBottom: "1px solid var(--rule)" }}>
               <th style={th}>Date</th><th style={th}>Category</th><th style={th}>Amount</th><th style={th}>Value</th><th style={th}>Note</th>
             </tr></thead>
@@ -152,13 +155,15 @@ export default function AdminUserDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Section>
 
       {/* Applications */}
       <Section title="Card applications" count={data.card_applications?.length ?? 0}>
         {(data.card_applications?.length ?? 0) === 0 ? <Empty /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
+          <div className="m-scroll-x">
+          <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", border: "1px solid var(--rule)", borderRadius: 12, overflow: "hidden" }}>
             <thead><tr style={{ borderBottom: "1px solid var(--rule)" }}><th style={th}>Card</th><th style={th}>Status</th><th style={th}>Applied</th></tr></thead>
             <tbody>
               {data.card_applications.map((a, i) => (
@@ -170,6 +175,7 @@ export default function AdminUserDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Section>
 

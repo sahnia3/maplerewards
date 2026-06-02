@@ -140,21 +140,37 @@ func SecondsUntilUTCMidnight() int {
 //
 // An anonymous user (empty userID) is treated as "free tier, shared bucket"
 // to prevent unauthenticated abuse. The shared key is `aibudget:anon:{day}`.
+//
+// Failure modes, deliberately asymmetric:
+//   - NIL budget (b==nil / rdb==nil): the budget was never WIRED. Fail OPEN —
+//     the product must work in dev/tests where Redis isn't configured, and the
+//     operator already gets a startup warning. This mirrors the `s.quota != nil`
+//     guard on the SerpAPI/Apify gates.
+//   - WIRED budget but Redis ERRORS at request time (outage / timeout): fail
+//     CLOSED. A configured cost ceiling that silently lifts the moment Redis
+//     blips is the worst outcome — it lets a runaway loop bill the Anthropic
+//     account unbounded exactly when monitoring is degraded. We collapse the
+//     infra error into exhausted=true (and a nil error, so callers don't need a
+//     separate degrade branch), the same posture serpapi.go / apify_awards.go
+//     take by returning ErrQuotaExhausted on a quota-infra error.
 func (b *AIBudget) CheckBudget(ctx context.Context, userID, plan string, isPro bool) (used int, remaining int, exhausted bool, err error) {
+	limit := limitForPlan(plan, isPro)
 	if b == nil || b.rdb == nil {
 		// Budget service not configured — fail open. Operators get the
 		// warning at startup and can wire Redis to enforce.
-		return 0, limitForPlan(plan, isPro), false, nil
-	}
-	key := dailyKey(coalesceUserID(userID))
-	limit := limitForPlan(plan, isPro)
-
-	usedI64, err := b.rdb.Get(ctx, key).Int64()
-	if err == redis.Nil {
 		return 0, limit, false, nil
 	}
-	if err != nil {
-		return 0, limit, false, fmt.Errorf("aibudget get: %w", err)
+	key := dailyKey(coalesceUserID(userID))
+
+	usedI64, gerr := b.rdb.Get(ctx, key).Int64()
+	if gerr == redis.Nil {
+		return 0, limit, false, nil
+	}
+	if gerr != nil {
+		// Redis is wired but unreachable — deny (fail closed) rather than let
+		// paid LLM spend run uncapped during the outage. exhausted=true with a
+		// nil error so the gate denies through the normal "exhausted" path.
+		return 0, 0, true, nil
 	}
 	used = int(usedI64)
 	rem := limit - used

@@ -171,6 +171,135 @@ func (r *SpendRepo) RecordSpend(
 	return &entry, nil
 }
 
+// BatchSpendRow is one fully-computed spend entry plus the side-effect inputs
+// (month bucket + welcome-bonus amount) RecordSpendBatch needs to mirror
+// RecordSpend's per-row semantics. The service computes points/dollar value
+// per row BEFORE handing the slice off; the repo only persists.
+type BatchSpendRow struct {
+	Entry       model.SpendEntry
+	Month       time.Time
+	BonusAmount float64
+}
+
+// RecordSpendBatch persists a whole CSV import in ONE transaction on ONE
+// acquired connection, pipelining the work with pgx batches. It is the atomic,
+// connection-efficient replacement for looping RecordSpend (one tx + ~3 queries
+// per row, which pinned the pool and left a half-imported wallet on a mid-file
+// failure).
+//
+// All-or-nothing: a single tx is opened up front and Rollback is deferred, so
+// ANY error below returns before Commit and ZERO rows persist. Only the final
+// Commit makes the inserts durable.
+//
+// It preserves RecordSpend's dedup semantics exactly: the inserts use
+// ON CONFLICT DO NOTHING + RETURNING, so a re-imported (deduped) row produces
+// no RETURNING row, and the monthly-aggregate / welcome-bonus updates run ONLY
+// for rows that were genuinely inserted — never for deduped ones (the original
+// double-count fix). Two SendBatch round-trips total (inserts, then the
+// conditional aggregates), not 2N, all on the same connection.
+//
+// Returns the number of rows newly inserted (deduped rows are not counted),
+// matching the per-row created-count Commit reported before.
+func (r *SpendRepo) RecordSpendBatch(ctx context.Context, rows []BatchSpendRow, applyBonus bool) (int, error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
+
+	// Batch 1: queue every insert. ON CONFLICT DO NOTHING means a deduped row
+	// returns no row, so we learn per-row whether it was newly inserted.
+	insertBatch := &pgx.Batch{}
+	for _, row := range rows {
+		e := row.Entry
+		insertBatch.Queue(`
+			INSERT INTO spend_entries (user_id, card_id, category_id, amount, points_earned, dollar_value, spent_at, note)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (user_id, card_id, category_id, spent_at, amount, (COALESCE(note, ''))) DO NOTHING
+			RETURNING id
+		`, e.UserID, e.CardID, e.CategoryID, e.Amount, e.PointsEarned, e.DollarValue, e.SpentAt, e.Note)
+	}
+
+	insertRes := tx.SendBatch(ctx, insertBatch)
+	newlyInserted := make([]bool, len(rows))
+	created := 0
+	for i := range rows {
+		var id string
+		scanErr := insertRes.QueryRow().Scan(&id)
+		if scanErr == nil {
+			newlyInserted[i] = true
+			created++
+		} else if !errors.Is(scanErr, pgx.ErrNoRows) {
+			// A real error (not a dedup skip). Close drains the batch; the
+			// deferred Rollback then discards every queued insert.
+			insertRes.Close() //nolint:errcheck
+			return 0, scanErr
+		}
+	}
+	// Must close (drain) the first batch before sending a second on the same tx.
+	if err := insertRes.Close(); err != nil {
+		return 0, err
+	}
+
+	// Batch 2: for newly-inserted rows only, increment the monthly-spend
+	// aggregate and (optionally) the welcome-bonus tracker — identical to
+	// RecordSpend, but pipelined. Deduped rows are skipped, so a retried import
+	// never double-counts.
+	aggBatch := &pgx.Batch{}
+	queued := 0
+	for i, row := range rows {
+		if !newlyInserted[i] {
+			continue
+		}
+		e := row.Entry
+		aggBatch.Queue(`
+			INSERT INTO user_monthly_spend (user_id, card_id, category_id, month, total_spend, updated_at)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+			ON CONFLICT (user_id, card_id, category_id, month)
+			DO UPDATE SET total_spend = user_monthly_spend.total_spend + $5, updated_at = NOW()
+		`, e.UserID, e.CardID, e.CategoryID, row.Month, e.Amount)
+		queued++
+		if applyBonus {
+			aggBatch.Queue(`
+				UPDATE user_card_bonuses
+				SET current_spend = current_spend + $3,
+				    is_completed = CASE
+						WHEN current_spend + $3 >= min_spend THEN true
+						ELSE is_completed
+					END,
+					completed_at = CASE
+						WHEN current_spend + $3 >= min_spend AND completed_at IS NULL THEN CURRENT_DATE
+						ELSE completed_at
+					END
+				WHERE user_id = $1 AND card_id = $2
+			`, e.UserID, e.CardID, row.BonusAmount)
+			queued++
+		}
+	}
+
+	if queued > 0 {
+		aggRes := tx.SendBatch(ctx, aggBatch)
+		for i := 0; i < queued; i++ {
+			if _, execErr := aggRes.Exec(); execErr != nil {
+				aggRes.Close() //nolint:errcheck
+				return 0, execErr
+			}
+		}
+		if err := aggRes.Close(); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return created, nil
+}
+
 // GetCapGroupForCard returns the cap group that contains the given category for a card, if any.
 func (r *SpendRepo) GetCapGroupForCard(ctx context.Context, cardID, categoryID string) (*model.CapGroup, error) {
 	var cg model.CapGroup

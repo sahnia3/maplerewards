@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // limitForPlan must resolve the exact per-tier ceiling from the plan
@@ -17,11 +19,11 @@ func TestAIBudget_LimitForPlan(t *testing.T) {
 		want  int
 	}{
 		{"free", false, FreeDailyTokenBudget},
-		{"", false, FreeDailyTokenBudget},                 // anon / unknown, not pro
-		{"pro", true, ProDailyTokenBudget},                // 100K
-		{"pro_plus", true, ProPlusDailyTokenBudget},       // 200K
-		{"lifetime", true, LifetimeDailyTokenBudget},      // 150K — below pro_plus on purpose
-		{"", true, ProDailyTokenBudget},                   // legacy token: is_pro but no plan → Pro, never up-leveled
+		{"", false, FreeDailyTokenBudget},            // anon / unknown, not pro
+		{"pro", true, ProDailyTokenBudget},           // 100K
+		{"pro_plus", true, ProPlusDailyTokenBudget},  // 200K
+		{"lifetime", true, LifetimeDailyTokenBudget}, // 150K — below pro_plus on purpose
+		{"", true, ProDailyTokenBudget},              // legacy token: is_pro but no plan → Pro, never up-leveled
 	}
 	for _, c := range cases {
 		if got := limitForPlan(c.plan, c.isPro); got != c.want {
@@ -105,5 +107,39 @@ func TestAIBudget_NilFailsOpen(t *testing.T) {
 	}
 	if _, _, err := b.Consume(context.Background(), "u1", "free", false, 999); err != nil {
 		t.Fatalf("nil budget Consume must no-op without error, got %v", err)
+	}
+}
+
+// A WIRED budget whose Redis is unreachable at request time must FAIL CLOSED:
+// deny the request (exhausted=true) rather than let uncapped paid LLM spend
+// run during the outage. This is the asymmetric counterpart to the nil/
+// unconfigured case above, and mirrors the SerpAPI/Apify quota gates which
+// deny on a quota-infra error. Regression here re-opens the
+// burn-the-Anthropic-budget-during-a-Redis-blip hole the audit flagged.
+func TestAIBudget_RedisErrorFailsClosed(t *testing.T) {
+	// A real client pointed at a closed port: Get returns a non-redis.Nil
+	// error (dial refused / timeout), exactly the request-time outage path.
+	// Tiny DialTimeout keeps the test fast and avoids the default retries
+	// dragging it out. This needs no live server — the connection is refused.
+	rdb := redis.NewClient(&redis.Options{
+		Addr:        "127.0.0.1:1", // reserved, nothing listens here
+		DialTimeout: 200 * time.Millisecond,
+		MaxRetries:  -1, // don't let go-redis retry the dead dial
+	})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	b := NewAIBudget(rdb)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	used, rem, exhausted, err := b.CheckBudget(ctx, "u1", "free", false)
+	if err != nil {
+		t.Fatalf("fail-closed path must not surface an error (caller has no degrade branch): %v", err)
+	}
+	if !exhausted {
+		t.Fatal("a wired budget with an unreachable Redis must report exhausted=true (fail closed)")
+	}
+	if used != 0 || rem != 0 {
+		t.Fatalf("fail-closed should report no headroom: used=%d rem=%d", used, rem)
 	}
 }

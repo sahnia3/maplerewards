@@ -10,8 +10,8 @@ import { SkeletonChart } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Category, CardRecommendation } from "@/lib/types";
 
-function fmtPct(v: number) { return `${v.toFixed(2)}%`; }
-function fmtCAD(v: number) { return `$${v.toFixed(2)}`; }
+function fmtPct(v: number) { return Number.isFinite(v) ? `${v.toFixed(2)}%` : "—"; }
+function fmtCAD(v: number) { return Number.isFinite(v) ? `$${v.toFixed(2)}` : "—"; }
 
 export default function ComparePage() {
   const { ensureSession } = useSession();
@@ -132,8 +132,8 @@ export default function ComparePage() {
                 {categories.map((cat) => (
                   <div key={cat.slug}>
                     <div
-                      className="mono shrink-0"
-                      style={{ fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: 4 }}
+                      className="eyebrow shrink-0"
+                      style={{ marginBottom: 4 }}
                     >
                       {cat.name}
                     </div>
@@ -378,7 +378,11 @@ export default function ComparePage() {
                         </td>
                         {allCards.map((cardName) => {
                           const rec = recs.find((r) => r.card_name === cardName);
-                          const isBest = rec && rec.effective_return === topReturn && topReturn > 0;
+                          const isBest =
+                            rec &&
+                            Number.isFinite(topReturn) &&
+                            Number.isFinite(rec.effective_return) &&
+                            rec.effective_return === topReturn;
                           return (
                             <td key={cardName} style={{ padding: "16px", textAlign: "center" }}>
                               {rec ? (
@@ -402,15 +406,11 @@ export default function ComparePage() {
                                   </span>
                                   {isBest && (
                                     <span
-                                      className="mono"
+                                      className="eyebrow"
                                       style={{
                                         marginTop: 4,
                                         padding: "1px 8px",
                                         borderRadius: 999,
-                                        fontSize: 9,
-                                        fontWeight: 600,
-                                        letterSpacing: "0.10em",
-                                        textTransform: "uppercase",
                                         background: "var(--gain-soft)",
                                         border: "1px solid var(--gain-soft)",
                                         color: "var(--gain)",

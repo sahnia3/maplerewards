@@ -72,7 +72,7 @@ export function InfoTooltip({ term, children }: InfoTooltipProps) {
           <HelpCircle
             size={13}
             className="transition-colors duration-150"
-            style={{ color: open ? "#0D9488" : "rgba(255,255,255,0.3)" }}
+            style={{ color: open ? "#0D9488" : "var(--ink-2)" }}
           />
         )}
       </button>

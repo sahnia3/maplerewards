@@ -41,8 +41,8 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
           background: "transparent",
           border: "none",
           padding: 0,
-          fontSize: 10,
-          color: "var(--ink-3)",
+          fontSize: 12,
+          color: "var(--ink-2)",
           letterSpacing: "0.10em",
           textTransform: "uppercase",
           cursor: "pointer",
@@ -66,7 +66,7 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
             <div
               className="mono"
               style={{
-                fontSize: 9,
+                fontSize: 12,
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 color: "var(--ink-3)",
@@ -84,12 +84,12 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
             }}
           >
             <thead>
-              <tr style={{ color: "var(--ink-3)" }}>
+              <tr style={{ color: "var(--ink-2)" }}>
                 <th
                   className="mono"
                   style={{
                     textAlign: "left",
-                    fontSize: 9,
+                    fontSize: 12,
                     letterSpacing: "0.10em",
                     textTransform: "uppercase",
                     padding: "4px 6px 6px 0",
@@ -102,7 +102,7 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
                   className="mono"
                   style={{
                     textAlign: "left",
-                    fontSize: 9,
+                    fontSize: 12,
                     letterSpacing: "0.10em",
                     textTransform: "uppercase",
                     padding: "4px 6px 6px 0",
@@ -115,7 +115,7 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
                   className="mono"
                   style={{
                     textAlign: "left",
-                    fontSize: 9,
+                    fontSize: 12,
                     letterSpacing: "0.10em",
                     textTransform: "uppercase",
                     padding: "4px 6px 6px 0",
@@ -128,7 +128,7 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
                   className="mono"
                   style={{
                     textAlign: "left",
-                    fontSize: 9,
+                    fontSize: 12,
                     letterSpacing: "0.10em",
                     textTransform: "uppercase",
                     padding: "4px 0 6px 0",
@@ -179,7 +179,7 @@ export function SegmentDetails({ segments, legLabel }: SegmentDetailsProps) {
                     className="serif"
                     style={{
                       padding: "6px 0",
-                      color: "var(--ink-3)",
+                      color: "var(--ink-2)",
                       fontStyle: "italic",
                     }}
                   >

@@ -35,16 +35,18 @@ func NewTavilyService(apiKey string, quotaClient QuotaSpender) *TavilyService {
 	}
 }
 
-// debitQuota charges one Tavily call against the shared monthly budget.
-// Fails open on an infra error (matches SerpAPI), closed when exhausted.
+// debitQuota charges one Tavily call against the caller's per-tier monthly
+// budget. FAILS CLOSED: an infra error denies the paid call (denial-of-wallet
+// guarantee — a Redis outage can never uncap Tavily spend), and an exhausted
+// cap denies it too. Callers degrade gracefully on ErrTavilyQuotaExhausted.
 func (s *TavilyService) debitQuota(ctx context.Context) error {
 	if s.quota == nil {
 		return nil
 	}
-	remaining, exhausted, err := s.quota.Spend(ctx, "tavily")
+	remaining, exhausted, err := s.quota.SpendTier(ctx, "tavily", quotaTierFromCtx(ctx))
 	if err != nil {
-		slog.Warn("[tavily] quota check failed; allowing request", "err", err)
-		return nil
+		slog.Warn("[tavily] quota system degraded; denying paid call (fail-closed)", "err", err)
+		return ErrTavilyQuotaExhausted
 	}
 	if exhausted {
 		slog.Warn("[tavily] monthly quota exhausted; skipping HTTP call")

@@ -55,6 +55,12 @@ func (h *AwardSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "date must be a valid YYYY-MM-DD within the next ~2 years", http.StatusBadRequest)
 		return
 	}
+	// return_date is optional; when present it must validate exactly like the
+	// outbound date (it drives a second paid leg fan-out destination→origin).
+	if req.ReturnDate != "" && !isValidFlightDate(req.ReturnDate) {
+		jsonError(w, "return_date must be a valid YYYY-MM-DD within the next ~2 years", http.StatusBadRequest)
+		return
+	}
 	if req.Cabin == "" {
 		req.Cabin = "economy"
 	}

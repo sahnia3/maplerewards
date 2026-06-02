@@ -260,10 +260,7 @@ export default function HomePage() {
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
               <span className="eyebrow" style={{ color: "var(--accent)" }}>From the wallet</span>
               <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 80 }} />
-              <span
-                className="mono"
-                style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-3)" }}
-              >
+              <span className="eyebrow">
                 Early beta · two of two
               </span>
             </div>

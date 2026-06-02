@@ -246,7 +246,7 @@ func main() {
 	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
 
 	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, apifySvc, redisCache, kb)
-	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb, redisCache)
+	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb, redisCache, transferRepo, cardRepo)
 
 	aiSvc := service.NewAIService(
 		getEnv("ANTHROPIC_API_KEY", ""),

@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/model"
 	"maplerewards/internal/service"
 )
@@ -45,7 +47,11 @@ func (h *WalletHandler) AddCard(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "card_id required", http.StatusBadRequest)
 		return
 	}
-	if err := h.svc.AddCard(r.Context(), chi.URLParam(r, "sessionID"), body.CardID); err != nil {
+	if err := h.svc.AddCard(r.Context(), chi.URLParam(r, "sessionID"), body.CardID, mw.IsProFromContext(r.Context())); err != nil {
+		if errors.Is(err, service.ErrCardLimitReached) {
+			jsonError(w, "Free tier is limited to 5 cards — upgrade to Pro for unlimited cards.", http.StatusPaymentRequired)
+			return
+		}
 		if strings.Contains(err.Error(), "session not found") {
 			jsonError(w, "session not found", http.StatusNotFound)
 			return

@@ -42,9 +42,11 @@ function parseCabin(v: string | null): Cabin {
   return v === "economy" || v === "first" ? v : "business";
 }
 
-function parseFlex(v: string | null): 0 | 7 | 14 {
+function parseFlex(v: string | null): 0 | 7 {
+  // Backend caps flex_days at 7 (each extra day is a metered paid lookup), so
+  // the UI only offers Exact / ±7 — a ±14 request would 400 server-side.
   const n = Number(v ?? 7);
-  return n === 0 || n === 14 ? n : 7;
+  return n === 0 ? 0 : 7;
 }
 
 function parsePax(v: string | null): number {
@@ -77,7 +79,7 @@ function TripPlannerInner() {
   );
   const [date, setDate] = useState(() => searchParams.get("date") ?? "");
   const [returnDate, setReturnDate] = useState(() => searchParams.get("ret") ?? "");
-  const [flexDays, setFlexDays] = useState<0 | 7 | 14>(() => parseFlex(searchParams.get("flex")));
+  const [flexDays, setFlexDays] = useState<0 | 7>(() => parseFlex(searchParams.get("flex")));
   const [cabin, setCabin] = useState<Cabin>(() => parseCabin(searchParams.get("cabin")));
   const [passengers, setPassengers] = useState(() => parsePax(searchParams.get("pax")));
 
@@ -220,9 +222,8 @@ function TripPlannerInner() {
               gridTemplateColumns: "1fr auto 1fr",
               alignItems: "end",
               gap: 18,
-              flexWrap: "wrap" as never,
             }}
-            className="trip-itinerary-grid"
+            className="trip-itinerary-grid m-grid-1"
           >
             <div>
               <div className="eyebrow" style={{ marginBottom: 10 }}>From</div>
@@ -351,7 +352,7 @@ function TripPlannerInner() {
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Flex window</div>
               <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 44 }}>
-                {([0, 7, 14] as const).map((d, i) => (
+                {([0, 7] as const).map((d, i) => (
                   <button
                     key={d}
                     type="button"
@@ -480,8 +481,9 @@ function TripPlannerInner() {
                   background: "transparent",
                   border: "1px solid var(--rule)",
                   borderRadius: 999,
-                  padding: "6px 14px",
-                  fontSize: 10,
+                  padding: "7px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
                   color: "var(--ink-2)",
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
@@ -675,18 +677,26 @@ function TripPlannerInner() {
         }
         /* Mobile: collapse the 5-column flight row to 2 columns so the price
          * + CPP cluster wraps below the program name instead of overflowing
-         * the viewport. Threshold 720px catches phones + small tablets. */
+         * the viewport. Threshold 720px catches phones + small tablets.
+         *
+         * Children are placed onto EXPLICIT rows/columns so the three
+         * right-hand cells (points, cash, CPP) stack deterministically beneath
+         * the program name. Without explicit grid-row assignments, forcing them
+         * all to grid-column 2 leaves their row to browser auto-placement,
+         * which can overlap the name or reorder the cells. This row owns its
+         * own mobile collapse (rather than the shared .m-grid-1 utility) so the
+         * two-column index|content layout stays intact on phones. */
         @media (max-width: 720px) {
           .flight-row {
             grid-template-columns: 36px 1fr !important;
+            align-items: start !important;
             row-gap: 8px;
           }
-          .flight-row > :nth-child(3),
-          .flight-row > :nth-child(4),
-          .flight-row > :nth-child(5) {
-            grid-column: 2;
-            text-align: left !important;
-          }
+          .flight-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+          .flight-row > :nth-child(2) { grid-column: 2; grid-row: 1; }
+          .flight-row > :nth-child(3) { grid-column: 2; grid-row: 2; text-align: left !important; }
+          .flight-row > :nth-child(4) { grid-column: 2; grid-row: 3; text-align: left !important; }
+          .flight-row > :nth-child(5) { grid-column: 2; grid-row: 4; text-align: left !important; }
         }
       `}</style>
     </div>
@@ -744,9 +754,9 @@ function FlightRow({
           gap: 18,
           padding: "20px 4px",
         }}
-        className="flight-row m-grid-1"
+        className="flight-row"
       >
-        <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
+        <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.10em" }}>
           {String(index + 1).padStart(2, "0")}
         </div>
         <div style={{ minWidth: 0 }}>
@@ -756,7 +766,7 @@ function FlightRow({
               <span
                 className="mono"
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   marginLeft: 10,
                   padding: "2px 8px",
                   borderRadius: 999,
@@ -821,15 +831,16 @@ function FlightRow({
                 }}
                 className="mono"
                 style={{
-                  fontSize: 9,
-                  padding: "3px 9px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "4px 11px",
                   borderRadius: 999,
                   background: saved ? "var(--surface-2)" : "transparent",
                   color:
                     saveState === "error"
                       ? "var(--accent)"
                       : saved
-                        ? "var(--ink-3)"
+                        ? "var(--ink-2)"
                         : "var(--ink-2)",
                   border: `1px solid ${saveState === "error" ? "var(--accent)" : "var(--rule)"}`,
                   letterSpacing: "0.10em",
@@ -850,11 +861,12 @@ function FlightRow({
                 className="mono"
                 title="Pro members get saved-trip alerts when award space opens up."
                 style={{
-                  fontSize: 9,
-                  padding: "3px 9px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "4px 11px",
                   borderRadius: 999,
                   background: "transparent",
-                  color: "var(--ink-3)",
+                  color: "var(--ink-2)",
                   border: "1px dashed var(--rule)",
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
@@ -867,9 +879,9 @@ function FlightRow({
         </div>
         <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right", letterSpacing: "0.04em" }}>
           {flight.points_cost.toLocaleString()} pts
-          <div style={{ fontSize: 10, marginTop: 2 }}>{taxesNode}</div>
+          <div style={{ fontSize: 12, marginTop: 2 }}>{taxesNode}</div>
         </div>
-        <div className="mono" style={{ fontSize: 13, color: "var(--ink-3)", textAlign: "right" }}>
+        <div className="mono" style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "right" }}>
           ~${flight.cash_price_cad.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           <div
             className="serif"
@@ -879,11 +891,10 @@ function FlightRow({
                 : "Typical one-way cash fare for this route/cabin (Google Flights). A comparison benchmark — not this specific award flight's price."
             }
             style={{
-              fontSize: 9,
-              color: "var(--ink-3)",
+              fontSize: 12,
+              color: "var(--ink-2)",
               fontStyle: "italic",
               marginTop: 2,
-              opacity: 0.7,
             }}
           >
             {flight.cabin ?? "cabin"} cash · route benchmark{flight.cash_is_estimate ? " (est.)" : ""}
@@ -898,7 +909,7 @@ function FlightRow({
               <div
                 className="mono"
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color:
                     flight.value_rating === "excellent"
                       ? "var(--gain)"
@@ -917,15 +928,15 @@ function FlightRow({
             <div
               className="mono"
               title="No live cash fare for this route, so we won't show a ¢/pt value computed off a guessed number. The points cost is real — confirm the cash price yourself before judging value."
-              style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.03em", lineHeight: 1.25 }}
+              style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.03em", lineHeight: 1.25 }}
             >
               <div className="display" style={{ fontSize: 22, color: "var(--ink-3)", fontStyle: "italic" }}>
                 —
               </div>
-              <div style={{ textTransform: "uppercase", letterSpacing: "0.10em", fontSize: 9, marginTop: 2 }}>
+              <div style={{ textTransform: "uppercase", letterSpacing: "0.10em", fontSize: 12, marginTop: 2 }}>
                 rating n/a
               </div>
-              <div style={{ fontSize: 8.5, opacity: 0.7, marginTop: 2 }}>no live fare</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>no live fare</div>
             </div>
           )}
           {/* Secondary CPP vs economy cash — the "would I actually pay this in cash?"
@@ -941,20 +952,17 @@ function FlightRow({
                   : undefined
               }
               style={{
-                fontSize: 9,
-                color: "var(--ink-3)",
+                fontSize: 12,
+                color: "var(--ink-2)",
                 letterSpacing: "0.06em",
                 marginTop: 4,
-                opacity: 0.85,
               }}
             >
               {flight.realistic_cpp.toFixed(2)}¢ vs economy
             </div>
           )}
           {flight.return_leg && (
-            <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", marginTop: 4 }}>
-              RT · {flight.return_leg.cpp.toFixed(2)}¢
-            </div>
+            <RoundTripSummary flight={flight} />
           )}
           {flight.booking_url && (
             <a
@@ -965,8 +973,9 @@ function FlightRow({
               style={{
                 display: "inline-block",
                 marginTop: 8,
-                fontSize: 10,
-                padding: "4px 10px",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "5px 12px",
                 borderRadius: 999,
                 background: "var(--accent)",
                 color: "var(--paper)",
@@ -995,6 +1004,74 @@ function FlightRow({
           <SegmentDetails segments={flight.return_leg.segments ?? []} legLabel="Return" />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── RoundTripSummary ─────────────────────────────────────────────────────
+ * Round-trip combined figures, shown beneath the (outbound) CPP headline when
+ * the search carried a return date and the backend folded in a same-program
+ * return leg. The headline above is the OUTBOUND leg's CPP; this block makes
+ * the combined-trip economics explicit: total points across both legs, summed
+ * taxes, and the round-trip CPP the backend computes (round_trip_cpp, only
+ * non-zero when BOTH legs are rated). Falls back to the return leg's own
+ * points when the combined total isn't present (older backend rows). */
+function RoundTripSummary({ flight }: { flight: AwardSearchResult }) {
+  const rt = flight.return_leg;
+  if (!rt) return null;
+
+  const rtPoints = flight.round_trip_points_cost ?? flight.points_cost + rt.points_cost;
+  const rtCpp = flight.round_trip_cpp ?? 0;
+  const rtTaxes = flight.round_trip_taxes_cash;
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        paddingTop: 8,
+        borderTop: "1px dashed var(--rule)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 2,
+      }}
+    >
+      <span
+        className="mono"
+        style={{
+          fontSize: 12,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--ink-3)",
+        }}
+      >
+        Round-trip
+      </span>
+      <span className="mono" style={{ fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
+        {rtPoints.toLocaleString()} pts
+      </span>
+      {rtTaxes != null && (
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          + ${rtTaxes.toFixed(0)} taxes
+        </span>
+      )}
+      {rtCpp > 0 ? (
+        <span
+          className="display"
+          style={{ fontSize: 16, fontStyle: "italic", color: "var(--ink)" }}
+          title="Cents per point across both legs, priced against each leg's net-of-tax cash benchmark."
+        >
+          {rtCpp.toFixed(2)}¢ combined
+        </span>
+      ) : (
+        <span
+          className="mono"
+          style={{ fontSize: 12, color: "var(--ink-3)" }}
+          title="A combined ¢/pt needs a live cash fare on both legs. One leg has no rated fare, so we don't show a guessed round-trip value."
+        >
+          combined value n/a
+        </span>
+      )}
     </div>
   );
 }

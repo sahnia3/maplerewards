@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 // ── Mock implementations ────────────────────────────────────────────────────
@@ -171,6 +172,10 @@ func (m *mockSpendRepo) RecordSpend(ctx context.Context, entry model.SpendEntry,
 	entry.ID = "test-entry-id"
 	entry.CreatedAt = "2026-01-01T00:00:00Z"
 	return &entry, nil
+}
+
+func (m *mockSpendRepo) RecordSpendBatch(ctx context.Context, rows []repo.BatchSpendRow, applyBonus bool) (int, error) {
+	return len(rows), nil
 }
 
 func (m *mockSpendRepo) ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error) {

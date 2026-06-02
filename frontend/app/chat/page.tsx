@@ -10,6 +10,7 @@ import { chatStream, ApiError } from "@/lib/api";
 import type { ChatMessage } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { MapleLeaf } from "@/components/editorial/leaf-divider";
+import { FREE_LIMITS } from "@/lib/pro-features";
 
 // In-flight tool calls rendered as status pills under the user's last message.
 type ToolPill = {
@@ -116,7 +117,7 @@ export default function ChatPage() {
         msg.includes("UPGRADE_REQUIRED") || msg.includes("Upgrade to Pro");
       if (isUpsell) {
         setRateLimited(true);
-        setMessages((prev) => [...prev, { role: "assistant", content: "You've used your 2 free messages for the month. Upgrade to Pro for unlimited AI access." }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: `You've used your ${FREE_LIMITS.maxChatMessagesPerMonth} free messages for the month. Upgrade to Pro for unlimited AI access.` }]);
       } else {
         setError(msg);
         setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't process your request. Please try again." }]);
@@ -146,7 +147,11 @@ export default function ChatPage() {
       <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 200px" }}>
         <PageMasthead
           eyebrow="Maple"
-          eyebrowEnd="Claude Sonnet 4.6"
+          // No hardcoded model name: turns route between models server-side
+          // (cheap model for simple asks, stronger model for tool-heavy ones)
+          // and the API doesn't report which one answered — so naming a
+          // specific version here would be fabricated. Neutral, honest label.
+          eyebrowEnd="Powered by Claude"
           title={
             <>
               The <span style={{ fontStyle: "italic" }}>rewards</span> editor.
@@ -322,7 +327,7 @@ export default function ChatPage() {
               Upgrade for <span style={{ fontStyle: "italic" }}>unlimited</span> editor access.
             </h3>
             <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", marginBottom: 18, fontSize: 15 }}>
-              Free users get 2 messages per month. Pro members get the full concierge.
+              Free users get {FREE_LIMITS.maxChatMessagesPerMonth} messages per month. Pro members get the full concierge.
             </p>
             <Link
               href="/pricing"
@@ -415,7 +420,7 @@ export default function ChatPage() {
                     </Link>
                   </>
                 ) : (
-                  <>Free tier · 2 messages/month · upgrade for unlimited</>
+                  <>Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month · upgrade for unlimited</>
                 )}
               </span>
             )}

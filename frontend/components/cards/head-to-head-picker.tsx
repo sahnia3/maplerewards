@@ -55,7 +55,7 @@ export function HeadToHeadPicker({ cards }: { cards: Card[] }) {
           gap: 12,
           alignItems: "center",
         }}
-        className="h2h-picker m-grid-1"
+        className="h2h-picker"
       >
         <select
           aria-label="First card"
@@ -108,6 +108,27 @@ export function HeadToHeadPicker({ cards }: { cards: Card[] }) {
           Compare →
         </button>
       </div>
+      <style jsx global>{`
+        @media (max-width: 768px) {
+          /* Stack the two selects side-by-side, drop the decorative arrow, and
+           * let the Compare button span the full width on its own row — instead
+           * of the 4-col grid collapsing to 1-col (which made the arrow and
+           * button each render as their own full-width rows). */
+          .h2h-picker {
+            grid-template-columns: 1fr 1fr !important;
+          }
+          .h2h-picker > :nth-child(2) {
+            display: none !important;
+          }
+          .h2h-picker > :nth-child(3) {
+            grid-column: 2 / 3;
+          }
+          .h2h-picker > :nth-child(4) {
+            grid-column: 1 / -1;
+            width: 100%;
+          }
+        }
+      `}</style>
     </section>
   );
 }

@@ -320,3 +320,23 @@ func TestSQC_FlightSQCAddsToTotal(t *testing.T) {
 		t.Fatalf("expected QualifiedTier 25K, got %q", r.QualifiedTier)
 	}
 }
+
+// nilSessionWalletRepo reproduces the pgx "no rows" contract: GetUserBySession
+// returns (nil, nil) for an unknown or hard-deleted session. All other methods
+// are inherited from mockMissedWalletRepo.
+type nilSessionWalletRepo struct{ mockMissedWalletRepo }
+
+func (r *nilSessionWalletRepo) GetUserBySession(ctx context.Context, sessionID string) (*model.User, error) {
+	return nil, nil
+}
+
+// Regression: a deleted/unknown session must surface ErrSessionNotFound, not
+// panic dereferencing user.ID (the SQC nil-session ship-blocker). Before the
+// guard this test panicked instead of failing.
+func TestSQC_UnknownSessionReturnsErrNotFound(t *testing.T) {
+	svc := NewSQCService(&nilSessionWalletRepo{}, &mockSQCRepo{tiers: defaultTiers()})
+	_, err := svc.Project(context.Background(), "ghost-session", SQCFlightInputs{})
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound for unknown session, got %v", err)
+	}
+}

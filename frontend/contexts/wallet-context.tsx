@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "./session-context";
 import { useAuth } from "./auth-context";
@@ -13,6 +13,7 @@ import {
   getWalletSummary,
 } from "@/lib/api";
 import type { UserCard, UpdateCardDetailsRequest, WalletSummary } from "@/lib/types";
+import { stashPendingCard, readPendingCards, clearPendingCards } from "@/lib/pending-cards";
 
 interface WalletContextValue {
   wallet: UserCard[];
@@ -78,14 +79,53 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     await loadWallet();
   }, [loadWallet]);
 
+  // Drain any cards an anonymous visitor staged before being sent to signup
+  // (see addCard's unauthenticated branch + lib/pending-cards). Runs once the
+  // user is authenticated and their session is ready — i.e. right after they
+  // land back from the signup/OAuth round-trip. Replays each pick against the
+  // real add-card API, then clears the stash and reloads so the carried cards
+  // show up in the wallet they just created. Guarded so it fires a single time
+  // per mount even though auth/session settle over several renders.
+  const drainedRef = useRef(false);
+  useEffect(() => {
+    if (drainedRef.current) return;
+    if (!isAuthenticated || !isReady || !sessionId) return;
+    const pending = readPendingCards();
+    if (pending.length === 0) {
+      // Nothing staged: mark drained so we don't re-read on every render.
+      drainedRef.current = true;
+      return;
+    }
+    drainedRef.current = true;
+    (async () => {
+      let added = false;
+      for (const cardId of pending) {
+        try {
+          await addCardToWallet(sessionId, cardId);
+          added = true;
+        } catch {
+          // Already in the wallet, retired, or a transient failure — skip it
+          // rather than blocking the rest of the carried selections.
+        }
+      }
+      clearPendingCards();
+      if (added) await loadWallet();
+    })();
+  }, [isAuthenticated, isReady, sessionId, loadWallet]);
+
   const addCard = useCallback(
     async (cardId: string) => {
       // Anonymous (no-account) visitors cannot build a wallet anywhere in the
       // app. Add-card buttons stay visible, but the moment a logged-out user
-      // tries to add, route them to create an account — the signup flow merges
-      // their anon session so nothing they staged is lost. Single gate for every
+      // tries to add, route them to create an account. Single gate for every
       // add-card surface (cards, portfolio, onboarding, stack templates).
+      //
+      // The backend merges their anon SESSION on register, but an anon session
+      // never held cards (this gate fires before any server add), so the card
+      // they just clicked would otherwise vanish on the round-trip. Stash it
+      // first; the post-auth drain effect below replays it once they're back.
       if (!isAuthenticated) {
+        stashPendingCard(cardId);
         const back = pathname && pathname.startsWith("/") && !pathname.startsWith("//") ? pathname : "/cards";
         router.push(`/signup?redirect=${encodeURIComponent(back)}`);
         return;

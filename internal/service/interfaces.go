@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 // CardRepository abstracts card & category data access.
@@ -54,6 +55,11 @@ type SpendRepository interface {
 	// RecordSpend atomically inserts the entry and (only if newly inserted)
 	// updates monthly aggregate + welcome-bonus tracker in one transaction.
 	RecordSpend(ctx context.Context, entry model.SpendEntry, month time.Time, bonusAmount float64, applyBonus bool) (*model.SpendEntry, error)
+	// RecordSpendBatch persists a whole CSV import in ONE transaction on ONE
+	// connection (pipelined via pgx batches): begin → insert all rows → commit,
+	// rolling back so ZERO rows persist on any error. Preserves RecordSpend's
+	// dedup + conditional aggregate/bonus semantics. Returns rows newly inserted.
+	RecordSpendBatch(ctx context.Context, rows []repo.BatchSpendRow, applyBonus bool) (int, error)
 	ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error)
 	GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error)
 }

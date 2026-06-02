@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
@@ -54,6 +54,17 @@ export default function PortfolioPage() {
   const [cardValues, setCardValues] = useState<CardValueSummary[]>([]);
   const [cardValuesLoading, setCardValuesLoading] = useState(true);
 
+  // Per-section fetch errors. Without these a backend blip leaves each section
+  // in its EMPTY/false state — most dangerously, a failed summary rendered the
+  // "No cards in your wallet" block to a user who DOES have cards (audit 3,
+  // frontend HIGH). Each section now shows an error banner + retry instead.
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [recsError, setRecsError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [sqcError, setSQCError] = useState<string | null>(null);
+  const [cardValuesError, setCardValuesError] = useState<string | null>(null);
+
   const reportSummary = useReportableError("portfolio.summary");
   const reportRecs = useReportableError("portfolio.recommendations");
   const reportAnalysis = useReportableError("portfolio.analysis");
@@ -62,40 +73,77 @@ export default function PortfolioPage() {
   const reportCardValues = useReportableError("portfolio.cardValues");
   const reportAdd = useReportableError("portfolio.addCard");
 
-  useEffect(() => {
-    if (!isReady || !sessionId) return;
+  // Each loader is independently re-callable so its error banner's "Try again"
+  // re-fetches only that section, and clears its own error on each attempt.
+  const errMessage = (e: unknown) =>
+    e instanceof Error ? e.message : "Couldn't load this section.";
 
-    getWalletSummary(sessionId)
+  const loadSummary = useCallback((sid: string) => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    getWalletSummary(sid)
       .then(setSummary)
-      .catch(reportSummary)
+      .catch(e => { reportSummary(e); setSummaryError(errMessage(e)); })
       .finally(() => setSummaryLoading(false));
+  }, [reportSummary]);
 
-    const walletCardIds = new Set(wallet.map(uc => uc.card_id));
+  const loadRecs = useCallback((walletCardIds: Set<string>) => {
+    setRecsLoading(true);
+    setRecsError(null);
     getRecommendations({ monthly_spend: TYPICAL_SPEND })
       .then(data => setRecs(data.filter(s => !walletCardIds.has(s.card_id)).slice(0, 6)))
-      .catch(reportRecs)
+      .catch(e => { reportRecs(e); setRecsError(errMessage(e)); })
       .finally(() => setRecsLoading(false));
+  }, [reportRecs]);
 
-    getPortfolioAnalysis(sessionId)
+  const loadAnalysis = useCallback((sid: string) => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    getPortfolioAnalysis(sid)
       .then(setAnalysis)
-      .catch(reportAnalysis)
+      .catch(e => { reportAnalysis(e); setAnalysisError(errMessage(e)); })
       .finally(() => setAnalysisLoading(false));
+  }, [reportAnalysis]);
 
-    getCardCredits(sessionId)
+  const loadCredits = useCallback((sid: string) => {
+    setCreditsLoading(true);
+    setCreditsError(null);
+    getCardCredits(sid)
       .then(setCredits)
-      .catch(reportCredits)
+      .catch(e => { reportCredits(e); setCreditsError(errMessage(e)); })
       .finally(() => setCreditsLoading(false));
+  }, [reportCredits]);
 
-    getSQCProjection(sessionId)
+  const loadSQC = useCallback((sid: string) => {
+    setSQCLoading(true);
+    setSQCError(null);
+    getSQCProjection(sid)
       .then(setSQC)
-      .catch(reportSQC)
+      .catch(e => { reportSQC(e); setSQCError(errMessage(e)); })
       .finally(() => setSQCLoading(false));
+  }, [reportSQC]);
 
-    getCardValueSummary(sessionId)
+  const loadCardValues = useCallback((sid: string) => {
+    setCardValuesLoading(true);
+    setCardValuesError(null);
+    getCardValueSummary(sid)
       .then(setCardValues)
-      .catch(reportCardValues)
+      .catch(e => { reportCardValues(e); setCardValuesError(errMessage(e)); })
       .finally(() => setCardValuesLoading(false));
-  }, [isReady, sessionId, wallet.length, reportSummary, reportRecs, reportAnalysis, reportCredits, reportSQC, reportCardValues]);
+  }, [reportCardValues]);
+
+  useEffect(() => {
+    if (!isReady || !sessionId) return;
+    loadSummary(sessionId);
+    loadRecs(new Set(wallet.map(uc => uc.card_id)));
+    loadAnalysis(sessionId);
+    loadCredits(sessionId);
+    loadSQC(sessionId);
+    loadCardValues(sessionId);
+    // wallet.length (not wallet) by design: re-fetch when the card COUNT
+    // changes, not on every wallet-array identity change. The wallet-card-id
+    // Set is rebuilt inside the effect from the current wallet each run.
+  }, [isReady, sessionId, wallet.length, loadSummary, loadRecs, loadAnalysis, loadCredits, loadSQC, loadCardValues]);
 
   const handleAdd = async (cardId: string) => {
     try {
@@ -115,6 +163,18 @@ export default function PortfolioPage() {
   const haveCardValues = cardValues.length > 0;
 
   const hasWallet = wallet.length > 0;
+
+  // Real per-category best card, keyed by category display name, sourced from
+  // the portfolio analysis (utilization.gaps[].best_card_in_wallet). Replaces
+  // the previous placeholder that printed the first wallet card for every
+  // category regardless of earn rates.
+  const bestCardByCategory = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const g of analysis?.utilization.gaps ?? []) {
+      if (g.best_card_in_wallet) m[g.category_name] = g.best_card_in_wallet;
+    }
+    return m;
+  }, [analysis]);
 
   // Fresh user: no cards in wallet AND wallet finished loading. Skip the
   // spinner gauntlet — we already know the analysis tiles will be empty,
@@ -163,6 +223,13 @@ export default function PortfolioPage() {
           }}
         >
           <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
+        </div>
+      ) : summaryError ? (
+        <div style={{ marginBottom: 26 }}>
+          <SectionError
+            message={`We couldn't load your annual ledger. ${summaryError}`}
+            onRetry={() => sessionId && loadSummary(sessionId)}
+          />
         </div>
       ) : summary && summary.cards.length > 0 ? (
         <>
@@ -326,6 +393,11 @@ export default function PortfolioPage() {
               <div key={i} className="shimmer" style={{ flexShrink: 0, width: 220, height: 220, borderRadius: 14 }} />
             ))}
           </div>
+        ) : recsError ? (
+          <SectionError
+            message={`We couldn't load card recommendations. ${recsError}`}
+            onRetry={() => loadRecs(new Set(wallet.map(uc => uc.card_id)))}
+          />
         ) : recs.length === 0 ? (
           <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-3)", fontSize: 14 }}>
             All top cards are already in your wallet. <Link href="/cards" style={{ color: "var(--accent)" }}>Explore more →</Link>
@@ -412,10 +484,19 @@ export default function PortfolioPage() {
               Run optimizer →
             </Link>
           </div>
+          {analysisError ? (
+            <SectionError
+              message={`We couldn't load your category analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
+          ) : (
           <div className="portfolio-cat-grid m-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
               const cat = CATEGORY_LABELS[slug] ?? { name: slug };
-              const topCard = summary?.cards[0];
+              // Real per-category winner from the analysis. While the analysis
+              // is still loading we show a skeleton dash; if it loaded but has
+              // no card for this category, point the user at the optimizer.
+              const bestCard = bestCardByCategory[cat.name];
               return (
                 <div
                   key={slug}
@@ -428,20 +509,36 @@ export default function PortfolioPage() {
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span className="eyebrow">{cat.name}</span>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>${amount}/mo</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>${amount}/mo</span>
                   </div>
-                  <div className="display" style={{ fontSize: 16, lineHeight: 1.2, color: "var(--ink)" }}>
-                    {topCard?.card_name ?? "Run optimizer"}
+                  <div
+                    className="display"
+                    style={{ fontSize: 16, lineHeight: 1.2, color: analysisLoading || !bestCard ? "var(--ink-3)" : "var(--ink)" }}
+                  >
+                    {analysisLoading ? "…" : bestCard ?? "Run optimizer"}
                   </div>
                 </div>
               );
             })}
           </div>
+          )}
         </section>
       )}
 
       {/* ── Annual card value (insurance + lounge + multipliers + credits) ── */}
-      {hasWallet && !cardValuesLoading && cardValues.length > 0 && (
+      {hasWallet && cardValuesError && !cardValuesLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Award size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Annual card value (true ROI)</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load per-card annual value. ${cardValuesError}`}
+            onRetry={() => sessionId && loadCardValues(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !cardValuesError && !cardValuesLoading && cardValues.length > 0 && (
         <AnimatedSection delay={0.08} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Award size={16} style={{ color: "var(--accent)" }} />
@@ -463,10 +560,10 @@ export default function PortfolioPage() {
                     <div className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>${card.annual_fee.toFixed(0)}/yr fee</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[18px] font-bold tabular-nums" style={{ color: card.is_positive ? "#34D399" : "#F87171" }}>
+                    <div className="text-[18px] font-bold tabular-nums" style={{ color: card.is_positive ? "var(--gain)" : "var(--loss)" }}>
                       {card.net_ev_cad >= 0 ? "+" : ""}${card.net_ev_cad.toFixed(0)}
                     </div>
-                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>net of fee</div>
+                    <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-3)" }}>net of fee</div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -492,7 +589,19 @@ export default function PortfolioPage() {
       )}
 
       {/* ── 2026 Aeroplan SQC elite-status projector ── */}
-      {hasWallet && !sqcLoading && sqc && !sqc.wallet_has_no_aeroplan_cards && (
+      {hasWallet && sqcError && !sqcLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Plane size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Aeroplan Elite Status</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load your SQC projection. ${sqcError}`}
+            onRetry={() => sessionId && loadSQC(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !sqcError && !sqcLoading && sqc && !sqc.wallet_has_no_aeroplan_cards && (
         <AnimatedSection delay={0.1} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Plane size={16} style={{ color: "var(--accent)" }} />
@@ -519,7 +628,7 @@ export default function PortfolioPage() {
                 {sqc.current_tier && (
                   <div
                     className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold"
-                    style={{ background: "var(--info-soft-2)", border: "1px solid var(--info-border)", color: "var(--accent)" }}
+                    style={{ background: "var(--accent-soft)", border: "1px solid var(--accent)", color: "var(--accent)" }}
                   >
                     Current: Aeroplan {sqc.current_tier}
                   </div>
@@ -529,7 +638,7 @@ export default function PortfolioPage() {
                 <div className="text-right">
                   <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Next tier</div>
                   <div className="display" style={{ fontSize: 22, fontStyle: "italic" }}>Aeroplan {sqc.next_tier}</div>
-                  <div className="text-[12px] mt-0.5" style={{ color: "#FBBF24" }}>
+                  <div className="text-[12px] mt-0.5" style={{ color: "var(--gold)" }}>
                     {sqc.sqc_to_next_tier?.toLocaleString()} SQC to go
                   </div>
                 </div>
@@ -601,7 +710,19 @@ export default function PortfolioPage() {
       )}
 
       {/* ── Card Credits + Annual-Fee Countdown ── */}
-      {hasWallet && !creditsLoading && credits.length > 0 && (
+      {hasWallet && creditsError && !creditsLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Gift size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Credits & Renewals</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load your card credits. ${creditsError}`}
+            onRetry={() => sessionId && loadCredits(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !creditsError && !creditsLoading && credits.length > 0 && (
         <AnimatedSection delay={0.12} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Gift size={16} style={{ color: "var(--accent)" }} />
@@ -658,16 +779,16 @@ export default function PortfolioPage() {
                             className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg"
                             style={{
                               background: urgent
-                                ? "rgba(239,68,68,0.1)"
+                                ? "var(--accent-soft)"
                                 : soon
-                                  ? "rgba(251,191,36,0.1)"
+                                  ? "var(--gold-tint)"
                                   : "var(--card-fill)",
-                              color: urgent ? "#F87171" : soon ? "#FBBF24" : "var(--text-tertiary)",
+                              color: urgent ? "var(--accent)" : soon ? "var(--gold)" : "var(--ink-3)",
                               border: urgent
-                                ? "1px solid rgba(239,68,68,0.25)"
+                                ? "1px solid var(--accent)"
                                 : soon
-                                  ? "1px solid rgba(251,191,36,0.25)"
-                                  : "1px solid rgba(255,255,255,0.06)",
+                                  ? "1px solid var(--gold-soft)"
+                                  : "1px solid var(--rule)",
                             }}
                           >
                             <CalendarClock size={11} />
@@ -686,7 +807,7 @@ export default function PortfolioPage() {
                           </span>
                           <span className="mono" style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>
                             ${totalRedeemed.toFixed(0)} / ${totalValue.toFixed(0)}
-                            <span className="ml-1.5 text-[11px]" style={{ color: totalRemaining > 0 ? "#FBBF24" : "#34D399" }}>
+                            <span className="ml-1.5 text-[11px]" style={{ color: totalRemaining > 0 ? "var(--gold)" : "var(--gain)" }}>
                               {totalRemaining > 0 ? `$${totalRemaining.toFixed(0)} unused` : "all used"}
                             </span>
                           </span>
@@ -696,7 +817,7 @@ export default function PortfolioPage() {
                             className="h-full rounded-full"
                             style={{
                               width: `${Math.min(percentRedeemed, 100)}%`,
-                              background: percentRedeemed >= 100 ? "#34D399" : "var(--accent)",
+                              background: percentRedeemed >= 100 ? "var(--gain)" : "var(--accent)",
                             }}
                           />
                         </div>
@@ -710,7 +831,7 @@ export default function PortfolioPage() {
                             className="flex items-center justify-between py-2 px-3 rounded-xl"
                             style={{
                               background: "var(--card-fill)",
-                              border: "1px solid rgba(255,255,255,0.04)",
+                              border: "1px solid var(--rule)",
                             }}
                           >
                             <div className="min-w-0 mr-3">
@@ -720,8 +841,8 @@ export default function PortfolioPage() {
                                   <span
                                     className="ml-1.5 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
                                     style={{
-                                      background: "rgba(255,255,255,0.05)",
-                                      color: "var(--text-tertiary)",
+                                      background: "var(--surface-2)",
+                                      color: "var(--ink-3)",
                                     }}
                                   >
                                     {c.recurrence}
@@ -738,7 +859,7 @@ export default function PortfolioPage() {
                               <div
                                 className="text-[12.5px] font-semibold tabular-nums"
                                 style={{
-                                  color: c.status === "redeemed" ? "#34D399" : c.status === "partial" ? "#FBBF24" : "white",
+                                  color: c.status === "redeemed" ? "var(--gain)" : c.status === "partial" ? "var(--gold)" : "var(--ink)",
                                 }}
                               >
                                 ${c.redeemed_amount.toFixed(0)} / ${c.value_cad.toFixed(0)}
@@ -771,6 +892,11 @@ export default function PortfolioPage() {
             <div className="space-y-3">
               <SkeletonCard /><SkeletonCard />
             </div>
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load fee ROI analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.fee_roi.length > 0 ? (
             <div className="space-y-3">
               {analysis.fee_roi.map(card => {
@@ -783,10 +909,10 @@ export default function PortfolioPage() {
                     style={{
                       background: "var(--card-fill)",
                       border: isPositive
-                        ? "1px solid rgba(52,211,153,0.25)"
+                        ? "1px solid var(--gain-soft)"
                         : hasNoFee
-                          ? "1px solid var(--border-dim)"
-                          : "1px solid rgba(239,68,68,0.25)",
+                          ? "1px solid var(--rule)"
+                          : "1px solid var(--accent-soft)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -801,16 +927,16 @@ export default function PortfolioPage() {
                         className="label-xs px-2.5 py-1 rounded-full shrink-0"
                         style={{
                           background: isPositive
-                            ? "rgba(52,211,153,0.12)"
+                            ? "var(--gain-soft)"
                             : hasNoFee
                               ? "var(--rule)"
-                              : "rgba(239,68,68,0.12)",
-                          color: isPositive ? "#34D399" : hasNoFee ? "var(--text-tertiary)" : "#F87171",
+                              : "var(--accent-soft)",
+                          color: isPositive ? "var(--gain)" : hasNoFee ? "var(--ink-3)" : "var(--loss)",
                           border: isPositive
-                            ? "1px solid rgba(52,211,153,0.25)"
+                            ? "1px solid var(--gain-soft)"
                             : hasNoFee
-                              ? "1px solid var(--border-dim)"
-                              : "1px solid rgba(239,68,68,0.25)",
+                              ? "1px solid var(--rule)"
+                              : "1px solid var(--accent-soft)",
                         }}
                       >
                         {hasNoFee ? "Free" : isPositive ? `+$${card.net_roi.toFixed(0)}` : `-$${Math.abs(card.net_roi).toFixed(0)}`}
@@ -824,7 +950,7 @@ export default function PortfolioPage() {
                           <span style={{ color: "var(--text-tertiary)" }}>
                             ${card.value_earned.toFixed(0)} earned vs ${card.annual_fee} fee
                           </span>
-                          <span className="font-semibold" style={{ color: isPositive ? "#34D399" : "#F87171" }}>
+                          <span className="font-semibold" style={{ color: isPositive ? "var(--gain)" : "var(--loss)" }}>
                             {card.value_earned > 0
                               ? `${((card.value_earned / card.annual_fee) * 100).toFixed(0)}%`
                               : "0%"}
@@ -835,9 +961,7 @@ export default function PortfolioPage() {
                             className="h-full rounded-full transition-all duration-700"
                             style={{
                               width: `${Math.min((card.value_earned / Math.max(card.annual_fee, 1)) * 100, 100)}%`,
-                              background: isPositive
-                                ? "linear-gradient(90deg, #34D399, #10B981)"
-                                : "linear-gradient(90deg, #F87171, #EF4444)",
+                              background: isPositive ? "var(--gain)" : "var(--loss)",
                             }}
                           />
                         </div>
@@ -851,7 +975,7 @@ export default function PortfolioPage() {
                       </p>
                     )}
                     {hasNoFee && card.value_earned > 0 && (
-                      <p className="text-[11px]" style={{ color: "#34D399" }}>
+                      <p className="text-[11px]" style={{ color: "var(--gain)" }}>
                         Pure profit — ${card.value_earned.toFixed(2)} earned with no fee
                       </p>
                     )}
@@ -876,7 +1000,7 @@ export default function PortfolioPage() {
       {hasWallet && (
         <AnimatedSection delay={0.2} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle size={16} style={{ color: "#FBBF24" }} />
+            <AlertTriangle size={16} style={{ color: "var(--gold)" }} />
             <h2 className="display" style={{ fontSize: 22 }}>Money Left on the Table</h2>
           </div>
 
@@ -884,6 +1008,11 @@ export default function PortfolioPage() {
             <div className="space-y-3">
               <SkeletonCard /><SkeletonCard />
             </div>
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load opportunity-cost analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.dollar_gap.entries.length > 0 ? (
             <>
               {/* Total gap hero — editorial rule */}
@@ -903,13 +1032,13 @@ export default function PortfolioPage() {
                       fontSize: 44,
                       fontStyle: "italic",
                       lineHeight: 1,
-                      color: analysis.dollar_gap.total_gap > 0 ? "var(--accent)" : "var(--gain)",
+                      color: (analysis.dollar_gap.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--gain)",
                     }}
                   >
-                    ${analysis.dollar_gap.total_gap.toFixed(2)}
+                    ${(analysis.dollar_gap.total_gap ?? 0).toFixed(2)}
                   </span>
                   <span className="serif" style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-3)" }}>
-                    {analysis.dollar_gap.total_gap > 0 ? "missed last cycle" : "— already optimal!"}
+                    {(analysis.dollar_gap.total_gap ?? 0) > 0 ? "missed last cycle" : "— already optimal!"}
                   </span>
                 </div>
               </div>
@@ -927,30 +1056,30 @@ export default function PortfolioPage() {
                       className="px-5 py-3.5 flex items-center justify-between"
                       style={{
                         background: "var(--card-fill)",
-                        borderTop: i > 0 ? "1px solid var(--border-dim)" : "none",
+                        borderTop: i > 0 ? "1px solid var(--rule)" : "none",
                       }}
                     >
                       <div className="min-w-0">
                         <p className="mono" style={{ fontSize: 13, color: "var(--ink)" }}>{entry.category_name}</p>
-                        <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        <p className="text-[11px] mt-0.5" style={{ color: "var(--ink-3)" }}>
                           Used: {entry.card_used}
                           {hasGap && entry.optimal_card !== entry.card_used && (
-                            <span style={{ color: "#FBBF24" }}> → Best: {entry.optimal_card}</span>
+                            <span style={{ color: "var(--gold)" }}> → Best: {entry.optimal_card}</span>
                           )}
                         </p>
                       </div>
                       <div className="text-right shrink-0 ml-3">
                         {hasGap ? (
                           <>
-                            <p className="text-[13px] font-bold" style={{ color: "#FBBF24" }}>
+                            <p className="text-[13px] font-bold" style={{ color: "var(--gold)" }}>
                               -${entry.gap.toFixed(2)}
                             </p>
-                            <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                            <p className="text-[10px]" style={{ color: "var(--ink-3)" }}>
                               on ${entry.total_spend.toFixed(0)} spend
                             </p>
                           </>
                         ) : (
-                          <p className="text-[12px] font-medium" style={{ color: "#34D399" }}>
+                          <p className="text-[12px] font-medium" style={{ color: "var(--gain)" }}>
                             Optimal ✓
                           </p>
                         )}
@@ -983,6 +1112,11 @@ export default function PortfolioPage() {
 
           {analysisLoading ? (
             <SkeletonCard />
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load wallet-coverage analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.utilization.gaps.length > 0 ? (
             <>
               {/* Score hero — editorial */}
@@ -1007,24 +1141,24 @@ export default function PortfolioPage() {
                       stroke="var(--accent)"
                       strokeWidth="3"
                       strokeLinecap="round"
-                      strokeDasharray={`${analysis.utilization.score * 238.76} 238.76`}
+                      strokeDasharray={`${(analysis.utilization.score ?? 0) * 238.76} 238.76`}
                       style={{ transition: "stroke-dasharray 1s cubic-bezier(.16,1,.3,1)" }}
                     />
                   </svg>
                   <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <span className="display" style={{ fontSize: 22, fontStyle: "italic", color: "var(--ink)" }}>
-                      {Math.round(analysis.utilization.score * 100)}%
+                      {Math.round((analysis.utilization.score ?? 0) * 100)}%
                     </span>
                   </div>
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <h3 className="display" style={{ fontSize: 22, margin: 0, lineHeight: 1.15 }}>
-                    {analysis.utilization.covered_categories}/{analysis.utilization.total_categories} categories covered
+                    {analysis.utilization.covered_categories ?? 0}/{analysis.utilization.total_categories ?? 0} categories covered
                   </h3>
                   <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, marginTop: 4, lineHeight: 1.45 }}>
-                    {analysis.utilization.score >= 0.8
+                    {(analysis.utilization.score ?? 0) >= 0.8
                       ? "Great coverage. Your wallet handles most categories well."
-                      : analysis.utilization.score >= 0.5
+                      : (analysis.utilization.score ?? 0) >= 0.5
                         ? "Good start. Consider adding cards for the uncovered categories."
                         : "Gaps in several categories. Adding one or two more cards would help."}
                   </p>
@@ -1039,23 +1173,23 @@ export default function PortfolioPage() {
                     className="rounded-xl px-4 py-3"
                     style={{
                       background: gap.is_covered
-                        ? "rgba(52,211,153,0.04)"
-                        : "rgba(239,68,68,0.04)",
+                        ? "var(--gain-soft)"
+                        : "var(--accent-wash)",
                       border: gap.is_covered
-                        ? "1px solid rgba(52,211,153,0.15)"
-                        : "1px solid rgba(239,68,68,0.15)",
+                        ? "1px solid var(--gain-soft)"
+                        : "1px solid var(--accent-soft)",
                     }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="mono" style={{ fontSize: 12, color: "var(--ink)", fontWeight: 600 }}>{gap.category_name}</span>
                       <span
                         className="text-[10px] font-bold"
-                        style={{ color: gap.is_covered ? "#34D399" : "#F87171" }}
+                        style={{ color: gap.is_covered ? "var(--gain)" : "var(--loss)" }}
                       >
                         {gap.wallet_return.toFixed(1)}%
                       </span>
                     </div>
-                    <p className="text-[10px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                    <p className="text-[10px] truncate" style={{ color: "var(--ink-3)" }}>
                       {gap.best_card_in_wallet || "No card"}
                     </p>
                   </div>
@@ -1116,6 +1250,50 @@ export default function PortfolioPage() {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+/* ── Per-section error banner ─────────────────────────────────────────────
+ * Matches the inline error+retry pattern used on /wallet and /insights:
+ * accent-ruled card, italic serif message, mono "Try again" button. Used so a
+ * failed fetch shows an error a user can recover from, never an empty state
+ * that misrepresents their data (e.g. "No cards" when the summary call blipped). */
+function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        border: "1px solid var(--accent)",
+        borderLeft: "3px solid var(--accent)",
+        borderRadius: 14,
+        padding: "20px 24px",
+        background: "var(--card-fill)",
+      }}
+    >
+      <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mono"
+        style={{
+          marginTop: 10,
+          background: "transparent",
+          border: "1px solid var(--rule-strong)",
+          color: "var(--ink-2)",
+          padding: "8px 16px",
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
+      >
+        Try again →
+      </button>
     </div>
   );
 }

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,11 +22,32 @@ type ApifyAwardService struct {
 	apiToken string
 	client   *http.Client
 	actorID  string
+	// baseURL is the Apify API v2 root (no trailing slash). It exists ONLY as
+	// a test seam so an httptest.Server can stand in for api.apify.com when
+	// exercising the full run→poll→fetch→parse path. Production always uses the
+	// default below (apifyDefaultBaseURL); nothing outside tests sets it.
+	baseURL string
+	// pollInterval is how long pollUntilDone waits between status checks. It is
+	// a test seam (real runs poll every few seconds; tests shrink it so the
+	// run→poll→fetch loop completes in milliseconds). Zero means use the
+	// production default (apifyDefaultPollInterval).
+	pollInterval time.Duration
 	// quota enforces a hard monthly ceiling on paid actor runs (kill-switch
 	// against a bug/spike running unbounded scrapes). May be nil in tests —
 	// nil means the cap is skipped (treated as unlimited).
 	quota QuotaSpender
 }
+
+// apifyDefaultBaseURL is the real Apify API v2 root. SearchAwards builds every
+// run/poll/dataset URL from this. It is also the production value of the
+// baseURL field — the test seam defaults to exactly this, so production
+// behavior is byte-for-byte unchanged.
+const apifyDefaultBaseURL = "https://api.apify.com/v2"
+
+// apifyDefaultPollInterval is the production status-poll cadence for
+// pollUntilDone. The actor run takes 30-150s, so a few-second poll is fine and
+// keeps request volume low.
+const apifyDefaultPollInterval = 3 * time.Second
 
 // NewApifyAwardService creates the Apify award scraper service. quotaClient
 // may be nil (tests) — when nil the monthly cap is not enforced.
@@ -34,14 +57,27 @@ func NewApifyAwardService(apiToken string, quotaClient QuotaSpender) *ApifyAward
 		client: &http.Client{
 			Timeout: 120 * time.Second, // Actor runs can take a while
 		},
-		actorID: "igolaizola~flight-award-scraper",
-		quota:   quotaClient,
+		actorID:      "igolaizola~flight-award-scraper",
+		baseURL:      apifyDefaultBaseURL,
+		pollInterval: apifyDefaultPollInterval,
+		quota:        quotaClient,
 	}
 }
 
 // IsAvailable returns true if the Apify API token is configured.
 func (s *ApifyAwardService) IsAvailable() bool {
 	return s.apiToken != ""
+}
+
+// apiBaseURL returns the Apify API v2 root, falling back to the real
+// production URL when the field is unset (e.g. a zero-value struct built
+// without the constructor). This keeps the seam invisible to production: the
+// only way baseURL differs from apifyDefaultBaseURL is a test setting it.
+func (s *ApifyAwardService) apiBaseURL() string {
+	if s.baseURL == "" {
+		return apifyDefaultBaseURL
+	}
+	return s.baseURL
 }
 
 // ── Apify actor input/output types ──────────────────────────────────────────
@@ -60,77 +96,19 @@ type apifyActorInput struct {
 // apifyRunResponse is the response from starting an actor run.
 type apifyRunResponse struct {
 	Data struct {
-		ID                string `json:"id"`
-		Status            string `json:"status"`
-		DefaultDatasetID  string `json:"defaultDatasetId"`
+		ID               string `json:"id"`
+		Status           string `json:"status"`
+		DefaultDatasetID string `json:"defaultDatasetId"`
 	} `json:"data"`
 }
 
-// apifyAwardResult is one result item from the flight-award-scraper dataset.
-type apifyAwardResult struct {
-	Date            string             `json:"date"`
-	Origin          string             `json:"origin"`
-	Destination     string             `json:"destination"`
-	OriginName      string             `json:"originName"`
-	DestinationName string             `json:"destinationName"`
-	Issuer          string             `json:"issuer"`
-	IssuerName      string             `json:"issuerName"`
-	Distance        int                `json:"distance"`
-	Cabins          []apifyCabinResult `json:"cabins"`
-	Itineraries     []apifyItinerary   `json:"itineraries"`
-}
-
-type apifyCabinResult struct {
-	Name      string          `json:"name"`
-	Available bool            `json:"available"`
-	Mileage   int             `json:"mileage"`
-	Taxes     int             `json:"taxes"` // Often in cents
-	Airlines  []apifyAirline  `json:"airlines"`
-	Direct    bool            `json:"direct"`
-}
-
-type apifyAirline struct {
-	Code string `json:"code"`
-	Name string `json:"name"`
-}
-
-type apifyItinerary struct {
-	Origin      string `json:"origin"`
-	Destination string `json:"destination"`
-	Departure   string `json:"departure"`
-	Arrival     string `json:"arrival"`
-	// Apify started returning totalDuration as either a JSON string ("PT7H30M")
-	// OR a JSON number (minutes). Use json.RawMessage so neither shape errors
-	// out — we don't currently consume this field anyway.
-	TotalDuration json.RawMessage  `json:"totalDuration,omitempty"`
-	Stops         int              `json:"stops"`
-	Connections   []string         `json:"connections"`
-	Airlines      []apifyAirline   `json:"airlines"`
-	Aircrafts     []string         `json:"aircrafts"`
-	FlightNumbers []string         `json:"flightNumbers"`
-	Cabins        []apifyItinCabin `json:"cabins"`
-	Segments      []apifySegment   `json:"segments"`
-}
-
-type apifyItinCabin struct {
-	Name           string `json:"name"`
-	MileageCost    int    `json:"mileageCost"`
-	TotalTaxes     int    `json:"totalTaxes"`
-	RemainingSeats int    `json:"remainingSeats"`
-}
-
-type apifySegment struct {
-	FlightNumber string `json:"flightNumber"`
-	// Duration shape changed alongside totalDuration; tolerate both string
-	// and number representations. Not consumed downstream.
-	Duration     json.RawMessage `json:"duration,omitempty"`
-	AircraftName string          `json:"aircraftName"`
-	Origin       string          `json:"origin"`
-	Destination  string          `json:"destination"`
-	Departure    string          `json:"departure"`
-	Arrival      string          `json:"arrival"`
-	Cabin        string          `json:"cabin"`
-}
+// NOTE: The dataset result items (date/issuer/cabins/itineraries/segments) are
+// intentionally NOT modeled as Go structs. The actor's output schema drifts
+// without notice — totalDuration and segments[].duration have already flipped
+// JSON string ↔ number in production — so the response is parsed defensively
+// from generic JSON (map[string]any) in parseApifyResults below, where every
+// field access is type-checked and a surprise degrades to skip/zero rather than
+// an unmarshal error or a panic.
 
 // ── Supported issuers (24 programs) ─────────────────────────────────────────
 
@@ -165,16 +143,18 @@ func (s *ApifyAwardService) SearchAwards(
 		}
 	}
 
-	// Hard monthly ceiling on paid actor runs. Mirrors the SerpAPI gate:
-	// fail CLOSED when the cap is hit (don't run another paid scrape), but
-	// fail OPEN on a quota-infra error (a Redis blip shouldn't take the
-	// premium feature down). Checked here — after the cheap validations,
-	// before the expensive actor run.
+	// Per-tier monthly ceiling on paid actor runs. FAILS CLOSED on BOTH an
+	// exhausted cap AND a quota-infra error: Apify is the most expensive paid
+	// provider, so a Redis outage must NOT let scrapes run uncapped. Denying on
+	// error degrades gracefully — award_search still returns Seats.aero +
+	// SerpAPI. Checked after the cheap validations, before the expensive run.
 	if s.quota != nil {
-		_, exhausted, qErr := s.quota.Spend(ctx, "apify")
+		_, exhausted, qErr := s.quota.SpendTier(ctx, "apify", quotaTierFromCtx(ctx))
 		if qErr != nil {
-			slog.Warn("[apify-awards] quota check failed, allowing request", "err", qErr)
-		} else if exhausted {
+			slog.Warn("[apify-awards] quota system degraded; denying paid scrape (fail-closed)", "err", qErr)
+			return nil, ErrQuotaExhausted
+		}
+		if exhausted {
 			slog.Warn("[apify-awards] monthly Apify cap reached — skipping scrape")
 			return nil, ErrQuotaExhausted
 		}
@@ -225,24 +205,34 @@ func (s *ApifyAwardService) SearchAwards(
 		return nil, fmt.Errorf("poll actor run: %w", err)
 	}
 
-	// ── Step 3: Fetch dataset items ──────────────────────────────────────
-	results, err := s.fetchDataset(ctx, datasetID)
+	// ── Step 3: Fetch dataset items (raw bytes) ──────────────────────────
+	body, err := s.fetchDataset(ctx, datasetID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch dataset: %w", err)
 	}
 
-	slog.Info("[apify-awards] actor completed",
-		"results", len(results), "elapsed", time.Since(start))
+	// ── Step 4: Defensively parse → AwardItem[] ──────────────────────────
+	// parseApifyResults never returns an error today (a drifted/garbage body
+	// yields an empty slice + a logged warning), but the signature carries one
+	// for forward-compat. Treat any error as "no results" rather than failing
+	// the whole search — the other data sources still ran.
+	items, perr := parseApifyResults(body, cabin)
+	if perr != nil {
+		slog.Warn("[apify-awards] parse returned error — treating as empty", "err", perr)
+		items = nil
+	}
 
-	// ── Step 4: Convert to AwardItem[] ──────────────────────────────────
-	return s.convertResults(results, cabin), nil
+	slog.Info("[apify-awards] actor completed",
+		"results", len(items), "elapsed", time.Since(start))
+
+	return items, nil
 }
 
 // startRun starts the actor and returns (runID, datasetID).
 func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput) (string, string, error) {
 	body, _ := json.Marshal(input)
 
-	url := fmt.Sprintf("https://api.apify.com/v2/acts/%s/runs", s.actorID)
+	url := fmt.Sprintf("%s/acts/%s/runs", s.apiBaseURL(), s.actorID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 	if err != nil {
@@ -276,13 +266,18 @@ func (s *ApifyAwardService) startRun(ctx context.Context, input apifyActorInput)
 // pollUntilDone polls the run status until SUCCEEDED, FAILED, or timeout.
 func (s *ApifyAwardService) pollUntilDone(ctx context.Context, runID string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	url := fmt.Sprintf("https://api.apify.com/v2/actor-runs/%s", runID)
+	url := fmt.Sprintf("%s/actor-runs/%s", s.apiBaseURL(), runID)
+
+	interval := s.pollInterval
+	if interval <= 0 {
+		interval = apifyDefaultPollInterval
+	}
 
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(3 * time.Second):
+		case <-time.After(interval):
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -330,9 +325,14 @@ func readCappedBody(r io.Reader) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r, maxExternalRespBytes))
 }
 
-// fetchDataset retrieves the result items from the actor's default dataset.
-func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) ([]apifyAwardResult, error) {
-	url := fmt.Sprintf("https://api.apify.com/v2/datasets/%s/items?format=json", datasetID)
+// fetchDataset retrieves the RAW result-item bytes from the actor's default
+// dataset. It deliberately does NOT unmarshal: the actor's schema drifts
+// (undocumented upstream changes have bitten twice), so parsing is delegated to
+// parseApifyResults, which tolerates any shape. Keeping fetch (network + status)
+// separate from parse (shape) is what makes the parser unit-testable against a
+// battery of malformed bodies.
+func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) ([]byte, error) {
+	url := fmt.Sprintf("%s/datasets/%s/items?format=json", s.apiBaseURL(), datasetID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -351,105 +351,306 @@ func (s *ApifyAwardService) fetchDataset(ctx context.Context, datasetID string) 
 		return nil, fmt.Errorf("dataset HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 300))
 	}
 
-	var results []apifyAwardResult
-	if err := json.Unmarshal(body, &results); err != nil {
-		return nil, fmt.Errorf("decode dataset: %w", err)
-	}
-
-	return results, nil
+	return body, nil
 }
 
-// convertResults transforms Apify results into our standard AwardItem format.
-// Wrapped in panic recovery because Apify schema drift has bitten twice already
-// (string→number on totalDuration and segments[].duration). A third drift on a
-// field we DO consume would otherwise crash the whole API process.
-func (s *ApifyAwardService) convertResults(results []apifyAwardResult, targetCabin string) (out []AwardItem) {
+// parseApifyResults is the panic-proof parser for the flight-award-scraper
+// dataset body. It is the single seam through which every Apify award response
+// flows.
+//
+// CONTRACT: no input — empty, null, `{}`, an object where an array is expected,
+// an array of non-objects, wrong-typed fields, truncated JSON, extra unknown
+// fields — may panic. A drifted or garbage body yields an empty (or partial)
+// []AwardItem plus a logged warning, never a panic and never a hard error.
+// The error in the signature is reserved for forward-compat; today it is
+// always nil.
+//
+// WHY map[string]any instead of typed structs: Apify's schema drifts without
+// notice (totalDuration and segments[].duration have already flipped JSON
+// string ↔ number in production). Decoding into typed structs makes a type
+// flip on a *consumed* field a hard unmarshal error — or, for the json.Number
+// fields, silently swallows the change. Walking the response as generic JSON
+// with comma-ok assertions, nil checks, and bounds checks lets us treat every
+// surprise as "skip this item / use the zero value" instead of crashing.
+func parseApifyResults(body []byte, targetCabin string) (out []AwardItem, err error) {
+	// Defense-in-depth ONLY. The logic below is written to be correct for any
+	// input without it — every map is nil-checked, every assertion is comma-ok,
+	// every index is bounds-checked — so this recover should never fire. It
+	// stays because a panic here (a future refactor, an exotic input) must
+	// never take down the API process; it degrades to an empty result + a
+	// logged warning instead.
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Error("[apify-awards] convertResults panic — likely schema drift",
+			slog.Error("[apify-awards] parseApifyResults panic — likely schema drift (recovered)",
 				"panic", rec,
 				"target_cabin", targetCabin,
-				"raw_count", len(results),
+				"bytes", len(body),
 			)
 			out = nil
+			err = nil
 		}
 	}()
 
+	// Empty / whitespace-only body → no results. (json.Unmarshal would error
+	// on "" anyway; short-circuit so an empty 200 isn't logged as drift.)
+	if len(bytesTrimSpace(body)) == 0 {
+		return nil, nil
+	}
+
+	var top any
+	if err := json.Unmarshal(body, &top); err != nil {
+		// Truncated / non-JSON / garbage body. Not a panic, not a hard error —
+		// the other data sources still ran. Log and return empty.
+		slog.Warn("[apify-awards] dataset body is not valid JSON — returning empty",
+			"err", err, "bytes", len(body))
+		return nil, nil
+	}
+
+	// The dataset endpoint returns a JSON array of item objects. Tolerate the
+	// observed/possible drifts:
+	//   • a bare object (single item, or an error/envelope wrapper)
+	//   • {"items":[...]} or {"data":[...]} style envelopes
+	//   • anything else → unexpected top-level shape → empty result set.
+	rawItems := coerceToItemSlice(top)
+	if rawItems == nil {
+		slog.Warn("[apify-awards] unexpected top-level shape — returning empty",
+			"goType", fmt.Sprintf("%T", top))
+		return nil, nil
+	}
+
 	var items []AwardItem
-
-	for _, r := range results {
-		// Find the cabin data matching our target cabin
-		var mileage int
-		var taxes float64
-		var seats int
-		found := false
-
-		// Check itinerary-level cabin data first (more detailed)
-		for _, itin := range r.Itineraries {
-			for _, cab := range itin.Cabins {
-				if strings.EqualFold(cab.Name, targetCabin) && cab.MileageCost > 0 {
-					mileage = cab.MileageCost
-					taxes = float64(cab.TotalTaxes) / 100.0 // Convert cents to dollars
-					seats = cab.RemainingSeats
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
+	for _, raw := range rawItems {
+		// Each element must be a JSON object. A string/number/array/null where
+		// an item object is expected is skipped, not dereferenced.
+		r, ok := raw.(map[string]any)
+		if !ok {
+			continue
 		}
 
-		// Fallback to route-level cabin summary
-		if !found {
-			for _, cab := range r.Cabins {
-				if strings.EqualFold(cab.Name, targetCabin) && cab.Available && cab.Mileage > 0 {
-					mileage = cab.Mileage
-					taxes = float64(cab.Taxes) / 100.0
-					found = true
-					break
-				}
-			}
-		}
-
+		mileage, taxes, seats, found := pickCabin(r, targetCabin)
 		if !found || mileage <= 0 {
 			continue
 		}
 
-		// Build segments from itineraries
-		var segments []AwardSegment
-		if len(r.Itineraries) > 0 {
-			itin := r.Itineraries[0]
-			for _, seg := range itin.Segments {
-				segments = append(segments, AwardSegment{
-					Origin:        seg.Origin,
-					Destination:   seg.Destination,
-					Airline:       "", // Will be set from flight number
-					FlightNumber:  seg.FlightNumber,
-					DepartureTime: seg.Departure,
-					ArrivalTime:   seg.Arrival,
-					Aircraft:      seg.AircraftName,
-				})
-			}
-		}
-
-		// Apify reports taxes in cents — already converted above. Keep a
-		// pointer so downstream merge logic can detect "we have a number"
-		// vs. "Seats.aero left this nil".
 		taxesPtr := taxes
 		items = append(items, AwardItem{
-			Date:           r.Date,
-			Issuer:         r.Issuer,
-			Origin:         r.Origin,
-			Destination:    r.Destination,
+			Date:           getString(r, "date"),
+			Issuer:         getString(r, "issuer"),
+			Origin:         getString(r, "origin"),
+			Destination:    getString(r, "destination"),
 			Cabin:          targetCabin,
 			MileageCost:    mileage,
 			TaxesCash:      &taxesPtr,
 			TaxesIncluded:  true,
 			SeatsAvailable: seats,
-			Segments:       segments,
+			Segments:       buildSegments(r),
 		})
 	}
 
-	return items
+	return items, nil
+}
+
+// pickCabin locates the cabin data matching targetCabin within a single result
+// object, mirroring the original two-tier logic: itinerary-level cabins first
+// (more detailed: mileage + taxes + seats), then the route-level cabin summary.
+// Returns (mileage, taxesDollars, seats, found). Every access is type-checked,
+// so a drifted shape on any nested field just means "not found here".
+func pickCabin(r map[string]any, targetCabin string) (mileage int, taxes float64, seats int, found bool) {
+	// Itinerary-level cabins (preferred).
+	for _, itinAny := range getSlice(r, "itineraries") {
+		itin, ok := itinAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, cabAny := range getSlice(itin, "cabins") {
+			cab, ok := cabAny.(map[string]any)
+			if !ok {
+				continue
+			}
+			mc := getInt(cab, "mileageCost")
+			if strings.EqualFold(getString(cab, "name"), targetCabin) && mc > 0 {
+				return mc, float64(getInt(cab, "totalTaxes")) / 100.0, getInt(cab, "remainingSeats"), true
+			}
+		}
+	}
+
+	// Route-level cabin summary (fallback).
+	for _, cabAny := range getSlice(r, "cabins") {
+		cab, ok := cabAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		m := getInt(cab, "mileage")
+		if strings.EqualFold(getString(cab, "name"), targetCabin) && getBool(cab, "available") && m > 0 {
+			return m, float64(getInt(cab, "taxes")) / 100.0, 0, true
+		}
+	}
+
+	return 0, 0, 0, false
+}
+
+// buildSegments converts the FIRST itinerary's segments into []AwardSegment.
+// A missing/empty/non-array itineraries field, a non-object first itinerary, or
+// non-object segments all yield a nil/partial slice rather than a panic.
+func buildSegments(r map[string]any) []AwardSegment {
+	itins := getSlice(r, "itineraries")
+	if len(itins) == 0 {
+		return nil
+	}
+	itin, ok := itins[0].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var segments []AwardSegment
+	for _, segAny := range getSlice(itin, "segments") {
+		seg, ok := segAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		segments = append(segments, AwardSegment{
+			Origin:        getString(seg, "origin"),
+			Destination:   getString(seg, "destination"),
+			Airline:       "", // set downstream from flight number
+			FlightNumber:  getString(seg, "flightNumber"),
+			DepartureTime: getString(seg, "departure"),
+			ArrivalTime:   getString(seg, "arrival"),
+			Aircraft:      getString(seg, "aircraftName"),
+		})
+	}
+	return segments
+}
+
+// ── Safe JSON-shape accessors ────────────────────────────────────────────────
+// Each takes a map that MAY be nil and a key that MAY be absent or hold a
+// wrong-typed value, and returns the zero value in every non-happy case. These
+// are the primitives that make parseApifyResults panic-proof: no bare type
+// assertion, no unchecked index, no deref of a possibly-nil container.
+
+// coerceToItemSlice normalizes the top-level value into a slice of item-shaped
+// values. It accepts a JSON array, a single object (wrapped into a 1-element
+// slice), or a common envelope ({"items":[...]} / {"data":[...]}). Anything
+// else (string, number, bool, null) returns nil to signal "unexpected shape".
+func coerceToItemSlice(top any) []any {
+	switch v := top.(type) {
+	case []any:
+		return v
+	case map[string]any:
+		// Envelope forms first; fall back to treating the object as one item.
+		if inner, ok := v["items"].([]any); ok {
+			return inner
+		}
+		if inner, ok := v["data"].([]any); ok {
+			return inner
+		}
+		return []any{v}
+	default:
+		return nil
+	}
+}
+
+// getString returns m[key] as a string, or "" if m is nil, the key is absent,
+// the value is null, or the value is not a JSON string.
+func getString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if s, ok := m[key].(string); ok {
+		return s
+	}
+	return ""
+}
+
+// getInt returns m[key] as an int. JSON numbers decode to float64 via
+// encoding/json, so that is the primary case; a numeric string ("12345") is
+// also tolerated since drift has flipped number↔string before. Anything else
+// (null, bool, object, array, absent, NaN/Inf) yields 0.
+func getInt(m map[string]any, key string) int {
+	if m == nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case float64:
+		return f64ToInt(v)
+	case json.Number:
+		if i, err := v.Int64(); err == nil {
+			return int(i)
+		}
+		if f, err := v.Float64(); err == nil {
+			return f64ToInt(f)
+		}
+		return 0
+	case string:
+		// Tolerate "12345" and "12345.0"; reject everything else.
+		if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			return f64ToInt(f)
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+// f64ToInt converts a float64 to int, returning 0 for NaN, ±Inf, or any value
+// outside the int range. Go's float→int conversion is implementation-defined
+// when the value overflows, so clamping here keeps a drifted/absurd number
+// (e.g. 1e308) deterministic and harmless across platforms instead of yielding
+// a garbage int.
+func f64ToInt(f float64) int {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	if f > float64(math.MaxInt) || f < float64(math.MinInt) {
+		return 0
+	}
+	return int(f)
+}
+
+// getBool returns m[key] as a bool. A real JSON bool is honored; the string
+// "true" (case-insensitive) is tolerated for drift; everything else is false.
+func getBool(m map[string]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	switch v := m[key].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
+}
+
+// getSlice returns m[key] as a []any, or nil if m is nil, the key is absent,
+// the value is null, or the value is not a JSON array. Ranging over the nil
+// return is safe (zero iterations), so callers need no extra guard.
+func getSlice(m map[string]any, key string) []any {
+	if m == nil {
+		return nil
+	}
+	if s, ok := m[key].([]any); ok {
+		return s
+	}
+	return nil
+}
+
+// bytesTrimSpace trims leading/trailing JSON whitespace without pulling in
+// bytes/strings just for the empty-body short-circuit above.
+func bytesTrimSpace(b []byte) []byte {
+	start := 0
+	for start < len(b) && asciiSpace(b[start]) {
+		start++
+	}
+	end := len(b)
+	for end > start && asciiSpace(b[end-1]) {
+		end--
+	}
+	return b[start:end]
+}
+
+func asciiSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }

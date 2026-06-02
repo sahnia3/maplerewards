@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, X, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { PRICING, TIER_GROUPS } from "@/lib/pro-features";
+import { PRICING, TIER_GROUPS, FREE_LIMITS } from "@/lib/pro-features";
 import { createCheckoutSession } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -154,9 +154,10 @@ function PricingContent() {
           }}
         >
           <span
-            className="mono"
+            className="sans"
             style={{
-              fontSize: 10,
+              fontSize: 12,
+              fontWeight: 600,
               padding: "3px 9px",
               borderRadius: 999,
               background: "var(--accent-soft)",
@@ -255,10 +256,10 @@ function PricingContent() {
 
             <ul style={{ listStyle: "none", padding: 0, margin: "20px 0 0" }}>
               {[
-                "Up to 3 cards in wallet",
+                `Up to ${FREE_LIMITS.maxCards} cards in wallet`,
                 "Spend optimizer",
                 "Card catalog & comparison",
-                "2 AI chat messages per month",
+                `${FREE_LIMITS.maxChatMessagesPerMonth} AI chat messages per month`,
                 "Welcome-bonus tracking",
                 "Last 10 spend entries",
               ].map((item) => (
@@ -280,15 +281,15 @@ function PricingContent() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <PlanEyebrow accent>Pro</PlanEyebrow>
               <span
-                className="mono"
+                className="sans"
                 style={{
-                  fontSize: 10,
+                  fontSize: 12,
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
                   padding: "4px 10px",
                   border: "1px solid var(--gold)",
                   borderRadius: 999,
-                  color: "var(--gold)",
+                  color: "var(--ink)",
                   background: "var(--gold-tint)",
                   fontWeight: 600,
                 }}
@@ -361,7 +362,7 @@ function PricingContent() {
                   {loading ? "Redirecting" : `Start Pro · ${plan.label}`}
                 </Button>
               )}
-              <p className="mono" style={{ fontSize: 9, marginTop: 10, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase", textAlign: "center" }}>
+              <p className="eyebrow" style={{ marginTop: 10, textAlign: "center" }}>
                 30-day refund · Cancel anytime · Stripe checkout
               </p>
             </div>
@@ -560,7 +561,7 @@ function PricingContent() {
                 ? `Get lifetime Pro · ${PRICING.lifetime.label}`
                 : `Get Pro · ${plan.label}`}
             </Button>
-            <p className="mono" style={{ fontSize: 10, marginTop: 12, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+            <p className="eyebrow" style={{ marginTop: 12 }}>
               30-day refund · Cancel anytime · Stripe checkout
             </p>
           </div>
@@ -761,8 +762,8 @@ function ComparisonCell({ value, accent = false }: { value: string | boolean; ac
         <span
           className="mono"
           style={{
-            fontSize: 11,
-            color: accent ? "var(--accent)" : "var(--ink-3)",
+            fontSize: 12,
+            color: accent ? "var(--accent)" : "var(--ink-2)",
             letterSpacing: "0.04em",
             textAlign: "center",
           }}

@@ -137,6 +137,7 @@ function SignupForm() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Full name"
+                aria-label="Full name"
                 required
                 autoComplete="name"
                 style={fieldInputStyle}
@@ -149,6 +150,7 @@ function SignupForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
+                aria-label="Email address"
                 required
                 autoComplete="email"
                 style={fieldInputStyle}
@@ -180,6 +182,7 @@ function SignupForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password (min 8 characters)"
+                aria-label="Password"
                 required
                 minLength={8}
                 autoComplete="new-password"
@@ -187,24 +190,30 @@ function SignupForm() {
               />
             </Field>
 
-            {error && (
-              <div
-                role="alert"
-                className="serif"
-                style={{
-                  fontSize: 13,
-                  fontStyle: "italic",
-                  color: "var(--loss)",
-                  background: "var(--accent-soft)",
-                  border: "1px solid var(--accent)",
-                  borderRadius: 10,
-                  padding: "10px 14px",
-                  textAlign: "center",
-                }}
-              >
-                {error}
-              </div>
-            )}
+            {/* Always-mounted live region: screen readers announce the error
+                via content change rather than a fresh mount. Empty string =>
+                zero-height, no visible chrome (styling is gated on `error`). */}
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="serif"
+              style={
+                error
+                  ? {
+                      fontSize: 13,
+                      fontStyle: "italic",
+                      color: "var(--loss)",
+                      background: "var(--accent-soft)",
+                      border: "1px solid var(--accent)",
+                      borderRadius: 10,
+                      padding: "10px 14px",
+                      textAlign: "center",
+                    }
+                  : undefined
+              }
+            >
+              {error}
+            </div>
 
             <Button
               type="submit"
@@ -219,12 +228,10 @@ function SignupForm() {
           </form>
 
           <p
-            className="mono"
+            className="sans"
             style={{
-              fontSize: 9,
-              letterSpacing: "0.10em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
+              fontSize: 12,
+              color: "var(--ink-2)",
               textAlign: "center",
               marginTop: 18,
               lineHeight: 1.5,
@@ -297,7 +304,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label
+    <div
       style={{
         display: "flex",
         alignItems: "center",
@@ -318,7 +325,7 @@ function Field({
       {icon && <span style={{ color: "var(--ink-3)", display: "inline-flex" }}>{icon}</span>}
       {children}
       {trailing}
-    </label>
+    </div>
   );
 }
 

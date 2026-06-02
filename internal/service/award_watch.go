@@ -28,6 +28,9 @@ func (s *AwardWatchService) Create(ctx context.Context, sessionID string, req mo
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if user == nil {
+		return nil, ErrSessionNotFound
+	}
 	if req.Origin == "" || req.Destination == "" || req.DepartDate == "" {
 		return nil, fmt.Errorf("origin, destination, depart_date required")
 	}
@@ -61,6 +64,9 @@ func (s *AwardWatchService) List(ctx context.Context, sessionID string) ([]model
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if user == nil {
+		return nil, ErrSessionNotFound
+	}
 	out, err := s.watchRepo.ListByUser(ctx, user.ID)
 	if err != nil {
 		return nil, err
@@ -75,6 +81,9 @@ func (s *AwardWatchService) Delete(ctx context.Context, sessionID, watchID strin
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return ErrSessionNotFound
 	}
 	return s.watchRepo.Delete(ctx, user.ID, watchID)
 }

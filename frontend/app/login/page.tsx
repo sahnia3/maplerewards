@@ -132,6 +132,7 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
+                aria-label="Email address"
                 required
                 autoComplete="email"
                 style={fieldInputStyle}
@@ -164,6 +165,7 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
+                aria-label="Password"
                 required
                 autoComplete="current-password"
                 style={fieldInputStyle}
@@ -202,19 +204,17 @@ function LoginForm() {
           </form>
 
           <p
-            className="mono"
+            className="sans"
             style={{
-              fontSize: 10,
-              letterSpacing: "0.10em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
+              fontSize: 13,
+              color: "var(--ink-2)",
               textAlign: "center",
               marginTop: 18,
             }}
           >
             {/* Self-serve reset flow is a tracked follow-up; until it ships,
                 route locked-out users to support rather than a dead 404. */}
-            <a href="mailto:hello@maplerewards.app?subject=Password%20reset" style={{ color: "inherit", textDecoration: "underline" }}>
+            <a href="mailto:hello@maplerewards.app?subject=Password%20reset" style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}>
               Forgot password?
             </a>
           </p>
@@ -276,7 +276,7 @@ function Field({
   kind?: "default";
 }) {
   return (
-    <label
+    <div
       style={{
         display: "flex",
         alignItems: "center",
@@ -297,7 +297,7 @@ function Field({
       {icon && <span style={{ color: "var(--ink-3)", display: "inline-flex" }}>{icon}</span>}
       {children}
       {trailing}
-    </label>
+    </div>
   );
 }
 

@@ -54,9 +54,9 @@ interface BlockedCard {
 }
 
 const NETWORK_PILL: Record<string, { bg: string; color: string; label: string }> = {
-  visa: { bg: "rgba(59,130,246,0.12)", color: "#3B6CC4", label: "Visa" },
-  mastercard: { bg: "rgba(217,119,6,0.12)", color: "#B45309", label: "Mastercard" },
-  amex: { bg: "rgba(5,150,105,0.12)", color: "#047857", label: "Amex" },
+  visa: { bg: "color-mix(in srgb, var(--card-visa) 14%, transparent)", color: "var(--card-visa)", label: "Visa" },
+  mastercard: { bg: "color-mix(in srgb, var(--card-mc) 14%, transparent)", color: "var(--card-mc)", label: "Mastercard" },
+  amex: { bg: "color-mix(in srgb, var(--card-amex) 14%, transparent)", color: "var(--card-amex)", label: "Amex" },
 };
 
 // Detect a wholesale-club / warehouse multiplier row. Costco's grocery bonus
