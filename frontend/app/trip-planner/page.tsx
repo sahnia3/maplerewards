@@ -962,9 +962,7 @@ function FlightRow({
             </div>
           )}
           {flight.return_leg && (
-            <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}>
-              RT · {flight.return_leg.cpp.toFixed(2)}¢
-            </div>
+            <RoundTripSummary flight={flight} />
           )}
           {flight.booking_url && (
             <a
@@ -1006,6 +1004,74 @@ function FlightRow({
           <SegmentDetails segments={flight.return_leg.segments ?? []} legLabel="Return" />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── RoundTripSummary ─────────────────────────────────────────────────────
+ * Round-trip combined figures, shown beneath the (outbound) CPP headline when
+ * the search carried a return date and the backend folded in a same-program
+ * return leg. The headline above is the OUTBOUND leg's CPP; this block makes
+ * the combined-trip economics explicit: total points across both legs, summed
+ * taxes, and the round-trip CPP the backend computes (round_trip_cpp, only
+ * non-zero when BOTH legs are rated). Falls back to the return leg's own
+ * points when the combined total isn't present (older backend rows). */
+function RoundTripSummary({ flight }: { flight: AwardSearchResult }) {
+  const rt = flight.return_leg;
+  if (!rt) return null;
+
+  const rtPoints = flight.round_trip_points_cost ?? flight.points_cost + rt.points_cost;
+  const rtCpp = flight.round_trip_cpp ?? 0;
+  const rtTaxes = flight.round_trip_taxes_cash;
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        paddingTop: 8,
+        borderTop: "1px dashed var(--rule)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 2,
+      }}
+    >
+      <span
+        className="mono"
+        style={{
+          fontSize: 12,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--ink-3)",
+        }}
+      >
+        Round-trip
+      </span>
+      <span className="mono" style={{ fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.04em" }}>
+        {rtPoints.toLocaleString()} pts
+      </span>
+      {rtTaxes != null && (
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          + ${rtTaxes.toFixed(0)} taxes
+        </span>
+      )}
+      {rtCpp > 0 ? (
+        <span
+          className="display"
+          style={{ fontSize: 16, fontStyle: "italic", color: "var(--ink)" }}
+          title="Cents per point across both legs, priced against each leg's net-of-tax cash benchmark."
+        >
+          {rtCpp.toFixed(2)}¢ combined
+        </span>
+      ) : (
+        <span
+          className="mono"
+          style={{ fontSize: 12, color: "var(--ink-3)" }}
+          title="A combined ¢/pt needs a live cash fare on both legs. One leg has no rated fare, so we don't show a guessed round-trip value."
+        >
+          combined value n/a
+        </span>
+      )}
     </div>
   );
 }

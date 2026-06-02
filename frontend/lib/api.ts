@@ -604,14 +604,16 @@ export interface AwardSearchResult {
   card_breakdowns: CardContribution[];
   segments: AwardSegmentInfo[];
   best_transfer_partner?: string; // program slug for "Boost via" CTA
-  // Optional round-trip companion legs. Backend may attach when return_date
-  // was supplied. If absent, render single-leg layout (graceful fallback).
-  return_leg?: {
-    points_cost: number;
-    cash_price_cad: number;
-    cpp: number;
-    segments: AwardSegmentInfo[];
-  };
+  // ── Round-trip (populated only when the request carried a return_date) ──────
+  // The backend (combineRoundTrip in internal/service/award_search.go) attaches
+  // the best SAME-program return option as a full AwardSearchResult-shaped row,
+  // plus three combined summary fields. All absent on one-way searches and on
+  // outbound rows whose program had no return availability — render single-leg
+  // in that case (graceful fallback).
+  return_leg?: AwardSearchResult;
+  round_trip_points_cost?: number;       // outbound + return points
+  round_trip_taxes_cash?: number | null; // outbound + return cash taxes; null when neither leg reported taxes
+  round_trip_cpp?: number;               // ¢/pt over both legs' net cash vs combined points; 0 unless both legs rated
 }
 
 export async function searchAwards(req: AwardSearchRequest): Promise<AwardSearchResult[]> {

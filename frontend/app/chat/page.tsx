@@ -147,7 +147,11 @@ export default function ChatPage() {
       <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 200px" }}>
         <PageMasthead
           eyebrow="Maple"
-          eyebrowEnd="Claude Sonnet 4.6"
+          // No hardcoded model name: turns route between models server-side
+          // (cheap model for simple asks, stronger model for tool-heavy ones)
+          // and the API doesn't report which one answered — so naming a
+          // specific version here would be fabricated. Neutral, honest label.
+          eyebrowEnd="Powered by Claude"
           title={
             <>
               The <span style={{ fontStyle: "italic" }}>rewards</span> editor.

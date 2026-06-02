@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
@@ -54,6 +54,17 @@ export default function PortfolioPage() {
   const [cardValues, setCardValues] = useState<CardValueSummary[]>([]);
   const [cardValuesLoading, setCardValuesLoading] = useState(true);
 
+  // Per-section fetch errors. Without these a backend blip leaves each section
+  // in its EMPTY/false state — most dangerously, a failed summary rendered the
+  // "No cards in your wallet" block to a user who DOES have cards (audit 3,
+  // frontend HIGH). Each section now shows an error banner + retry instead.
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [recsError, setRecsError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [sqcError, setSQCError] = useState<string | null>(null);
+  const [cardValuesError, setCardValuesError] = useState<string | null>(null);
+
   const reportSummary = useReportableError("portfolio.summary");
   const reportRecs = useReportableError("portfolio.recommendations");
   const reportAnalysis = useReportableError("portfolio.analysis");
@@ -62,40 +73,77 @@ export default function PortfolioPage() {
   const reportCardValues = useReportableError("portfolio.cardValues");
   const reportAdd = useReportableError("portfolio.addCard");
 
-  useEffect(() => {
-    if (!isReady || !sessionId) return;
+  // Each loader is independently re-callable so its error banner's "Try again"
+  // re-fetches only that section, and clears its own error on each attempt.
+  const errMessage = (e: unknown) =>
+    e instanceof Error ? e.message : "Couldn't load this section.";
 
-    getWalletSummary(sessionId)
+  const loadSummary = useCallback((sid: string) => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    getWalletSummary(sid)
       .then(setSummary)
-      .catch(reportSummary)
+      .catch(e => { reportSummary(e); setSummaryError(errMessage(e)); })
       .finally(() => setSummaryLoading(false));
+  }, [reportSummary]);
 
-    const walletCardIds = new Set(wallet.map(uc => uc.card_id));
+  const loadRecs = useCallback((walletCardIds: Set<string>) => {
+    setRecsLoading(true);
+    setRecsError(null);
     getRecommendations({ monthly_spend: TYPICAL_SPEND })
       .then(data => setRecs(data.filter(s => !walletCardIds.has(s.card_id)).slice(0, 6)))
-      .catch(reportRecs)
+      .catch(e => { reportRecs(e); setRecsError(errMessage(e)); })
       .finally(() => setRecsLoading(false));
+  }, [reportRecs]);
 
-    getPortfolioAnalysis(sessionId)
+  const loadAnalysis = useCallback((sid: string) => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    getPortfolioAnalysis(sid)
       .then(setAnalysis)
-      .catch(reportAnalysis)
+      .catch(e => { reportAnalysis(e); setAnalysisError(errMessage(e)); })
       .finally(() => setAnalysisLoading(false));
+  }, [reportAnalysis]);
 
-    getCardCredits(sessionId)
+  const loadCredits = useCallback((sid: string) => {
+    setCreditsLoading(true);
+    setCreditsError(null);
+    getCardCredits(sid)
       .then(setCredits)
-      .catch(reportCredits)
+      .catch(e => { reportCredits(e); setCreditsError(errMessage(e)); })
       .finally(() => setCreditsLoading(false));
+  }, [reportCredits]);
 
-    getSQCProjection(sessionId)
+  const loadSQC = useCallback((sid: string) => {
+    setSQCLoading(true);
+    setSQCError(null);
+    getSQCProjection(sid)
       .then(setSQC)
-      .catch(reportSQC)
+      .catch(e => { reportSQC(e); setSQCError(errMessage(e)); })
       .finally(() => setSQCLoading(false));
+  }, [reportSQC]);
 
-    getCardValueSummary(sessionId)
+  const loadCardValues = useCallback((sid: string) => {
+    setCardValuesLoading(true);
+    setCardValuesError(null);
+    getCardValueSummary(sid)
       .then(setCardValues)
-      .catch(reportCardValues)
+      .catch(e => { reportCardValues(e); setCardValuesError(errMessage(e)); })
       .finally(() => setCardValuesLoading(false));
-  }, [isReady, sessionId, wallet.length, reportSummary, reportRecs, reportAnalysis, reportCredits, reportSQC, reportCardValues]);
+  }, [reportCardValues]);
+
+  useEffect(() => {
+    if (!isReady || !sessionId) return;
+    loadSummary(sessionId);
+    loadRecs(new Set(wallet.map(uc => uc.card_id)));
+    loadAnalysis(sessionId);
+    loadCredits(sessionId);
+    loadSQC(sessionId);
+    loadCardValues(sessionId);
+    // wallet.length (not wallet) by design: re-fetch when the card COUNT
+    // changes, not on every wallet-array identity change. The wallet-card-id
+    // Set is rebuilt inside the effect from the current wallet each run.
+  }, [isReady, sessionId, wallet.length, loadSummary, loadRecs, loadAnalysis, loadCredits, loadSQC, loadCardValues]);
 
   const handleAdd = async (cardId: string) => {
     try {
@@ -175,6 +223,13 @@ export default function PortfolioPage() {
           }}
         >
           <Loader2 size={20} className="animate-spin" style={{ color: "var(--ink-3)" }} />
+        </div>
+      ) : summaryError ? (
+        <div style={{ marginBottom: 26 }}>
+          <SectionError
+            message={`We couldn't load your annual ledger. ${summaryError}`}
+            onRetry={() => sessionId && loadSummary(sessionId)}
+          />
         </div>
       ) : summary && summary.cards.length > 0 ? (
         <>
@@ -338,6 +393,11 @@ export default function PortfolioPage() {
               <div key={i} className="shimmer" style={{ flexShrink: 0, width: 220, height: 220, borderRadius: 14 }} />
             ))}
           </div>
+        ) : recsError ? (
+          <SectionError
+            message={`We couldn't load card recommendations. ${recsError}`}
+            onRetry={() => loadRecs(new Set(wallet.map(uc => uc.card_id)))}
+          />
         ) : recs.length === 0 ? (
           <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-3)", fontSize: 14 }}>
             All top cards are already in your wallet. <Link href="/cards" style={{ color: "var(--accent)" }}>Explore more →</Link>
@@ -424,6 +484,12 @@ export default function PortfolioPage() {
               Run optimizer →
             </Link>
           </div>
+          {analysisError ? (
+            <SectionError
+              message={`We couldn't load your category analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
+          ) : (
           <div className="portfolio-cat-grid m-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {Object.entries(TYPICAL_SPEND).slice(0, 6).map(([slug, amount]) => {
               const cat = CATEGORY_LABELS[slug] ?? { name: slug };
@@ -455,11 +521,24 @@ export default function PortfolioPage() {
               );
             })}
           </div>
+          )}
         </section>
       )}
 
       {/* ── Annual card value (insurance + lounge + multipliers + credits) ── */}
-      {hasWallet && !cardValuesLoading && cardValues.length > 0 && (
+      {hasWallet && cardValuesError && !cardValuesLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Award size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Annual card value (true ROI)</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load per-card annual value. ${cardValuesError}`}
+            onRetry={() => sessionId && loadCardValues(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !cardValuesError && !cardValuesLoading && cardValues.length > 0 && (
         <AnimatedSection delay={0.08} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Award size={16} style={{ color: "var(--accent)" }} />
@@ -510,7 +589,19 @@ export default function PortfolioPage() {
       )}
 
       {/* ── 2026 Aeroplan SQC elite-status projector ── */}
-      {hasWallet && !sqcLoading && sqc && !sqc.wallet_has_no_aeroplan_cards && (
+      {hasWallet && sqcError && !sqcLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Plane size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Aeroplan Elite Status</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load your SQC projection. ${sqcError}`}
+            onRetry={() => sessionId && loadSQC(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !sqcError && !sqcLoading && sqc && !sqc.wallet_has_no_aeroplan_cards && (
         <AnimatedSection delay={0.1} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Plane size={16} style={{ color: "var(--accent)" }} />
@@ -619,7 +710,19 @@ export default function PortfolioPage() {
       )}
 
       {/* ── Card Credits + Annual-Fee Countdown ── */}
-      {hasWallet && !creditsLoading && credits.length > 0 && (
+      {hasWallet && creditsError && !creditsLoading && (
+        <section style={{ marginBottom: 36 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Gift size={16} style={{ color: "var(--accent)" }} />
+            <h2 className="display" style={{ fontSize: 22 }}>Credits & Renewals</h2>
+          </div>
+          <SectionError
+            message={`We couldn't load your card credits. ${creditsError}`}
+            onRetry={() => sessionId && loadCredits(sessionId)}
+          />
+        </section>
+      )}
+      {hasWallet && !creditsError && !creditsLoading && credits.length > 0 && (
         <AnimatedSection delay={0.12} className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <Gift size={16} style={{ color: "var(--accent)" }} />
@@ -789,6 +892,11 @@ export default function PortfolioPage() {
             <div className="space-y-3">
               <SkeletonCard /><SkeletonCard />
             </div>
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load fee ROI analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.fee_roi.length > 0 ? (
             <div className="space-y-3">
               {analysis.fee_roi.map(card => {
@@ -900,6 +1008,11 @@ export default function PortfolioPage() {
             <div className="space-y-3">
               <SkeletonCard /><SkeletonCard />
             </div>
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load opportunity-cost analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.dollar_gap.entries.length > 0 ? (
             <>
               {/* Total gap hero — editorial rule */}
@@ -999,6 +1112,11 @@ export default function PortfolioPage() {
 
           {analysisLoading ? (
             <SkeletonCard />
+          ) : analysisError ? (
+            <SectionError
+              message={`We couldn't load wallet-coverage analysis. ${analysisError}`}
+              onRetry={() => sessionId && loadAnalysis(sessionId)}
+            />
           ) : analysis && analysis.utilization.gaps.length > 0 ? (
             <>
               {/* Score hero — editorial */}
@@ -1132,6 +1250,50 @@ export default function PortfolioPage() {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+/* ── Per-section error banner ─────────────────────────────────────────────
+ * Matches the inline error+retry pattern used on /wallet and /insights:
+ * accent-ruled card, italic serif message, mono "Try again" button. Used so a
+ * failed fetch shows an error a user can recover from, never an empty state
+ * that misrepresents their data (e.g. "No cards" when the summary call blipped). */
+function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        border: "1px solid var(--accent)",
+        borderLeft: "3px solid var(--accent)",
+        borderRadius: 14,
+        padding: "20px 24px",
+        background: "var(--card-fill)",
+      }}
+    >
+      <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 15, margin: 0 }}>
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mono"
+        style={{
+          marginTop: 10,
+          background: "transparent",
+          border: "1px solid var(--rule-strong)",
+          color: "var(--ink-2)",
+          padding: "8px 16px",
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          cursor: "pointer",
+        }}
+      >
+        Try again →
+      </button>
     </div>
   );
 }
