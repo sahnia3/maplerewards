@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, X, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { PRICING, TIER_GROUPS } from "@/lib/pro-features";
+import { PRICING, TIER_GROUPS, FREE_LIMITS } from "@/lib/pro-features";
 import { createCheckoutSession } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -256,10 +256,10 @@ function PricingContent() {
 
             <ul style={{ listStyle: "none", padding: 0, margin: "20px 0 0" }}>
               {[
-                "Up to 3 cards in wallet",
+                `Up to ${FREE_LIMITS.maxCards} cards in wallet`,
                 "Spend optimizer",
                 "Card catalog & comparison",
-                "2 AI chat messages per month",
+                `${FREE_LIMITS.maxChatMessagesPerMonth} AI chat messages per month`,
                 "Welcome-bonus tracking",
                 "Last 10 spend entries",
               ].map((item) => (

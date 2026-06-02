@@ -16,10 +16,10 @@ export const PRO_FEATURES = {
     label: "Trip Planner",
     description: "Calculate the best redemption options for flights using your points.",
   },
-  // Unlimited wallet cards (free = 3)
+  // Unlimited wallet cards (free = 5)
   unlimitedCards: {
     label: "Unlimited Cards",
-    description: "Add unlimited cards to your wallet. Free tier allows up to 3 cards.",
+    description: "Add unlimited cards to your wallet. Free tier allows up to 5 cards.",
   },
   // CSV data export
   csvExport: {
@@ -34,7 +34,7 @@ export const PRO_FEATURES = {
   // Unlimited chat
   unlimitedChat: {
     label: "Unlimited AI Chat",
-    description: "Ask unlimited questions. Free tier allows 2 messages per month.",
+    description: "Ask unlimited questions. Free tier allows 10 messages per month.",
   },
   // Priority recommendations
   priorityRecommendations: {
@@ -47,8 +47,8 @@ export type ProFeatureKey = keyof typeof PRO_FEATURES;
 
 // Free tier limits
 export const FREE_LIMITS = {
-  maxCards: 3,
-  maxChatMessagesPerMonth: 2,
+  maxCards: 5,
+  maxChatMessagesPerMonth: 10,
   maxVisibleTransactions: 10,
 } as const;
 
@@ -67,7 +67,7 @@ export const PRICING = {
     price: 0,
     currency: "CAD",
     label: "Free",
-    note: "Optimizer, wallet, 2 AI messages/mo, public tools",
+    note: "Optimizer, wallet, 10 AI messages/mo, public tools",
   },
   pro: {
     price: 39.99,
@@ -130,7 +130,7 @@ export const TIER_GROUPS: TierGroup[] = [
   {
     name: "Wallet & analysis",
     features: [
-      { name: "Cards in wallet",               free: "Up to 3",         pro: "Unlimited" },
+      { name: "Cards in wallet",               free: "Up to 5",         pro: "Unlimited" },
       { name: "Spend optimizer",               free: true,              pro: true },
       { name: "Insights & spend history",      free: "Last 10 entries", pro: "Full history" },
       { name: "Portfolio analyzer",            free: false,             pro: true },
@@ -143,7 +143,7 @@ export const TIER_GROUPS: TierGroup[] = [
     name: "Travel & advisor",
     features: [
       { name: "Trip planner",                  free: false,             pro: true },
-      { name: "AI chat messages",              free: "2 per month",     pro: "Unlimited" },
+      { name: "AI chat messages",              free: "10 per month",    pro: "Unlimited" },
       { name: "AI Research Mode",              free: false,             pro: true },
       { name: "Priority recommendations",      free: false,             pro: true },
     ],

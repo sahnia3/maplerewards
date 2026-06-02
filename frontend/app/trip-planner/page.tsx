@@ -42,9 +42,11 @@ function parseCabin(v: string | null): Cabin {
   return v === "economy" || v === "first" ? v : "business";
 }
 
-function parseFlex(v: string | null): 0 | 7 | 14 {
+function parseFlex(v: string | null): 0 | 7 {
+  // Backend caps flex_days at 7 (each extra day is a metered paid lookup), so
+  // the UI only offers Exact / ±7 — a ±14 request would 400 server-side.
   const n = Number(v ?? 7);
-  return n === 0 || n === 14 ? n : 7;
+  return n === 0 ? 0 : 7;
 }
 
 function parsePax(v: string | null): number {
@@ -77,7 +79,7 @@ function TripPlannerInner() {
   );
   const [date, setDate] = useState(() => searchParams.get("date") ?? "");
   const [returnDate, setReturnDate] = useState(() => searchParams.get("ret") ?? "");
-  const [flexDays, setFlexDays] = useState<0 | 7 | 14>(() => parseFlex(searchParams.get("flex")));
+  const [flexDays, setFlexDays] = useState<0 | 7>(() => parseFlex(searchParams.get("flex")));
   const [cabin, setCabin] = useState<Cabin>(() => parseCabin(searchParams.get("cabin")));
   const [passengers, setPassengers] = useState(() => parsePax(searchParams.get("pax")));
 
@@ -350,7 +352,7 @@ function TripPlannerInner() {
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Flex window</div>
               <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", height: 44 }}>
-                {([0, 7, 14] as const).map((d, i) => (
+                {([0, 7] as const).map((d, i) => (
                   <button
                     key={d}
                     type="button"
