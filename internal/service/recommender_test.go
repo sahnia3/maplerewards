@@ -102,3 +102,44 @@ func TestRecommend_BatchesAndDropsJunkSlugs(t *testing.T) {
 		}
 	}
 }
+
+// A capped bonus category must be projected as a blend of the bonus rate (up to
+// the cap) and the everything-else fallback (beyond it), not the full bonus
+// rate on all spend — mirroring the optimizer's calculateBlendedRate. Before
+// this fix the recommender over-projected capped accelerators.
+func TestRecommend_CapAwareProjection(t *testing.T) {
+	capAmt := 500.0
+	period := "monthly"
+	prog := &model.LoyaltyProgram{Name: "Test", BaseCPP: 1.0}
+	repo := &recMockRepo{
+		cards: []model.Card{{ID: "c1", Name: "Capped", IsActive: true, LoyaltyProgram: prog}},
+		categories: []model.Category{
+			{ID: "g", Slug: "groceries", Name: "Groceries"},
+			{ID: "e", Slug: "everything-else", Name: "Everything Else"},
+		},
+		multByCard: map[string][]model.MultiplierRow{
+			"c1": {
+				{CategorySlug: "groceries", EarnRate: 5, EarnType: "cashback_pct", CapAmount: &capAmt, CapPeriod: &period},
+				{CategorySlug: "everything-else", EarnRate: 1, EarnType: "cashback_pct"},
+			},
+		},
+	}
+	scores, err := NewRecommenderService(repo).Recommend(context.Background(),
+		RecommendRequest{MonthlySpend: map[string]float64{"groceries": 1000}})
+	if err != nil {
+		t.Fatalf("Recommend: %v", err)
+	}
+	// $500 @5% + $500 @1% = $30/mo → $360/yr (the uncapped bug would give $600).
+	if got := scores[0].GrossAnnualValue; got < 359 || got > 361 {
+		t.Fatalf("capped gross want ~360, got %.2f (full-rate bug gives 600)", got)
+	}
+	var noted bool
+	for _, c := range scores[0].TopCategories {
+		if c.CategorySlug == "groceries" && c.Note != "" {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Error("expected a cap disclosure note on the capped groceries category")
+	}
+}

@@ -3,8 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"maplerewards/internal/middleware"
 	"maplerewards/internal/repo"
@@ -55,6 +59,12 @@ func (h *PushHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Endpoint == "" || req.Keys.P256dh == "" || req.Keys.Auth == "" {
 		jsonError(w, "endpoint and keys are required", http.StatusBadRequest)
+		return
+	}
+	// SSRF guard: the server later POSTs to this endpoint (push/test + the
+	// notify worker), so reject anything that isn't a public https push URL.
+	if err := validatePushEndpoint(req.Endpoint); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	err := h.pushRepo.Upsert(r.Context(), repo.PushSubscription{
@@ -142,4 +152,36 @@ func (h *PushHandler) PublicVAPIDKey(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{
 		"public_key": os.Getenv("VAPID_PUBLIC_KEY"),
 	})
+}
+
+// validatePushEndpoint defends against SSRF via the Web Push endpoint. The
+// server POSTs to this URL later (push/test + the notify worker), so an
+// attacker-supplied endpoint aimed at an internal host would turn the push
+// pipeline into a private-network probe. Real push services (FCM, Mozilla
+// autopush, WNS, Apple) are always https on public hosts. IP-literal hosts in
+// private/loopback/link-local ranges are rejected; hostnames that resolve to
+// private IPs at send time are a deeper (DNS-rebinding) concern best closed
+// with a dial-time guard in the pusher transport.
+func validatePushEndpoint(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL")
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("endpoint must be an https URL")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("endpoint host is required")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return fmt.Errorf("endpoint host is not allowed")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
+			ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("endpoint host is not allowed")
+		}
+	}
+	return nil
 }

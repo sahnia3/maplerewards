@@ -253,3 +253,37 @@ func TestRequireBodySessionOwner_WalletNotFound_404(t *testing.T) {
 		t.Fatalf("expected 404 for unknown wallet, got %d", w.Code)
 	}
 }
+
+// ── Web Push endpoint SSRF guard ───────────────────────────────────────────
+
+// validatePushEndpoint must accept only public https push URLs (the server
+// POSTs to them later) and reject anything aimed at the internal network.
+func TestValidatePushEndpoint_BlocksSSRF(t *testing.T) {
+	allowed := []string{
+		"https://fcm.googleapis.com/fcm/send/abc123",
+		"https://updates.push.services.mozilla.com/wpush/v2/xyz",
+		"https://web.push.apple.com/QABC",
+	}
+	for _, e := range allowed {
+		if err := validatePushEndpoint(e); err != nil {
+			t.Errorf("expected %q allowed, got %v", e, err)
+		}
+	}
+	blocked := []string{
+		"http://fcm.googleapis.com/fcm/send/abc",   // not https
+		"https://169.254.169.254/latest/meta-data", // cloud metadata (link-local)
+		"https://127.0.0.1/internal",               // loopback
+		"https://10.0.0.5/internal",                // private
+		"https://192.168.1.1/x",                    // private
+		"https://[::1]/x",                          // ipv6 loopback
+		"https://localhost/x",                      // localhost
+		"ftp://example.com/x",                      // wrong scheme
+		"not a url",
+		"",
+	}
+	for _, e := range blocked {
+		if err := validatePushEndpoint(e); err == nil {
+			t.Errorf("expected %q rejected, got nil", e)
+		}
+	}
+}

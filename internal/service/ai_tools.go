@@ -1308,6 +1308,50 @@ func (s *AIService) registerTools() {
 			})
 		},
 	})
+
+	// 16. create_award_watch — let the agent actually ARM a watch the user
+	// asked for, not just list existing ones. The cron worker + email/web-push
+	// fan-out are already live; this wires the create path into the tool loop
+	// so chat becomes agentic instead of read-only. (Best impact/effort in the
+	// audit: one tool definition over already-deployed infra.)
+	s.tools.register(toolDef{
+		Name:    "create_award_watch",
+		ProOnly: true,
+		Description: "PRO ONLY. Create an Aeroplan award-availability watch for the user. The cron worker then " +
+			"polls for award space and alerts them (email + web push) when a seat at or below their max-points " +
+			"threshold appears. ALWAYS call list_my_award_watches first to avoid creating a duplicate. depart_date " +
+			"MUST be a future YYYY-MM-DD computed from today's date above — never a past date.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"origin":       map[string]any{"type": "string", "description": "Origin IATA code, e.g. YYZ"},
+				"destination":  map[string]any{"type": "string", "description": "Destination IATA code, e.g. NRT"},
+				"depart_date":  map[string]any{"type": "string", "description": "Target departure date, YYYY-MM-DD (must be in the future)"},
+				"flex_days":    map[string]any{"type": "integer", "description": "± days around depart_date to watch (0-14, default 3)"},
+				"cabin":        map[string]any{"type": "string", "enum": []string{"economy", "business", "first"}, "description": "Cabin to watch (default economy)"},
+				"max_points":   map[string]any{"type": "integer", "description": "Optional: only alert when the award costs at or below this many points"},
+				"program_slug": map[string]any{"type": "string", "description": "Loyalty program (default aeroplan)"},
+			},
+			"required": []string{"origin", "destination", "depart_date"},
+		},
+		Handler: func(ctx context.Context, sessionID string, _ bool, args json.RawMessage) (json.RawMessage, error) {
+			if s.pro.AwardWatch == nil {
+				return errResultJSON("service_unavailable", "Award-watch service not configured."), nil
+			}
+			var req model.CreateAwardWatchRequest
+			if err := json.Unmarshal(args, &req); err != nil {
+				return errResultJSON("bad_input", "Could not parse award-watch arguments."), nil
+			}
+			watch, err := s.pro.AwardWatch.Create(ctx, sessionID, req)
+			if err != nil {
+				return errResultJSON("create_failed", err.Error()), nil
+			}
+			return json.Marshal(map[string]any{
+				"created": true,
+				"watch":   watch,
+			})
+		},
+	})
 }
 
 // ── Tool-use system prompt ───────────────────────────────────────────────────

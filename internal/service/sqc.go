@@ -40,6 +40,12 @@ func (s *SQCService) Project(ctx context.Context, sessionID string, flights SQCF
 	if err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	// pgx returns (nil, nil) for "no row matches" — without this guard a
+	// deleted/unknown session panics the API process when dereferencing
+	// user.ID below. Mirrors optimizer.go:88 / missed_rewards.go:73.
+	if user == nil {
+		return nil, ErrSessionNotFound
+	}
 	year := time.Now().Year()
 	cards, tiers, err := s.sqcRepo.GetUserSQCContext(ctx, user.ID, year)
 	if err != nil {

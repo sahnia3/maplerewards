@@ -61,13 +61,38 @@ func (s *WalletService) GetWallet(ctx context.Context, sessionID string) ([]mode
 	return cards, nil
 }
 
-func (s *WalletService) AddCard(ctx context.Context, sessionID, cardID string) error {
+// freeMaxCards caps the free tier's wallet size. Mirrors FREE_LIMITS.maxCards
+// in frontend/lib/pro-features.ts; Pro is unlimited.
+const freeMaxCards = 5
+
+func (s *WalletService) AddCard(ctx context.Context, sessionID, cardID string, isPro bool) error {
 	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("session lookup: %w", err)
 	}
 	if user == nil {
 		return fmt.Errorf("session not found")
+	}
+	// Enforce the free-tier card cap server-side (it was advertised but never
+	// enforced). Re-adding a card already in the wallet is idempotent and never
+	// blocked — only a net-new card beyond the cap is rejected.
+	if !isPro {
+		cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
+		if err != nil {
+			return fmt.Errorf("card count: %w", err)
+		}
+		if len(cards) >= freeMaxCards {
+			owned := false
+			for _, c := range cards {
+				if c.CardID == cardID {
+					owned = true
+					break
+				}
+			}
+			if !owned {
+				return ErrCardLimitReached
+			}
+		}
 	}
 	if _, err := s.walletRepo.AddCard(ctx, user.ID, cardID); err != nil {
 		return err

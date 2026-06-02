@@ -43,6 +43,18 @@ const (
 // and SerpAPI Google Flights (real cabin-specific cash prices in CAD) to produce
 // AwardSearchResult[] for POST /api/v1/trip/award-search.
 // Optionally uses Seats.aero for live award availability if configured.
+// awardTransferLookup / awardProgramLookup are the narrow slices of the
+// transfer + card repos the award search needs to suggest a "Boost via
+// {partner}" top-up route. Narrow interfaces keep this decoupled from the full
+// repos and from shared mock implementations. Both may be nil (e.g. the worker
+// path), in which case the hint is simply omitted.
+type awardTransferLookup interface {
+	GetTransferRoutesFrom(ctx context.Context, toProgramID string) ([]model.TransferPartner, error)
+}
+type awardProgramLookup interface {
+	GetProgramBySlug(ctx context.Context, slug string) (*model.LoyaltyProgram, error)
+}
+
 type AwardSearchService struct {
 	apifySvc     *ApifyAwardService
 	seatsAeroSvc *SeatsAeroService
@@ -50,6 +62,8 @@ type AwardSearchService struct {
 	walletRepo   WalletRepository
 	kb           *knowledge.KnowledgeBase
 	cache        AwardCache
+	transferRepo awardTransferLookup
+	programRepo  awardProgramLookup
 }
 
 // NewAwardSearchService creates the award search service. cache may be nil
@@ -61,6 +75,8 @@ func NewAwardSearchService(
 	walletRepo WalletRepository,
 	kb *knowledge.KnowledgeBase,
 	cache AwardCache,
+	transferRepo awardTransferLookup,
+	programRepo awardProgramLookup,
 ) *AwardSearchService {
 	return &AwardSearchService{
 		apifySvc:     apifySvc,
@@ -69,7 +85,46 @@ func NewAwardSearchService(
 		walletRepo:   walletRepo,
 		kb:           kb,
 		cache:        cache,
+		transferRepo: transferRepo,
+		programRepo:  programRepo,
 	}
+}
+
+// bestInboundPartner returns a human-readable "Boost via {partner}" hint for an
+// award priced in programSlug: the strongest program you can transfer INTO it.
+// It is wallet-independent (a program-level property), so the result is safe to
+// cache in the response body and reuse across warm wallet-overlay hits. Ranked
+// by transfer ratio, tie-broken by the source currency's base value. Returns ""
+// when the lookups are unavailable (e.g. the worker) or there are no inbound
+// partners. The per-search cache avoids re-querying the same program.
+func (s *AwardSearchService) bestInboundPartner(ctx context.Context, programSlug string, cache map[string]string) string {
+	if s.transferRepo == nil || s.programRepo == nil || programSlug == "" {
+		return ""
+	}
+	if v, ok := cache[programSlug]; ok {
+		return v
+	}
+	name := ""
+	if prog, err := s.programRepo.GetProgramBySlug(ctx, programSlug); err == nil && prog != nil {
+		if routes, err := s.transferRepo.GetTransferRoutesFrom(ctx, prog.ID); err == nil {
+			var best *model.TransferPartner
+			for i := range routes {
+				r := &routes[i]
+				if r.FromProgram == nil || !r.IsActive {
+					continue
+				}
+				if best == nil || r.TransferRatio > best.TransferRatio ||
+					(r.TransferRatio == best.TransferRatio && r.FromProgram.BaseCPP > best.FromProgram.BaseCPP) {
+					best = r
+				}
+			}
+			if best != nil {
+				name = best.FromProgram.Name
+			}
+		}
+	}
+	cache[programSlug] = name
+	return name
 }
 
 // seatsAeroSources are the VALID Seats.aero `sources` IDs we query. Seats.aero
@@ -400,6 +455,9 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 
 	// ── Build results from live Seats.aero data ──────────────────────────
 	var results []model.AwardSearchResult
+	// "Boost via {partner}" hints are program-level (wallet-independent), so
+	// resolve each program's best inbound transfer partner once per search.
+	partnerCache := map[string]string{}
 
 	if awardErr == nil && len(awardItems) > 0 {
 		seen := map[string]bool{} // deduplicate by (issuer, date)
@@ -432,8 +490,9 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 				r.ValueRating = ""
 			} else if economyCashCAD > 0 && r.PointsCost > 0 {
 				r.EconomyCashCAD = economyCashCAD
-				r.RealisticCPP = computeCPP(economyCashCAD, r.PointsCost)
+				r.RealisticCPP = computeCPP(netCashCAD(economyCashCAD, r.TaxesCash), r.PointsCost)
 			}
+			r.BestTransferPartner = s.bestInboundPartner(ctx, r.Program, partnerCache)
 			results = append(results, r)
 		}
 		slog.Info("[award-search] live results built", "count", len(results))
@@ -467,6 +526,7 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 			r.CPP = 0
 			r.RealisticCPP = 0
 			r.ValueRating = ""
+			r.BestTransferPartner = s.bestInboundPartner(ctx, r.Program, partnerCache)
 			results = append(results, *r)
 			fallbackCount++
 		}
@@ -560,7 +620,10 @@ func (s *AwardSearchService) buildResult(
 ) model.AwardSearchResult {
 	totalPoints := item.MileageCost * req.Passengers
 
-	cpp := computeCPP(cashPriceCAD, totalPoints)
+	// Net the cash taxes/surcharges you still pay on redemption before pricing
+	// the points — the fare alone overstates CPP (taxes were displayed but
+	// never subtracted from the value math).
+	cpp := computeCPP(netCashCAD(cashPriceCAD, item.TaxesCash), totalPoints)
 	valueRating := rateValue(cpp, req.Cabin)
 
 	wb := walletBalances[item.Issuer]
@@ -812,6 +875,22 @@ func computeCPP(cashPriceCAD float64, totalPoints int) float64 {
 		return 0
 	}
 	return (cashPriceCAD / float64(totalPoints)) * 100
+}
+
+// netCashCAD returns the cash value the points actually buy: the cash fare
+// minus the taxes/surcharges you still pay out of pocket when redeeming. Award
+// taxes are CAD (same frame as the fare; see AwardItem.TaxesCash). Clamped at 0
+// — when surcharges meet or exceed the fare, the points save you nothing over
+// paying cash. A nil pointer means the source supplied no taxes (e.g.
+// Seats.aero), so we subtract nothing rather than guess.
+func netCashCAD(cashPriceCAD float64, taxesCAD *float64) float64 {
+	if taxesCAD == nil {
+		return cashPriceCAD
+	}
+	if net := cashPriceCAD - *taxesCAD; net > 0 {
+		return net
+	}
+	return 0
 }
 
 // rateValue grades a CPP relative to realistic cabin baselines. Cash prices

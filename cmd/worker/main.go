@@ -103,7 +103,10 @@ func main() {
 	apify := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), workerQuota)
 	serp := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), workerQuota)
 	seatsAero := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
-	awardSearch := service.NewAwardSearchService(apify, seatsAero, serp, walletRepo, kb, redisCache)
+	// Transfer/program lookups are nil here: the worker's award sweep doesn't
+	// render the "Boost via {partner}" hint (that's a frontend trip-planner
+	// concern), so the producer is intentionally omitted.
+	awardSearch := service.NewAwardSearchService(apify, seatsAero, serp, walletRepo, kb, redisCache, nil, nil)
 	issuerWatch := service.NewIssuerWatchService(issuerPageRepo, getEnv("ANTHROPIC_API_KEY", ""))
 
 	// Shared notification rail. Picks ResendMailer when RESEND_API_KEY is set,

@@ -20,6 +20,7 @@ type CategoryReturn struct {
 	EarnRate     float64 `json:"earn_rate"`
 	EarnType     string  `json:"earn_type"`
 	MonthlyValue float64 `json:"monthly_value"`
+	Note         string  `json:"note,omitempty"` // cap disclosure when a bonus cap applies
 }
 
 // CardScore is a ranked card recommendation with projected annual value.
@@ -145,12 +146,35 @@ func (s *RecommenderService) scoreCard(
 			mult = *everythingElse
 		}
 
+		// Cap-aware projection: a bonus accelerator with a monthly/annual cap
+		// must NOT be projected at full rate on all spend — that re-introduces
+		// the over-projection bug class the optimizer was remediated for
+		// (known-issues/optimizer-cap-integrity.md). Blend bonus + fallback the
+		// same way the optimizer does, falling back to the card's everything-else
+		// rate (same currency only) or 0 when there's none.
+		effRate := mult.EarnRate
+		var capNote string
+		if mult.CapAmount != nil && *mult.CapAmount > 0 {
+			capPeriod := "monthly"
+			if mult.CapPeriod != nil && *mult.CapPeriod != "" {
+				capPeriod = *mult.CapPeriod
+			}
+			fallbackRate := 0.0
+			if everythingElse != nil && everythingElse.EarnType == mult.EarnType && everythingElse.CategorySlug != mult.CategorySlug {
+				fallbackRate = everythingElse.EarnRate
+			}
+			spendForPeriod := monthly
+			if capPeriod == "annual" {
+				spendForPeriod = monthly * 12
+			}
+			effRate, _, capNote = calculateBlendedRate(spendForPeriod, 0, *mult.CapAmount, capPeriod, mult.EarnRate, fallbackRate)
+		}
+
 		var monthlyValue float64
 		if mult.EarnType == "cashback_pct" {
-			monthlyValue = monthly * (mult.EarnRate / 100)
+			monthlyValue = monthly * (effRate / 100)
 		} else {
-			pointsPerMonth := monthly * mult.EarnRate
-			monthlyValue = pointsPerMonth * (cpp / 100)
+			monthlyValue = monthly * effRate * (cpp / 100)
 		}
 
 		grossAnnualValue += monthlyValue * 12
@@ -166,6 +190,7 @@ func (s *RecommenderService) scoreCard(
 			EarnRate:     mult.EarnRate,
 			EarnType:     mult.EarnType,
 			MonthlyValue: monthlyValue,
+			Note:         capNote,
 		})
 	}
 

@@ -23,11 +23,12 @@ import (
 )
 
 // freeChatMonthlyCap is the per-user monthly cap on AI chat messages for the
-// free tier. Pro users are unlimited (no Redis check). Set to 2: chat is a
-// paid feature; free users get a minimal taste (a question or two a month)
-// to drive conversion, not an ongoing free assistant. Deliberately low to
-// keep free-tier Anthropic spend negligible at scale.
-const freeChatMonthlyCap int64 = 2
+// free tier. Pro users are unlimited (no Redis check). Set to 10: a 2-message
+// taste was too thin to demonstrate the assistant's value and throttled the
+// conversion funnel. Ten lets a free user reach real utility before the wall
+// while keeping free-tier Anthropic spend modest — the per-request token
+// budget in ai_budget.go still bounds the cost of each individual message.
+const freeChatMonthlyCap int64 = 10
 
 // chatRequestBody is the wire shape for /chat and /chat/stream POSTs. It
 // extends service.ChatRequest with an optional conversation_id so authenticated

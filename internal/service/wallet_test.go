@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 
@@ -139,5 +140,44 @@ func TestWallet_NilUser_NoPanic_SessionNotFound(t *testing.T) {
 	}
 	if _, err := svc.GetWallet(context.Background(), "missing"); err == nil {
 		t.Error("GetWallet: expected session-not-found error, got nil")
+	}
+}
+
+// The free tier is capped at freeMaxCards. A net-new card beyond the cap is
+// rejected (and never persisted); Pro is unlimited; re-adding an already-owned
+// card is idempotent and allowed even at the cap; under the cap is allowed.
+func TestWallet_AddCard_FreeTierCapEnforced(t *testing.T) {
+	full := []model.UserCard{{CardID: "a"}, {CardID: "b"}, {CardID: "c"}, {CardID: "d"}, {CardID: "e"}}
+	repoAt := func(cards []model.UserCard) *walletTestRepo {
+		return &walletTestRepo{
+			getUserBySession: func(context.Context, string) (*model.User, error) {
+				return &model.User{ID: "u1"}, nil
+			},
+			getUserCards: func(context.Context, string) ([]model.UserCard, error) { return cards, nil },
+		}
+	}
+
+	// free, at cap, net-new card → blocked and not persisted (no invalidation).
+	c1 := &walletTestCache{}
+	if err := newWalletSvc(repoAt(full), c1).AddCard(context.Background(), "s", "f", false); !errors.Is(err, ErrCardLimitReached) {
+		t.Fatalf("free over cap: want ErrCardLimitReached, got %v", err)
+	}
+	if atomic.LoadInt64(&c1.invalidates) != 0 {
+		t.Fatal("blocked add must not invalidate cache (nothing persisted)")
+	}
+
+	// Pro, at cap → allowed.
+	if err := newWalletSvc(repoAt(full), &walletTestCache{}).AddCard(context.Background(), "s", "f", true); err != nil {
+		t.Fatalf("pro over cap: want success, got %v", err)
+	}
+
+	// free, at cap, re-adding an owned card → allowed (idempotent, no net add).
+	if err := newWalletSvc(repoAt(full), &walletTestCache{}).AddCard(context.Background(), "s", "a", false); err != nil {
+		t.Fatalf("free re-add owned: want success, got %v", err)
+	}
+
+	// free, under cap → allowed.
+	if err := newWalletSvc(repoAt(full[:2]), &walletTestCache{}).AddCard(context.Background(), "s", "z", false); err != nil {
+		t.Fatalf("free under cap: want success, got %v", err)
 	}
 }
