@@ -982,19 +982,24 @@ func (s *AwardSearchService) loadWalletBalances(ctx context.Context, sessionID s
 	return entries, nil
 }
 
-// slugToIssuer maps DB program slugs to award scraper issuer keys.
+// slugToIssuer maps a DB loyalty_programs.slug to the award-scraper issuer key
+// that award rows carry (AwardSearchResult.Program), so a wallet balance lands
+// on the matching award currency. It is the inverse of issuerToSlug and lists
+// the seeded airline programs whose DB slug differs from the scraper key —
+// "ba-avios"→"avios" and "flying-blue"→"flyingblue"; aeroplan is identity and
+// kept for symmetry with issuerToSlug. Every other slug (and any program whose
+// slug already equals the key) falls through unchanged.
+//
+// The only airline programs actually seeded as loyalty_programs are aeroplan,
+// ba-avios, flying-blue, asia-miles and westjet-rewards (see migrations/*.up.sql).
+// The former united/delta/american/alaska/eurobonus/lufthansa/singapore entries
+// had no matching slug, so they only ever duplicated the fall-through — dead
+// identity mappings, now removed.
 func slugToIssuer(slug string) string {
 	m := map[string]string{
 		"aeroplan":    "aeroplan",
 		"ba-avios":    "avios",
 		"flying-blue": "flyingblue",
-		"united":      "united",
-		"delta":       "delta",
-		"american":    "american",
-		"alaska":      "alaska",
-		"eurobonus":   "eurobonus",
-		"lufthansa":   "lufthansa",
-		"singapore":   "singapore",
 	}
 	if v, ok := m[slug]; ok {
 		return v
