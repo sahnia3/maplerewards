@@ -398,11 +398,16 @@ type AwardSearchRequest struct {
 	SessionID   string `json:"session_id"`
 	Origin      string `json:"origin"`
 	Destination string `json:"destination"`
-	Date        string `json:"date"`              // YYYY-MM-DD — center date
-	FlexDays    int    `json:"flex_days"`         // ±days around Date (default 0)
-	Cabin       string `json:"cabin"`             // economy|business|first
-	Passengers  int    `json:"passengers"`        // default 1
-	Refresh     bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
+	Date        string `json:"date"`      // YYYY-MM-DD — outbound center date
+	FlexDays    int    `json:"flex_days"` // ±days around Date (default 0)
+	// ReturnDate, when set (YYYY-MM-DD), turns this into a round-trip search:
+	// the service runs a second leg destination→origin on this date and folds a
+	// ReturnLeg + combined round-trip points/taxes/CPP into each result. Empty
+	// → one-way (behaviour identical to before this field existed).
+	ReturnDate string `json:"return_date,omitempty"`
+	Cabin      string `json:"cabin"`             // economy|business|first
+	Passengers int    `json:"passengers"`        // default 1
+	Refresh    bool   `json:"refresh,omitempty"` // when true, skip Redis cache GET and force a live upstream call. Result is still cached on the way out.
 	// IsPro is set server-side from the auth context (json:"-" so a client
 	// cannot forge it). Live Apify award scraping is the premium data path
 	// and is gated to Pro; free users still get Seats.aero + SerpAPI.
@@ -441,6 +446,17 @@ type AwardSearchResult struct {
 	BestTransferPartner string             `json:"best_transfer_partner,omitempty"` // program to transfer INTO this award's currency for the "Boost via …" CTA
 	CardBreakdowns      []CardContribution `json:"card_breakdowns"`
 	Segments            []AwardSegmentInfo `json:"segments"`
+
+	// ── Round-trip (populated only when the request carried a return_date) ────
+	// ReturnLeg is the best same-program return option (destination→origin on
+	// the return date), mirroring the outbound row shape so the UI can render
+	// both legs identically. Nil on one-way searches and on outbound rows whose
+	// program had no return availability. The RoundTrip* fields summarise the
+	// outbound+return pair so the SPA can show one combined price/value.
+	ReturnLeg           *AwardSearchResult `json:"return_leg,omitempty"`
+	RoundTripPointsCost int                `json:"round_trip_points_cost,omitempty"` // outbound + return points
+	RoundTripTaxesCash  *float64           `json:"round_trip_taxes_cash,omitempty"`  // outbound + return cash taxes; nil when neither leg reported taxes
+	RoundTripCPP        float64            `json:"round_trip_cpp,omitempty"`         // ¢/pt over both legs' net cash vs combined points; 0 unless both legs rated
 }
 
 // AwardSegmentInfo is one flight leg within an award itinerary.

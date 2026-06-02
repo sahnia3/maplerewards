@@ -55,7 +55,23 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, mustEnv("DATABASE_URL"))
+	// Explicit pool sizing — mirrors cmd/api. pgxpool defaults to
+	// GREATEST(4, NumCPU), and a worker sweep burst (award/issuer/digest
+	// sweeps each opening connections) sharing the same Postgres as the API
+	// could otherwise exhaust max_connections. Defaults are smaller than the
+	// API's 25 because the worker is batch-serial, not request-concurrent, but
+	// it honors the same env knobs so ops can tune both processes uniformly.
+	pgxCfg, err := pgxpool.ParseConfig(mustEnv("DATABASE_URL"))
+	if err != nil {
+		log.Error("postgres parse config failed", "err", err)
+		os.Exit(1)
+	}
+	pgxCfg.MaxConns = int32(getEnvInt("WORKER_DB_MAX_CONNS", 10))
+	pgxCfg.MinConns = int32(getEnvInt("WORKER_DB_MIN_CONNS", 1))
+	pgxCfg.MaxConnLifetime = time.Duration(getEnvInt("DB_MAX_CONN_LIFETIME_SEC", 3600)) * time.Second
+	pgxCfg.MaxConnIdleTime = time.Duration(getEnvInt("DB_MAX_CONN_IDLE_SEC", 1800)) * time.Second
+	pgxCfg.HealthCheckPeriod = 60 * time.Second
+	pool, err := pgxpool.NewWithConfig(ctx, pgxCfg)
 	if err != nil {
 		log.Error("postgres connect failed", "err", err)
 		os.Exit(1)

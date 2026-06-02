@@ -13,8 +13,9 @@
 //
 // Run with:    go run ./cmd/refresh-valuations
 // Env:
-//   DATABASE_URL — required
-//   REDIS_ADDR   — optional, default localhost:6379
+//
+//	DATABASE_URL — required
+//	REDIS_ADDR   — optional, default localhost:6379
 package main
 
 import (
@@ -56,7 +57,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Cap the pool. This CLI is serial and short-lived, so it needs only a
+	// couple of connections — but it may run (cron / GitHub Actions) while the
+	// API and worker are live against the same Postgres, and pgxpool's default
+	// of GREATEST(4, NumCPU) on a many-core CI runner would open far more than
+	// this task ever uses. A small fixed cap keeps it from contributing to
+	// max_connections pressure.
+	pgxCfg, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		log.Error("postgres parse config failed", "err", err)
+		os.Exit(1)
+	}
+	pgxCfg.MaxConns = 4
+	pgxCfg.MinConns = 1
+	pool, err := pgxpool.NewWithConfig(ctx, pgxCfg)
 	if err != nil {
 		log.Error("postgres connect failed", "err", err)
 		os.Exit(1)

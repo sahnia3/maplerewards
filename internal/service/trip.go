@@ -190,28 +190,59 @@ var middleEastAfricaAirports = map[string]bool{
 	"JNB": true, "CPT": true, "CMN": true,
 }
 
-// classifyRoute maps an origin-destination pair to an award chart zone.
+// airportRegion classifies a single IATA code into a coarse geographic region,
+// or "" when the airport isn't in any of our maps. Used by classifyRoute so the
+// zone reflects BOTH endpoints rather than the destination alone.
+func airportRegion(code string) string {
+	switch {
+	case northAmericaAirports[code]:
+		return "north_america"
+	case europeAirports[code]:
+		return "europe"
+	case asiaAirports[code]:
+		return "asia"
+	case middleEastAfricaAirports[code]:
+		return "middle_east_africa"
+	}
+	return ""
+}
+
+// classifyRoute maps an origin-destination pair to an award chart zone using
+// BOTH endpoints. Award pricing is symmetric and depends on the city pair, not
+// just where you land — a Tokyo→London ticket is a Europe⇄Asia long-haul, not
+// the "atlantic" (North-America⇄Europe) zone the dest-only classifier returned.
+// Both regions are considered so off-list and non-NA-origin routes stop
+// defaulting to transatlantic pricing.
 func classifyRoute(origin, dest string) string {
 	orig := strings.ToUpper(origin)
 	dst := strings.ToUpper(dest)
 
-	origNA := northAmericaAirports[orig]
-	dstNA := northAmericaAirports[dst]
+	origRegion := airportRegion(orig)
+	dstRegion := airportRegion(dst)
 
-	if origNA && dstNA {
-		return "north_america"
+	// When one endpoint is unknown, fall back to the known endpoint's region so
+	// we still avoid the blanket transatlantic default where possible.
+	if origRegion == "" {
+		origRegion = dstRegion
 	}
-	if europeAirports[dst] {
+	if dstRegion == "" {
+		dstRegion = origRegion
+	}
+
+	switch {
+	case origRegion == "north_america" && dstRegion == "north_america":
+		return "north_america"
+	case origRegion == "asia" || dstRegion == "asia":
+		// Anything touching Asia (incl. Europe⇄Asia, ME⇄Asia) prices as pacific
+		// long-haul — the most expensive realistic baseline, never understated.
+		return "pacific"
+	case origRegion == "middle_east_africa" || dstRegion == "middle_east_africa":
+		return "middle_east_africa"
+	case origRegion == "europe" || dstRegion == "europe":
+		// Europe paired with North America (or an unknown endpoint) → transatlantic.
 		return "atlantic"
 	}
-	if asiaAirports[dst] {
-		return "pacific"
-	}
-	if middleEastAfricaAirports[dst] {
-		return "middle_east_africa"
-	}
-	// Default: assume transatlantic-like pricing
-	_ = orig
+	// Both endpoints unknown: assume transatlantic-like pricing.
 	return "atlantic"
 }
 

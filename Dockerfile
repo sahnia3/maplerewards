@@ -7,10 +7,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/api ./cmd/api
 # Build the background worker too (award-watch / issuer-watch / digest sweeps).
-# It ships in the same image; deploy it as a second service that overrides the
-# command to ["./worker"]. Without this the worker — and its Pro features
-# (award alerts, issuer-page diffs, weekly digests) — can never run in prod,
-# since the API image alone contained no worker binary.
+# It ships in the same image; the default CMD below runs the api, and the
+# `worker` service in docker-compose.yml overrides the command to ["./worker"]
+# so both processes run in the default deployment. Without this the worker —
+# and its Pro features (award alerts, issuer-page diffs, weekly digests) —
+# can never run in prod, since the API image alone contained no worker binary.
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/worker ./cmd/worker
 
 # ── Runtime ──────────────────────────────────────────────────────────────────

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
 	"maplerewards/internal/quota"
@@ -64,6 +66,12 @@ type AwardSearchService struct {
 	cache        AwardCache
 	transferRepo awardTransferLookup
 	programRepo  awardProgramLookup
+	// fetchGroup collapses concurrent identical cold fetches into one upstream
+	// fan-out. A cold cache previously let every simultaneous request for the
+	// same route each fire the full paid Apify/Seats.aero/SerpAPI fan-out;
+	// singleflight (keyed on the per-leg cacheKey) means N callers share one
+	// scrape and the rest wait for and copy its result.
+	fetchGroup singleflight.Group
 }
 
 // NewAwardSearchService creates the award search service. cache may be nil
@@ -90,22 +98,52 @@ func NewAwardSearchService(
 	}
 }
 
+// issuerToSlug maps award-scraper issuer keys (the values carried on
+// AwardSearchResult.Program, e.g. "flyingblue") to the DB loyalty_programs.slug
+// they correspond to (e.g. "flying-blue"). It is the inverse of slugToIssuer,
+// using the ACTUAL seeded slugs — note Avios is "ba-avios" and Flying Blue is
+// "flying-blue" in the DB, not the scraper's "avios"/"flyingblue".
+//
+// Without this remap, bestInboundPartner queried loyalty_programs.slug with the
+// raw scraper key, so only "aeroplan" (where key == slug) ever resolved — the
+// Boost hint silently failed for every other program. Issuer keys with no DB
+// row (united, delta, etc. — not seeded as loyalty_programs) are passed through
+// unchanged and degrade silently when GetProgramBySlug returns no rows.
+var issuerToSlug = map[string]string{
+	"aeroplan":   "aeroplan",
+	"flyingblue": "flying-blue",
+	"avios":      "ba-avios",
+}
+
+// dbSlugForIssuer returns the DB loyalty_programs.slug for a scraper issuer key,
+// falling back to the key itself when there is no explicit mapping.
+func dbSlugForIssuer(issuerKey string) string {
+	if slug, ok := issuerToSlug[issuerKey]; ok {
+		return slug
+	}
+	return issuerKey
+}
+
 // bestInboundPartner returns a human-readable "Boost via {partner}" hint for an
-// award priced in programSlug: the strongest program you can transfer INTO it.
+// award whose currency is identified by issuerKey (the scraper key on
+// AwardSearchResult.Program): the strongest program you can transfer INTO it.
 // It is wallet-independent (a program-level property), so the result is safe to
 // cache in the response body and reuse across warm wallet-overlay hits. Ranked
 // by transfer ratio, tie-broken by the source currency's base value. Returns ""
 // when the lookups are unavailable (e.g. the worker) or there are no inbound
 // partners. The per-search cache avoids re-querying the same program.
-func (s *AwardSearchService) bestInboundPartner(ctx context.Context, programSlug string, cache map[string]string) string {
-	if s.transferRepo == nil || s.programRepo == nil || programSlug == "" {
+func (s *AwardSearchService) bestInboundPartner(ctx context.Context, issuerKey string, cache map[string]string) string {
+	if s.transferRepo == nil || s.programRepo == nil || issuerKey == "" {
 		return ""
 	}
-	if v, ok := cache[programSlug]; ok {
+	if v, ok := cache[issuerKey]; ok {
 		return v
 	}
+	// Map the scraper issuer key to the DB slug before the lookup; otherwise
+	// every non-Aeroplan program misses (slug != key) and the hint stays dark.
+	dbSlug := dbSlugForIssuer(issuerKey)
 	name := ""
-	if prog, err := s.programRepo.GetProgramBySlug(ctx, programSlug); err == nil && prog != nil {
+	if prog, err := s.programRepo.GetProgramBySlug(ctx, dbSlug); err == nil && prog != nil {
 		if routes, err := s.transferRepo.GetTransferRoutesFrom(ctx, prog.ID); err == nil {
 			var best *model.TransferPartner
 			for i := range routes {
@@ -123,7 +161,7 @@ func (s *AwardSearchService) bestInboundPartner(ctx context.Context, programSlug
 			}
 		}
 	}
-	cache[programSlug] = name
+	cache[issuerKey] = name
 	return name
 }
 
@@ -200,53 +238,151 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 
 	// Charge any paid upstream (apify/serpapi) this fan-out makes against the
 	// caller's per-tier monthly cap. Set on ctx before the data-source
-	// goroutines (which call the paid services); the cache-hit path below
-	// returns earlier and never reaches SpendTier, so cache hits aren't
-	// charged. Only is_pro is known here → pro_plus/lifetime use the Pro cap.
+	// goroutines (which call the paid services); a warm cache hit returns
+	// before reaching the paid fan-out, so cache hits aren't charged. Only
+	// is_pro is known here → pro_plus/lifetime use the Pro cap.
 	ctx = withQuotaTier(ctx, quota.TierForPlan("", req.IsPro))
 
 	slog.Info("[award-search] starting",
 		"origin", req.Origin, "dest", req.Destination,
-		"date", req.Date, "cabin", req.Cabin,
+		"date", req.Date, "returnDate", req.ReturnDate, "cabin", req.Cabin,
 	)
 
-	// ── Cache lookup ──────────────────────────────────────────────────────
-	// Key intentionally omits session/wallet — wallet-relative fields
-	// (PointsAvailable, CanAfford, CardBreakdowns) are recomputed below from
-	// the live wallet snapshot. Cache only the program/points/CPP body.
-	//
-	// Refresh=true skips the GET so the user can force a fresh upstream pull
-	// (used by the "Refresh live" button on the SPA). The SET path still
-	// runs, so the next normal request will hit the warm copy.
+	// ── Outbound leg ──────────────────────────────────────────────────────
+	// fetchLeg returns wallet-INDEPENDENT route data (cache get → singleflight
+	// fan-out → cache set). Wallet personalization is overlaid once, below, so
+	// the cached body is shareable across users on the same route/tier.
+	outbound, err := s.fetchLeg(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// ── One-way: overlay wallet and return (behaviour identical to pre-RT) ─
+	if req.ReturnDate == "" {
+		results := s.overlayWallet(ctx, req, outbound)
+		slog.Info("[award-search] done (one-way)",
+			"totalResults", len(results), "totalElapsed", time.Since(start))
+		return results, nil
+	}
+
+	// ── Round-trip: fetch the return leg (origin/dest swapped, return date) ─
+	returnReq := req
+	returnReq.Origin, returnReq.Destination = req.Destination, req.Origin
+	returnReq.Date = req.ReturnDate
+	returnReq.ReturnDate = "" // the return leg is itself a one-way fetch
+	returnLeg, rerr := s.fetchLeg(ctx, returnReq)
+	if rerr != nil {
+		// A return-leg failure must not sink the whole search — degrade to the
+		// outbound options (still wallet-overlaid) rather than erroring out.
+		slog.Warn("[award-search] return leg failed; serving outbound only", "err", rerr)
+		results := s.overlayWallet(ctx, req, outbound)
+		return results, nil
+	}
+
+	combined := combineRoundTrip(outbound, returnLeg, req.Cabin)
+	results := s.overlayWallet(ctx, req, combined)
+	slog.Info("[award-search] done (round-trip)",
+		"outbound", len(outbound), "return", len(returnLeg),
+		"combined", len(results), "totalElapsed", time.Since(start))
+	return results, nil
+}
+
+// fetchLeg returns the wallet-independent route results for a single leg,
+// reading the warm cache when possible and otherwise running the paid upstream
+// fan-out exactly once across concurrent identical callers (singleflight). The
+// returned rows have zero wallet fields by design — Search overlays the live
+// wallet afterwards so one cached body serves every user on the same route.
+func (s *AwardSearchService) fetchLeg(ctx context.Context, req model.AwardSearchRequest) ([]model.AwardSearchResult, error) {
 	cacheKey := awardCacheKey(req)
+
+	// ── Cache lookup ──────────────────────────────────────────────────────
+	// Refresh=true skips the GET so the user can force a fresh upstream pull
+	// (the "Refresh live" button). The fan-out still writes through, so the
+	// next normal request hits the warm copy.
 	if s.cache != nil && !req.Refresh {
 		if data, hit, err := s.cache.GetAwardSearch(ctx, cacheKey); err != nil {
 			slog.Warn("[award-search] cache get failed", "err", err)
 		} else if hit {
 			var cached []model.AwardSearchResult
 			if err := json.Unmarshal(data, &cached); err == nil && len(cached) > 0 {
-				// FetchedAt on the first row is the canonical timestamp for
-				// the whole bundle — all rows are written together.
-				age := time.Since(cached[0].FetchedAt)
-				if age < awardCacheTTL {
+				// FetchedAt on the first row is the canonical timestamp for the
+				// whole bundle — all rows are written together.
+				if age := time.Since(cached[0].FetchedAt); age < awardCacheTTL {
 					slog.Info("[award-search] cache hit",
-						"key", cacheKey, "ageSec", int(age.Seconds()),
-						"count", len(cached))
-					// Re-overlay live wallet state — balances change between
-					// hits even if the route data is still fresh.
-					return s.overlayWallet(ctx, req, cached), nil
+						"key", cacheKey, "ageSec", int(age.Seconds()), "count", len(cached))
+					return cached, nil
 				}
-				slog.Info("[award-search] cache hit but stale", "ageSec", int(age.Seconds()))
+				slog.Info("[award-search] cache hit but stale")
 			}
 		}
 	}
 
-	// ── Load wallet ───────────────────────────────────────────────────────
-	walletBalances, err := s.loadWalletBalances(ctx, req.SessionID)
+	// ── Cold fetch, de-duplicated ────────────────────────────────────────
+	// singleflight keyed on cacheKey: concurrent identical cold requests share
+	// one paid fan-out. fetchGroup.Do blocks the duplicates until the leader
+	// finishes, then hands them the same []AwardSearchResult.
+	v, err, shared := s.fetchGroup.Do(cacheKey, func() (interface{}, error) {
+		results, ferr := s.fetchLegFresh(ctx, req)
+		if ferr != nil {
+			return nil, ferr
+		}
+		// ── Cache write ──────────────────────────────────────────────────
+		// Only cache non-empty sets: a transient upstream blip returning 0 rows
+		// must not be cached as "no availability" for the whole TTL window.
+		if s.cache != nil && len(results) > 0 {
+			if payload, merr := json.Marshal(results); merr == nil {
+				if serr := s.cache.SetAwardSearch(ctx, cacheKey, payload, awardCacheTTL); serr != nil {
+					slog.Warn("[award-search] cache set failed", "err", serr)
+				}
+			}
+		}
+		return results, nil
+	})
 	if err != nil {
-		slog.Warn("[award-search] wallet load failed (proceeding with zero balances)", "err", err)
-		walletBalances = map[string]walletEntry{}
+		return nil, err
 	}
+	results, _ := v.([]model.AwardSearchResult)
+	// singleflight hands every sharer the SAME slice. Search.overlayWallet
+	// mutates rows in place per request, so each caller must own its own copy —
+	// otherwise concurrent sharers race and corrupt each other's wallet fields.
+	// Cloning is unconditional (not just when shared==true): the leader's own
+	// returned slice is the same instance the followers received.
+	out := cloneResults(results)
+	if shared {
+		slog.Info("[award-search] singleflight de-dup served shared result",
+			"key", cacheKey, "count", len(out))
+	}
+	return out, nil
+}
+
+// cloneResults returns a deep-enough copy of a result bundle for per-request
+// wallet overlay: each row is copied by value (covers all scalar wallet fields
+// and the slice headers overlayWallet REPLACES wholesale), and the ReturnLeg
+// pointer is cloned so a round-trip row's nested leg isn't shared either.
+func cloneResults(in []model.AwardSearchResult) []model.AwardSearchResult {
+	if in == nil {
+		return nil
+	}
+	out := make([]model.AwardSearchResult, len(in))
+	copy(out, in)
+	for i := range out {
+		if out[i].ReturnLeg != nil {
+			rl := *out[i].ReturnLeg
+			out[i].ReturnLeg = &rl
+		}
+	}
+	return out
+}
+
+// fetchLegFresh runs the full paid upstream fan-out for one leg and returns
+// wallet-independent route results. This is the body that singleflight guards;
+// it never reads or writes the cache and never touches the wallet.
+func (s *AwardSearchService) fetchLegFresh(ctx context.Context, req model.AwardSearchRequest) ([]model.AwardSearchResult, error) {
+	start := time.Now()
+
+	// Wallet-independent body: build rows with an empty wallet, then let
+	// Search.overlayWallet apply per-user balances to fresh + cached alike.
+	walletBalances := map[string]walletEntry{}
 
 	// ── Compute date range ────────────────────────────────────────────────
 	startDate, endDate := computeDateRange(req.Date, req.FlexDays)
@@ -317,7 +453,7 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 	go func() {
 		defer wg.Done()
 		defer recoverGoroutine("seats.aero", &awardErr)
-		if !s.seatsAeroSvc.IsAvailable() {
+		if s.seatsAeroSvc == nil || !s.seatsAeroSvc.IsAvailable() {
 			awardErr = fmt.Errorf("seats.aero not configured")
 			slog.Info("[award-search] seats.aero not available (no SEATSAERO_API_KEY)")
 			return
@@ -545,22 +681,77 @@ func (s *AwardSearchService) Search(ctx context.Context, req model.AwardSearchRe
 		return ri.PointsCost < rj.PointsCost // unrated: fewest points = best award
 	})
 
-	// ── Cache write ───────────────────────────────────────────────────────
-	// Cache only non-empty result sets (a transient upstream blip returning 0
-	// rows must not be cached as "no availability" for the whole TTL window).
-	if s.cache != nil && len(results) > 0 {
-		if payload, err := json.Marshal(results); err == nil {
-			if err := s.cache.SetAwardSearch(ctx, cacheKey, payload, awardCacheTTL); err != nil {
-				slog.Warn("[award-search] cache set failed", "err", err)
-			}
-		}
-	}
-
-	slog.Info("[award-search] done",
-		"totalResults", len(results), "totalElapsed", time.Since(start),
+	slog.Info("[award-search] leg fetch done",
+		"totalResults", len(results), "elapsed", time.Since(start),
 		"cashFromGoogle", cashFromGoogle)
 
 	return results, nil
+}
+
+// combineRoundTrip attaches, to each outbound row, the best return option in
+// the SAME program (so the pair is actually bookable on one currency) and folds
+// in combined round-trip points/taxes/CPP. Outbound rows whose program has no
+// return availability are returned unchanged (ReturnLeg nil, RT fields zero) so
+// they still surface as one-way-only options. Return rows are returned by-value
+// on the outbound row, so the input slices are never mutated.
+//
+// Combined CPP is only computed when BOTH legs are Rated (live points + a real
+// cash fare on each), using each leg's net-of-tax cash so the round-trip value
+// is honest. The return leg's own CashPriceCAD is the destination→origin
+// benchmark, which for a round trip is the correct second-half cash to compare.
+func combineRoundTrip(outbound, returnLeg []model.AwardSearchResult, cabin string) []model.AwardSearchResult {
+	// Index the cheapest (by points) return option per program. Rows are
+	// pre-sorted rated-first then cheapest-points, but a rated row can carry
+	// more points than an unrated one, so pick explicitly on PointsCost.
+	bestReturn := map[string]model.AwardSearchResult{}
+	for _, rl := range returnLeg {
+		if rl.PointsCost <= 0 {
+			continue
+		}
+		if cur, ok := bestReturn[rl.Program]; !ok || rl.PointsCost < cur.PointsCost {
+			bestReturn[rl.Program] = rl
+		}
+	}
+
+	combined := make([]model.AwardSearchResult, 0, len(outbound))
+	for _, ob := range outbound {
+		rl, ok := bestReturn[ob.Program]
+		if !ok {
+			combined = append(combined, ob) // no same-program return → one-way row
+			continue
+		}
+		ret := rl // copy so we never alias the return slice's backing array
+		ob.ReturnLeg = &ret
+		ob.RoundTripPointsCost = ob.PointsCost + ret.PointsCost
+		ob.RoundTripTaxesCash = sumTaxes(ob.TaxesCash, ret.TaxesCash)
+
+		// Combined CPP: only trustworthy when both legs are rated. Price the
+		// combined points against the sum of each leg's net (post-tax) cash.
+		if ob.Rated && ret.Rated && ob.RoundTripPointsCost > 0 {
+			netCash := netCashCAD(ob.CashPriceCAD, ob.TaxesCash) +
+				netCashCAD(ret.CashPriceCAD, ret.TaxesCash)
+			ob.RoundTripCPP = computeCPP(netCash, ob.RoundTripPointsCost)
+		}
+		combined = append(combined, ob)
+	}
+	return combined
+}
+
+// sumTaxes adds two nullable cash-tax figures. nil means "unknown" for that
+// leg; the round-trip total is the sum of whatever legs reported a number, and
+// nil only when NEITHER leg did (so the UI keeps "+ taxes" rather than "$0").
+func sumTaxes(a, b *float64) *float64 {
+	if a == nil && b == nil {
+		return nil
+	}
+	var total float64
+	if a != nil {
+		total += *a
+	}
+	if b != nil {
+		total += *b
+	}
+	return &total
 }
 
 // awardCacheKey constructs the Redis suffix from the route inputs. Programs
@@ -604,8 +795,19 @@ func (s *AwardSearchService) overlayWallet(
 	for i := range cached {
 		wb := balances[cached[i].Program]
 		cached[i].PointsAvailable = wb.balance
-		cached[i].CanAfford = wb.balance >= int64(cached[i].PointsCost)
 		cached[i].CardBreakdowns = wb.breakdowns
+		// Round-trip rows: the return leg shares this program's balance pool, so
+		// "can afford" means both legs' combined points fit one balance. Also
+		// overlay the nested return leg's own wallet fields for the UI.
+		if cached[i].ReturnLeg != nil {
+			rwb := balances[cached[i].ReturnLeg.Program]
+			cached[i].ReturnLeg.PointsAvailable = rwb.balance
+			cached[i].ReturnLeg.CanAfford = rwb.balance >= int64(cached[i].ReturnLeg.PointsCost)
+			cached[i].ReturnLeg.CardBreakdowns = rwb.breakdowns
+			cached[i].CanAfford = wb.balance >= int64(cached[i].RoundTripPointsCost)
+		} else {
+			cached[i].CanAfford = wb.balance >= int64(cached[i].PointsCost)
+		}
 	}
 	return cached
 }
@@ -784,7 +986,7 @@ func (s *AwardSearchService) loadWalletBalances(ctx context.Context, sessionID s
 func slugToIssuer(slug string) string {
 	m := map[string]string{
 		"aeroplan":    "aeroplan",
-		"avios":       "avios",
+		"ba-avios":    "avios",
 		"flying-blue": "flyingblue",
 		"united":      "united",
 		"delta":       "delta",

@@ -27,5 +27,51 @@ services:
       timeout: 3s
       retries: 5
 
+  # API server. Built from the multi-binary Dockerfile (default CMD ["./api"]).
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Inside the compose network, postgres/redis are reachable by service
+      # name — override the localhost defaults that .env carries for host-side
+      # `make dev`. sslmode=disable because the bundled Postgres has no TLS.
+      DATABASE_URL: postgres://postgres:password@postgres:5432/maplerewards?sslmode=disable
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Self-heal a boot that loses the race with out-of-band migrations
+    # (the API refuses to serve a missing/dirty schema by design).
+    restart: unless-stopped
+
+  # Background worker — promo sentinel, award/issuer/digest sweeps, valuation
+  # refresh, account cleanup. SAME image as api; only the command differs, so
+  # the non-root USER 10001 and dual-binary build are preserved. Without this
+  # service the worker process is dormant in the default deployment and every
+  # sweep + Pro alert silently never runs.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["./worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/maplerewards?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:

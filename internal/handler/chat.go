@@ -145,7 +145,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
-			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+			slog.Warn("aibudget check errored; allowing (non-quota error path)", "err", err, "user_id", userID)
 		} else if exhausted {
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
 			jsonErrorCode(w, "DAILY_LIMIT",
@@ -312,7 +312,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	if h.budget != nil {
 		_, _, exhausted, err := h.budget.CheckBudget(r.Context(), userID, plan, isPro)
 		if err != nil {
-			slog.Warn("aibudget check failed (failing open)", "err", err, "user_id", userID)
+			slog.Warn("aibudget check errored; allowing (non-quota error path)", "err", err, "user_id", userID)
 		} else if exhausted {
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", service.SecondsUntilUTCMidnight()))
 			jsonErrorCode(w, "DAILY_LIMIT",
