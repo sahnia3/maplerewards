@@ -51,7 +51,7 @@ func expAccount(slug string, balance int64, expiresInDays *int) model.LoyaltyAcc
 func TestExpiry_RiskAndMath(t *testing.T) {
 	wallet := &mockExpWallet{user: &model.User{ID: "u1"}}
 	accounts := &mockExpAccounts{accounts: []model.LoyaltyAccount{
-		expAccount("aeroplan", 100_000, intPtr(20)),    // critical (<30d)
+		expAccount("aeroplan", 100_000, intPtr(20)),     // critical (<30d)
 		expAccount("hilton-honors", 50_000, intPtr(60)), // warning (<90d)
 		expAccount("scene-plus", 10_000, intPtr(300)),   // ok (>=180d)
 		expAccount("amex-mr-ca", 200_000, nil),          // never (NULL inactivity, no expires_at)
@@ -145,9 +145,12 @@ func TestExpiry_RiskAndMath(t *testing.T) {
 
 func TestExpiry_DerivedFromLastActivity(t *testing.T) {
 	wallet := &mockExpWallet{user: &model.User{ID: "u1"}}
-	// No explicit expires_at; last_activity 17 months ago + 18-month inactivity
-	// rule => expiry ~1 month out => critical.
-	lastAct := time.Now().AddDate(0, -17, 0).Format("2006-01-02")
+	// No explicit expires_at; last_activity ~18 months ago (minus 10 days) +
+	// 18-month inactivity rule => expiry ~10 days out => critical. Anchoring 10
+	// days under the full 18-month window keeps the derived expiry safely below
+	// the 30-day "critical" threshold on any calendar date (month-length
+	// arithmetic alone would otherwise land right on the 30-day knife-edge).
+	lastAct := time.Now().AddDate(0, -18, 0).AddDate(0, 0, 10).Format("2006-01-02")
 	accounts := &mockExpAccounts{accounts: []model.LoyaltyAccount{
 		{ProgramSlug: "aeroplan", ProgramName: "Aeroplan", Balance: 40_000, LastActivity: &lastAct},
 	}}

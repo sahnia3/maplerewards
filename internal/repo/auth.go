@@ -239,15 +239,33 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 		return fmt.Errorf("merge user_cards: %w", err)
 	}
 
-	// Transfer spend entries
+	// Transfer spend entries. Skip rows that would collide with one the auth
+	// user already has on the idx_spend_entries_dedup UNIQUE key
+	// (user_id, card_id, category_id, spent_at, amount, COALESCE(note,'')).
+	// An unconditional UPDATE would hit that unique index and abort the whole
+	// tx, silently rolling back the merge and losing the guest's wallet
+	// (common when the guest re-imported a CSV that overlaps the account).
+	// The NOT EXISTS mirrors the index exactly (NULL-safe via COALESCE);
+	// colliding anon rows are removed by the cleanup DELETE below.
 	_, err = tx.Exec(ctx, `
-		UPDATE spend_entries SET user_id = $1 WHERE user_id = $2
+		UPDATE spend_entries SET user_id = $1
+		WHERE user_id = $2
+		AND NOT EXISTS (
+			SELECT 1 FROM spend_entries e
+			WHERE e.user_id = $1
+			  AND e.card_id = spend_entries.card_id
+			  AND e.category_id = spend_entries.category_id
+			  AND e.spent_at = spend_entries.spent_at
+			  AND e.amount = spend_entries.amount
+			  AND COALESCE(e.note, '') = COALESCE(spend_entries.note, '')
+		)
 	`, authUserID, anonUserID)
 	if err != nil {
 		return fmt.Errorf("merge spend_entries: %w", err)
 	}
 
-	// Transfer monthly spend aggregates
+	// Transfer monthly spend aggregates for buckets the auth user does NOT
+	// already have.
 	_, err = tx.Exec(ctx, `
 		UPDATE user_monthly_spend SET user_id = $1
 		WHERE user_id = $2
@@ -259,7 +277,29 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 		return fmt.Errorf("merge user_monthly_spend: %w", err)
 	}
 
-	// Transfer welcome bonus tracking
+	// Fold overlapping monthly aggregates rather than dropping them. The
+	// spend_entries above transfer in full, so a colliding bucket whose anon
+	// total is discarded would leave user_monthly_spend.total_spend lower than
+	// the sum of its own entries — under-counting caps/EV. Sum the anon
+	// bucket's total into the auth user's matching bucket; the leftover anon
+	// row is removed by the cleanup DELETE below.
+	_, err = tx.Exec(ctx, `
+		UPDATE user_monthly_spend a
+		SET total_spend = a.total_spend + x.total_spend,
+		    updated_at  = NOW()
+		FROM user_monthly_spend x
+		WHERE a.user_id = $1
+		  AND x.user_id = $2
+		  AND a.card_id = x.card_id
+		  AND a.category_id = x.category_id
+		  AND a.month = x.month
+	`, authUserID, anonUserID)
+	if err != nil {
+		return fmt.Errorf("fold user_monthly_spend: %w", err)
+	}
+
+	// Transfer welcome bonus tracking for cards the auth user does NOT already
+	// track.
 	_, err = tx.Exec(ctx, `
 		UPDATE user_card_bonuses SET user_id = $1
 		WHERE user_id = $2
@@ -267,6 +307,29 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 	`, authUserID, anonUserID)
 	if err != nil {
 		return fmt.Errorf("merge user_card_bonuses: %w", err)
+	}
+
+	// Fold overlapping welcome-bonus progress rather than dropping it. Progress
+	// is toward a single threshold, so take the GREATEST current_spend (summing
+	// would over-count a shared purchase) and recompute completion against the
+	// existing min_spend. The leftover anon row is removed by the cleanup
+	// DELETE below.
+	_, err = tx.Exec(ctx, `
+		UPDATE user_card_bonuses a
+		SET current_spend = GREATEST(a.current_spend, x.current_spend),
+		    is_completed  = (GREATEST(a.current_spend, x.current_spend) >= a.min_spend),
+		    completed_at  = CASE
+		        WHEN GREATEST(a.current_spend, x.current_spend) >= a.min_spend
+		        THEN COALESCE(a.completed_at, x.completed_at, CURRENT_DATE)
+		        ELSE NULL
+		    END
+		FROM user_card_bonuses x
+		WHERE a.user_id = $1
+		  AND x.user_id = $2
+		  AND a.card_id = x.card_id
+	`, authUserID, anonUserID)
+	if err != nil {
+		return fmt.Errorf("fold user_card_bonuses: %w", err)
 	}
 
 	// Delete remaining duplicate data for anon user. Errors here MUST be
@@ -277,6 +340,12 @@ func (r *AuthRepo) MergeAnonymousUser(ctx context.Context, authUserID, anonUserI
 	// diagnosable cause. Surface the real error so the caller can retry.
 	if _, err := tx.Exec(ctx, `DELETE FROM user_cards WHERE user_id = $1`, anonUserID); err != nil {
 		return fmt.Errorf("merge cleanup user_cards: %w", err)
+	}
+	// Remaining anon spend_entries are the rows skipped above because they
+	// collide with one the auth user already has (folded into the aggregate via
+	// the monthly-spend sum). Drop them so the anon user's data is fully gone.
+	if _, err := tx.Exec(ctx, `DELETE FROM spend_entries WHERE user_id = $1`, anonUserID); err != nil {
+		return fmt.Errorf("merge cleanup spend_entries: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM user_monthly_spend WHERE user_id = $1`, anonUserID); err != nil {
 		return fmt.Errorf("merge cleanup user_monthly_spend: %w", err)

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,16 @@ import (
 // while keeping free-tier Anthropic spend modest — the per-request token
 // budget in ai_budget.go still bounds the cost of each individual message.
 const freeChatMonthlyCap int64 = 10
+
+// chatUsageKey builds the Redis key for a free-tier user's monthly chat-message
+// counter. The month bucket is computed in UTC so this window rolls at the same
+// instant as the anon cap (anon_chat_quota.go), the provider quotas (quota pkg),
+// and the daily AI budget (ai_budget.go) — all UTC-anchored — and matches the
+// user-facing "Resets at UTC midnight" copy. Using local time here would let the
+// month boundary drift if TZ were ever configured on the container.
+func chatUsageKey(userID string) string {
+	return fmt.Sprintf("chat_usage:%s:%s", userID, time.Now().UTC().Format("2006-01"))
+}
 
 // chatRequestBody is the wire shape for /chat and /chat/stream POSTs. It
 // extends service.ChatRequest with an optional conversation_id so authenticated
@@ -112,19 +123,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isPro && h.rdb != nil && userID != "" {
-		month := time.Now().Format("2006-01")
-		key := fmt.Sprintf("chat_usage:%s:%s", userID, month)
-
-		count, err := h.rdb.Get(r.Context(), key).Int64()
-		if err != nil && err != redis.Nil {
-			// Redis error — allow the request but log
-			slog.Warn("redis get chat usage failed", "err", err, "user_id", userID)
-		}
-
-		if count >= freeChatMonthlyCap {
-			jsonErrorCode(w, "UPGRADE_REQUIRED",
-				fmt.Sprintf("Free users get %d AI messages per month. Upgrade to Pro for unlimited access.", freeChatMonthlyCap),
-				http.StatusForbidden)
+		if !checkFreeChatQuota(w, r, h.rdb, userID) {
 			return
 		}
 	}
@@ -170,18 +169,9 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Track usage for non-pro users
-	if !isPro && h.rdb != nil && userID != "" {
-		month := time.Now().Format("2006-01")
-		key := fmt.Sprintf("chat_usage:%s:%s", userID, month)
-		pipe := h.rdb.Pipeline()
-		pipe.Incr(r.Context(), key)
-		// Expire at end of next month (safety buffer)
-		pipe.Expire(r.Context(), key, 62*24*time.Hour)
-		if _, err := pipe.Exec(r.Context()); err != nil {
-			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
-		}
-	}
+	// Free-tier monthly message count is incremented atomically at the gate
+	// (checkFreeChatQuota above, INCR-first) — counting attempts, not just
+	// successful replies — so there is no separate post-response increment here.
 
 	// Consume daily token budget by ACTUAL usage when the service reports it
 	// (sum of input+output across all tool-loop rounds) — the message+reply
@@ -286,16 +276,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Pro gating — same logic as Chat() above.
 	if !isPro && h.rdb != nil && userID != "" {
-		month := time.Now().Format("2006-01")
-		key := fmt.Sprintf("chat_usage:%s:%s", userID, month)
-		count, err := h.rdb.Get(r.Context(), key).Int64()
-		if err != nil && err != redis.Nil {
-			slog.Warn("redis get chat usage failed", "err", err, "user_id", userID)
-		}
-		if count >= freeChatMonthlyCap {
-			jsonErrorCode(w, "UPGRADE_REQUIRED",
-				fmt.Sprintf("Free users get %d AI messages per month. Upgrade to Pro for unlimited access.", freeChatMonthlyCap),
-				http.StatusForbidden)
+		if !checkFreeChatQuota(w, r, h.rdb, userID) {
 			return
 		}
 	}
@@ -407,17 +388,9 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Track usage for non-pro users (only after a successful response).
-	if !isPro && h.rdb != nil && userID != "" {
-		month := time.Now().Format("2006-01")
-		key := fmt.Sprintf("chat_usage:%s:%s", userID, month)
-		pipe := h.rdb.Pipeline()
-		pipe.Incr(r.Context(), key)
-		pipe.Expire(r.Context(), key, 62*24*time.Hour)
-		if _, err := pipe.Exec(r.Context()); err != nil {
-			slog.Warn("redis incr chat usage failed", "err", err, "user_id", userID)
-		}
-	}
+	// Free-tier monthly message count is incremented atomically at the gate
+	// (checkFreeChatQuota above) — same INCR-first semantics as Chat(), so no
+	// separate post-response increment here.
 
 	// Consume daily token budget on success — by ACTUAL multi-round usage when
 	// reported, else the message+reply estimate (which under-counts tool turns).
@@ -448,6 +421,43 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// checkFreeChatQuota enforces the per-user monthly free-tier message cap using
+// an atomic INCR-first pattern (matching quota.SpendTier), closing the TOCTOU
+// race the old GET-then-compare-then-increment-later path had: N concurrent
+// requests could all observe count < cap before any increment landed and burst
+// past the cap. Now the counter is incremented up front and the returned value
+// is the authoritative count, so exactly `cap` requests are admitted.
+//
+// Returns true if the request may proceed; false if a 403 has already been
+// written. Counts attempts (INCR on entry), preserving the prior semantics.
+// Fails OPEN on a Redis error (logs + allows) — this gate guards conversion-funnel
+// generosity, not paid-API spend; the daily AIBudget (which fails closed) is the
+// real wallet backstop.
+func checkFreeChatQuota(w http.ResponseWriter, r *http.Request, rdb *redis.Client, userID string) bool {
+	key := chatUsageKey(userID)
+	count, err := rdb.Incr(r.Context(), key).Result()
+	if err != nil {
+		// Fail open: a Redis blip shouldn't wall off free users mid-month.
+		slog.Warn("redis incr chat usage failed; allowing", "err", err, "user_id", userID)
+		return true
+	}
+	// ExpireNX only sets the TTL when the key has none, so repeat calls within
+	// the month don't keep pushing the expiry out (which would let a bucket
+	// outlive its calendar month). 62-day buffer past the month boundary.
+	if err := rdb.ExpireNX(r.Context(), key, 62*24*time.Hour).Err(); err != nil {
+		slog.Warn("redis expire chat usage failed", "err", err, "user_id", userID)
+	}
+	// count is the post-increment value (this attempt included). Deny once it
+	// exceeds the cap, so exactly `freeChatMonthlyCap` messages are admitted.
+	if count > freeChatMonthlyCap {
+		jsonErrorCode(w, "UPGRADE_REQUIRED",
+			fmt.Sprintf("Free users get %d AI messages per month. Upgrade to Pro for unlimited access.", freeChatMonthlyCap),
+			http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // persistChat writes the user + assistant turn to the chat_messages table for
 // authenticated users. Anonymous users (userID == "") and missing repo are
 // silently skipped — anonymous chat is by design ephemeral.
@@ -461,24 +471,54 @@ func (h *ChatHandler) persistChat(ctx context.Context, userID string, conversati
 	}
 	convoID := conversationID
 	if convoID == 0 {
-		title := userMsg
-		if len(title) > 60 {
-			title = title[:60]
-		}
-		created, err := h.chatRepo.CreateConversation(ctx, userID, "", title)
-		if err != nil {
-			slog.Warn("chat persist: create conversation failed", "err", err, "user_id", userID)
+		convoID = h.createConversation(ctx, userID, userMsg)
+		if convoID == 0 {
 			return 0
 		}
-		convoID = created.ID
 	}
-	if err := h.chatRepo.AppendMessage(ctx, convoID, "user", userMsg); err != nil {
-		slog.Warn("chat persist: append user msg failed", "err", err, "conversation_id", convoID)
+	// AppendMessage is ownership-gated: a client-supplied conversation_id that
+	// belongs to another user (or no longer exists) returns ErrConversationNotOwned
+	// and writes nothing — this is the IDOR guard. Rather than silently dropping
+	// the user's turn, fall back to a fresh conversation so their own message and
+	// reply still persist under a thread they own. (Only meaningful when the
+	// caller supplied a non-zero conversationID; a freshly created one is always
+	// owned.)
+	if err := h.chatRepo.AppendMessage(ctx, userID, convoID, "user", userMsg); err != nil {
+		if errors.Is(err, repo.ErrConversationNotOwned) && conversationID != 0 {
+			slog.Warn("chat persist: conversation not owned by user; creating fresh thread",
+				"user_id", userID, "requested_conversation_id", conversationID)
+			convoID = h.createConversation(ctx, userID, userMsg)
+			if convoID == 0 {
+				return 0
+			}
+			if err := h.chatRepo.AppendMessage(ctx, userID, convoID, "user", userMsg); err != nil {
+				slog.Warn("chat persist: append user msg failed", "err", err, "conversation_id", convoID)
+			}
+		} else {
+			slog.Warn("chat persist: append user msg failed", "err", err, "conversation_id", convoID)
+		}
 	}
-	if err := h.chatRepo.AppendMessage(ctx, convoID, "assistant", assistantReply); err != nil {
+	if err := h.chatRepo.AppendMessage(ctx, userID, convoID, "assistant", assistantReply); err != nil {
 		slog.Warn("chat persist: append assistant msg failed", "err", err, "conversation_id", convoID)
 	}
 	return convoID
+}
+
+// createConversation creates a new conversation titled from the first message
+// (truncated to 60 chars). Returns 0 on failure (logged). Factored out so
+// persistChat can mint a fresh thread both on a zero conversation_id and on an
+// ownership-rejected append.
+func (h *ChatHandler) createConversation(ctx context.Context, userID, firstMsg string) int64 {
+	title := firstMsg
+	if len(title) > 60 {
+		title = title[:60]
+	}
+	created, err := h.chatRepo.CreateConversation(ctx, userID, "", title)
+	if err != nil {
+		slog.Warn("chat persist: create conversation failed", "err", err, "user_id", userID)
+		return 0
+	}
+	return created.ID
 }
 
 // ListConversations returns the authenticated user's chat conversation list,

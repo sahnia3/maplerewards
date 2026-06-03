@@ -114,6 +114,41 @@ func (r *IssuerPageRepo) InsertChange(ctx context.Context, pageID, summary, snip
 	return nil
 }
 
+// RecordChangeAndSnapshot atomically inserts a detected page change AND advances
+// the stored snapshot (last_hash/last_text) in a single transaction. Both writes
+// commit together or neither does. This prevents the failure mode where the
+// change row is inserted but the snapshot save fails: without atomicity the
+// stored hash never advances, so the next sweep re-detects the identical "new"
+// hash, re-inserts a duplicate change, and re-emails it in the weekly digest —
+// forever, until the snapshot finally persists.
+func (r *IssuerPageRepo) RecordChangeAndSnapshot(ctx context.Context, pageID, summary, snippet string, confidence *float64, hash, text string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin record-change tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO issuer_page_changes (page_id, diff_summary, diff_snippet, ai_confidence)
+		VALUES ($1, $2, $3, $4)
+	`, pageID, summary, snippet, confidence); err != nil {
+		return fmt.Errorf("insert issuer page change: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE issuer_pages
+		SET last_checked_at = NOW(),
+		    last_hash       = $2,
+		    last_text       = $3,
+		    check_failures  = 0
+		WHERE id = $1
+	`, pageID, hash, text); err != nil {
+		return fmt.Errorf("record issuer page snapshot: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
 // ListChangesForUserSince returns issuer-page changes that affect cards in
 // the user's wallet, detected since `since`. The join is:
 //

@@ -75,6 +75,57 @@ func TestEnrichMissedAfterDeadline(t *testing.T) {
 	}
 }
 
+func TestEnrichNotMissedOnDeadlineDay(t *testing.T) {
+	// Bug #8: a bonus whose deadline is *today* must NOT be flagged "missed".
+	// The user still has all of the deadline day to make the qualifying purchase.
+	// The boundary case (the day AFTER the deadline) must flip to "missed".
+	base := model.WelcomeBonus{
+		CardName:     "Amex Cobalt",
+		MinSpend:     3000,
+		CurrentSpend: 1000, // short of the minimum
+		ActivatedAt:  "2026-05-11",
+		DeadlineAt:   "2026-06-10",
+		DaysLeft:     1,
+		BonusPoints:  30000,
+	}
+
+	tests := []struct {
+		name          string
+		now           time.Time
+		wantNotMissed bool // true => severity must NOT be "missed"
+	}{
+		{
+			name:          "midday on the deadline date is not missed",
+			now:           time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC),
+			wantNotMissed: true,
+		},
+		{
+			name:          "one second past midnight on the deadline date is not missed",
+			now:           time.Date(2026, 6, 10, 0, 0, 1, 0, time.UTC),
+			wantNotMissed: true,
+		},
+		{
+			name:          "the day after the deadline is missed",
+			now:           time.Date(2026, 6, 11, 0, 0, 1, 0, time.UTC),
+			wantNotMissed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := enrich(base, tt.now)
+			if tt.wantNotMissed && item.Severity == "missed" {
+				t.Errorf("now=%s: severity should not be \"missed\" on/before the deadline day, got %q",
+					tt.now.Format(time.RFC3339), item.Severity)
+			}
+			if !tt.wantNotMissed && item.Severity != "missed" {
+				t.Errorf("now=%s: severity should be \"missed\" after the deadline day, got %q",
+					tt.now.Format(time.RFC3339), item.Severity)
+			}
+		})
+	}
+}
+
 func TestEnrichZeroDaysElapsed(t *testing.T) {
 	// Edge: bonus activated today. Velocity should be 0, no panic.
 	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)

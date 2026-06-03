@@ -267,6 +267,124 @@ func TestProcessBackstop_IndependentPerProvider(t *testing.T) {
 	}
 }
 
+// ── Denied calls must NOT leak the per-process backstop slot ────────────────
+//
+// Regression for the bug where reserveBackstop ran BEFORE the Redis check, so
+// every DENIED call (Redis error / expire error / over-cap) permanently burned
+// a process-lifetime slot. With a small hard cap, enough denied attempts would
+// trip the backstop and then block ALL subsequent calls — including ones a
+// fresh month's Redis budget would allow — until the process restarted.
+//
+// The fix claims the slot LAST, only on the authorized path, so these denials
+// leave processUsed untouched.
+func TestSpendTier_DeniedCalls_DoNotLeakBackstop(t *testing.T) {
+	t.Run("redis_incr_error", func(t *testing.T) {
+		resetProcessUsed()
+		defer withTempHardCap(t, "apify", 3)()
+		defer withTempCap(t, "apify", TierPro, 1_000_000)()
+
+		f := newFakeRedis()
+		f.incrFn = func(ctx context.Context, key string) (int64, error) {
+			return 0, errors.New("redis down")
+		}
+		c := newWithDoer(f)
+
+		// Many more denied attempts than the hard cap — pre-fix this trips it.
+		for i := 0; i < 10; i++ {
+			if _, exh, err := c.SpendTier(context.Background(), "apify", TierPro); err == nil || !exh {
+				t.Fatalf("attempt %d: want denied (exhausted+err) on redis error, got exhausted=%v err=%v", i, exh, err)
+			}
+		}
+		if used := processUsed["apify"].Load(); used != 0 {
+			t.Fatalf("denied redis-error calls leaked %d backstop slot(s); want 0", used)
+		}
+	})
+
+	t.Run("expire_error", func(t *testing.T) {
+		resetProcessUsed()
+		defer withTempHardCap(t, "apify", 3)()
+		defer withTempCap(t, "apify", TierPro, 1_000_000)()
+
+		f := newFakeRedis()
+		f.expireErr = errors.New("expire failed")
+		c := newWithDoer(f)
+
+		for i := 0; i < 10; i++ {
+			if _, exh, err := c.SpendTier(context.Background(), "apify", TierPro); err == nil || !exh {
+				t.Fatalf("attempt %d: want denied on expire error, got exhausted=%v err=%v", i, exh, err)
+			}
+		}
+		if used := processUsed["apify"].Load(); used != 0 {
+			t.Fatalf("denied expire-error calls leaked %d backstop slot(s); want 0", used)
+		}
+	})
+
+	t.Run("over_cap", func(t *testing.T) {
+		resetProcessUsed()
+		const monthlyCap = 2
+		defer withTempCap(t, "apify", TierPro, monthlyCap)()
+		defer withTempHardCap(t, "apify", 3)()
+
+		f := newFakeRedis()
+		c := newWithDoer(f)
+		ctx := context.Background()
+
+		// Drain the monthly cap (2 authorized calls), then hammer over-cap
+		// denials many times.
+		for i := 1; i <= monthlyCap; i++ {
+			if _, exh, err := c.SpendTier(ctx, "apify", TierPro); err != nil || exh {
+				t.Fatalf("authorized call %d: exhausted=%v err=%v", i, exh, err)
+			}
+		}
+		for i := 0; i < 10; i++ {
+			if _, exh, _ := c.SpendTier(ctx, "apify", TierPro); !exh {
+				t.Fatalf("over-cap attempt %d: want denied", i)
+			}
+		}
+		// Only the 2 authorized calls consumed a backstop slot. If over-cap
+		// denials leaked, used would be 3 (pinned at the hard cap) and the next
+		// fresh-month call would be falsely blocked.
+		if used := processUsed["apify"].Load(); used != int64(monthlyCap) {
+			t.Fatalf("backstop used=%d, want %d (over-cap denials must not consume slots)", used, monthlyCap)
+		}
+	})
+}
+
+// After the fix, the backstop counts AUTHORIZED calls exactly — denied calls
+// interleaved with allowed ones never advance the per-process counter, so the
+// hard cap is reached only after exactly that many real paid calls.
+func TestSpendTier_BackstopCountsOnlyAuthorized(t *testing.T) {
+	resetProcessUsed()
+	const hard = 4
+	defer withTempHardCap(t, "apify", hard)()
+	defer withTempCap(t, "apify", TierPro, 1_000_000)() // monthly cap effectively infinite
+
+	f := newFakeRedis()
+	// Alternate: even calls succeed (authorized), odd calls hit a redis error
+	// (denied). Denied calls must not advance the backstop.
+	authorized := 0
+	call := 0
+	f.incrFn = func(ctx context.Context, key string) (int64, error) {
+		call++
+		if call%2 == 0 {
+			return 0, errors.New("transient redis error")
+		}
+		return 1, nil // always looks like first of month → never monthly-exhausted
+	}
+	c := newWithDoer(f)
+	ctx := context.Background()
+
+	for i := 0; i < hard*10; i++ {
+		_, exh, err := c.SpendTier(ctx, "apify", TierPro)
+		if err == nil && !exh {
+			authorized++
+		}
+	}
+	if authorized != hard {
+		t.Fatalf("authorized %d calls before the hard cap, want exactly %d (denied calls must not consume the backstop)", authorized, hard)
+	}
+}
+
 // ── TierForPlan mapping ─────────────────────────────────────────────────────
 func TestTierForPlan(t *testing.T) {
 	cases := []struct {

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "@/contexts/auth-context";
+import { request } from "@/lib/api";
 
 interface SessionContextValue {
   sessionId: string | null;
@@ -20,14 +21,40 @@ interface SessionContextValue {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 const STORAGE_KEY = "maple_session_id";
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
+
+/**
+ * Reject the literal "undefined"/"null" strings (and empty/whitespace) that can
+ * end up persisted in localStorage when a bad session id is stored. JavaScript
+ * coerces an `undefined` value to the string "undefined" on `setItem`, so a
+ * single bad write would otherwise be reused forever. Treat those as missing so
+ * the caller mints a fresh session instead.
+ */
+function isValidSessionId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value !== "undefined" &&
+    value !== "null"
+  );
+}
+
+/** Read a usable session id from localStorage, or null if absent/poisoned. */
+function readStoredSession(): string | null {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (isValidSessionId(stored)) return stored;
+  // Clear a poisoned value so we don't keep re-reading it.
+  if (stored !== null) localStorage.removeItem(STORAGE_KEY);
+  return null;
+}
 
 async function createAnonymousSession(): Promise<string> {
-  const res = await fetch(`${BASE_URL}/wallet`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
-  const data: { session_id: string } = await res.json();
+  // Route through the shared `request` helper so we inherit its `res.ok` check
+  // (throws on 429/500/maintenance) plus CSRF/auth self-healing, instead of a
+  // second divergent fetch that silently accepts non-2xx responses.
+  const data = await request<{ session_id?: unknown }>("/wallet", { method: "POST" });
+  if (!isValidSessionId(data?.session_id)) {
+    throw new Error("wallet response missing session_id");
+  }
   return data.session_id;
 }
 
@@ -73,7 +100,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } else if (!isReady) {
       // ── Anonymous, initial page load ─────────────────────────────────────
       // Restore from localStorage or create a new anonymous session.
-      const stored = localStorage.getItem(STORAGE_KEY);
+      // `readStoredSession` rejects the "undefined"/"null" sentinels so a
+      // previously-poisoned value is discarded and a fresh session is minted.
+      const stored = readStoredSession();
       if (stored) {
         setSessionId(stored);
         setIsReady(true);
@@ -90,9 +119,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [user, authLoading, isReady]);
 
   const ensureSession = useCallback(async (): Promise<string> => {
-    if (sessionId) return sessionId;
+    if (isValidSessionId(sessionId)) return sessionId;
 
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = readStoredSession();
     if (stored) {
       setSessionId(stored);
       return stored;

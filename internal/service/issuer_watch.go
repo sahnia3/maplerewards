@@ -15,11 +15,23 @@ import (
 	"maplerewards/internal/repo"
 )
 
+// issuerPageStore is the slice of *repo.IssuerPageRepo that IssuerWatchService
+// depends on. Declaring it as an interface keeps the service unit-testable with
+// a mock (the concrete *repo.IssuerPageRepo satisfies it, so existing callers
+// pass it unchanged).
+type issuerPageStore interface {
+	ListActiveWithSnapshots(ctx context.Context, limit int) ([]repo.PageWithSnapshot, error)
+	RecordSnapshot(ctx context.Context, pageID, hash, text string) error
+	RecordCheckOnly(ctx context.Context, pageID string) error
+	RecordCheckFailure(ctx context.Context, pageID string) error
+	RecordChangeAndSnapshot(ctx context.Context, pageID, summary, snippet string, confidence *float64, hash, text string) error
+}
+
 // IssuerWatchService fetches each curated issuer page on a fixed cadence,
 // hashes the rendered text, diffs against the previous snapshot, and when
 // the page has changed it stores a row + an AI-summarized one-liner.
 type IssuerWatchService struct {
-	repo       *repo.IssuerPageRepo
+	repo       issuerPageStore
 	httpClient *http.Client
 	// Optional: when set, the service asks Claude to summarize what changed.
 	// When empty, the diff is stored without an AI summary (the snippet still
@@ -118,11 +130,12 @@ func (s *IssuerWatchService) probeOne(ctx context.Context, p repo.PageWithSnapsh
 		}
 	}
 
-	if err := s.repo.InsertChange(ctx, p.ID, summary, snippet, confidence); err != nil {
-		return false, fmt.Errorf("insert change: %w", err)
-	}
-	if err := s.repo.RecordSnapshot(ctx, p.ID, hash, text); err != nil {
-		return true, fmt.Errorf("record snapshot: %w", err)
+	// Insert the change row and advance the snapshot atomically. If these were
+	// two separate calls and the insert committed but the snapshot save failed,
+	// the stored hash would never advance — the next sweep would re-detect the
+	// same "new" hash, re-insert a duplicate change, and re-email it forever.
+	if err := s.repo.RecordChangeAndSnapshot(ctx, p.ID, summary, snippet, confidence, hash, text); err != nil {
+		return false, fmt.Errorf("record change and snapshot: %w", err)
 	}
 	return true, nil
 }

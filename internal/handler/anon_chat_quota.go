@@ -35,25 +35,28 @@ func checkAnonymousChatQuota(w http.ResponseWriter, r *http.Request, rdb *redis.
 	month := time.Now().UTC().Format("2006-01")
 	key := fmt.Sprintf("anon_chat_usage:%s:%s", ip, month)
 
-	count, err := rdb.Get(r.Context(), key).Int64()
-	if err != nil && err != redis.Nil {
-		fmt.Printf("warn: redis get anon chat quota: %v\n", err)
+	// Atomic INCR-first (matching quota.SpendTier) closes the TOCTOU race the
+	// old GET-then-compare-then-increment path had: N concurrent requests from
+	// one IP could all read count < cap before any increment landed and burst
+	// past the per-IP cap. The returned value already includes this attempt, so
+	// exactly anonChatMonthlyCap requests are admitted. Fails OPEN on a Redis
+	// error so an outage doesn't wedge anonymous chat for everyone.
+	count, err := rdb.Incr(r.Context(), key).Result()
+	if err != nil {
+		fmt.Printf("warn: redis incr anon chat quota: %v\n", err)
 		return true
 	}
-	if count >= anonChatMonthlyCap {
+	// ExpireNX sets the 32-day TTL only when the key has none, so repeat hits
+	// within the month don't keep pushing the expiry out (which would let a
+	// bucket outlive its calendar month). 32 days survives the month rollover.
+	if err := rdb.ExpireNX(r.Context(), key, 32*24*time.Hour).Err(); err != nil {
+		fmt.Printf("warn: redis expire anon chat quota: %v\n", err)
+	}
+	if count > anonChatMonthlyCap {
 		jsonErrorCode(w, "ANON_CHAT_LIMIT",
 			"Anonymous chat is limited. Sign in for free, or upgrade to Pro for unlimited chat.",
 			http.StatusTooManyRequests)
 		return false
-	}
-
-	pipe := rdb.Pipeline()
-	pipe.Incr(r.Context(), key)
-	// 32-day TTL so the monthly bucket survives until the calendar month
-	// rolls over, then expires on its own.
-	pipe.Expire(r.Context(), key, 32*24*time.Hour)
-	if _, err := pipe.Exec(r.Context()); err != nil {
-		fmt.Printf("warn: redis incr anon chat quota: %v\n", err)
 	}
 	return true
 }

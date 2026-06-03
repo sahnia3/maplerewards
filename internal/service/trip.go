@@ -362,6 +362,12 @@ func (s *TripService) EvaluateTrip(ctx context.Context, req model.TripRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
+	// pgx returns (nil, nil) for "no row matches" — without this guard a
+	// deleted/unknown session panics the API process when dereferencing
+	// user.ID below. Mirrors optimizer.go:88 / sqc.go:46.
+	if user == nil {
+		return nil, ErrSessionNotFound
+	}
 	userCards, err := s.walletRepo.GetUserCards(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("could not load wallet: %w", err)

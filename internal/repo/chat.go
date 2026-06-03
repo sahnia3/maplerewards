@@ -2,10 +2,19 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrConversationNotOwned is returned by AppendMessage when the target
+// conversation does not exist or is not owned by the supplied userID. It is a
+// sentinel so callers (e.g. persistChat) can distinguish an ownership rejection
+// — a client passing a stale/foreign conversation_id — from a real DB error and
+// fall back to creating a fresh conversation instead of silently dropping the
+// message.
+var ErrConversationNotOwned = errors.New("conversation not found or not owned by user")
 
 // ChatConversation is a top-level chat thread for a single authenticated
 // user. session_id is intentionally optional — it lets us tie a conversation
@@ -70,22 +79,41 @@ func (r *ChatRepo) CreateConversation(ctx context.Context, userID, sessionID, ti
 	return c, nil
 }
 
-// AppendMessage inserts a single role/content pair. Also bumps the parent
-// conversation's updated_at so list-ordering reflects activity.
-func (r *ChatRepo) AppendMessage(ctx context.Context, conversationID int64, role, content string) error {
-	// Run as one round-trip via a CTE — saves one network hop on every
-	// turn (we append 2 messages per chat round, so this is hot path).
-	_, err := r.db.Exec(ctx, `
-		WITH inserted AS (
+// AppendMessage inserts a single role/content pair and bumps the parent
+// conversation's updated_at so list-ordering reflects activity. The write is
+// gated on ownership: the message is only inserted when conversationID belongs
+// to userID. A request to append to a conversation the caller does not own (a
+// client-supplied foreign/stale conversation_id) writes nothing and returns
+// ErrConversationNotOwned — this is the cross-tenant write (IDOR) guard, since
+// the route sits behind auth only and the DB foreign key enforces referential
+// integrity but NOT ownership.
+func (r *ChatRepo) AppendMessage(ctx context.Context, userID string, conversationID int64, role, content string) error {
+	// Run as one round-trip via a CTE. The `owned` CTE selects the row only
+	// when (id, user_id) match, so both the INSERT (driven off `owned`) and the
+	// UPDATE no-op when the caller doesn't own the conversation. We key the
+	// final UPDATE off `owned` so RowsAffected() == 0 precisely means
+	// "not owned" — and the INSERT can't have fired either.
+	tag, err := r.db.Exec(ctx, `
+		WITH owned AS (
+			SELECT id FROM chat_conversations
+			 WHERE id = $1 AND user_id = $4
+		),
+		inserted AS (
 			INSERT INTO chat_messages (conversation_id, role, content)
-			VALUES ($1, $2, $3)
+			SELECT id, $2, $3 FROM owned
 			RETURNING conversation_id
 		)
 		UPDATE chat_conversations
 		   SET updated_at = now()
-		 WHERE id = $1
-	`, conversationID, role, content)
-	return err
+		 WHERE id IN (SELECT id FROM owned)
+	`, conversationID, role, content, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConversationNotOwned
+	}
+	return nil
 }
 
 // ListConversations returns the user's conversations newest-first.

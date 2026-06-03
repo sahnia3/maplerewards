@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -82,10 +83,10 @@ func TestChatRepo_AppendMessage(t *testing.T) {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 
-	if err := repo.AppendMessage(ctx, c.ID, "user", "hello"); err != nil {
+	if err := repo.AppendMessage(ctx, userID, c.ID, "user", "hello"); err != nil {
 		t.Fatalf("AppendMessage user: %v", err)
 	}
-	if err := repo.AppendMessage(ctx, c.ID, "assistant", "hi back"); err != nil {
+	if err := repo.AppendMessage(ctx, userID, c.ID, "assistant", "hi back"); err != nil {
 		t.Fatalf("AppendMessage assistant: %v", err)
 	}
 
@@ -104,8 +105,60 @@ func TestChatRepo_AppendMessage(t *testing.T) {
 	}
 
 	// AppendMessage must reject roles outside the CHECK constraint set.
-	if err := repo.AppendMessage(ctx, c.ID, "tool", "should fail"); err == nil {
+	if err := repo.AppendMessage(ctx, userID, c.ID, "tool", "should fail"); err == nil {
 		t.Error("expected CHECK constraint violation for role='tool'")
+	}
+}
+
+// TestChatRepo_AppendMessage_OwnershipGuard is the regression for the chat IDOR
+// (bug #1): a cross-tenant write must be rejected at the data layer. User A
+// must not be able to append a message — or the AI reply — into User B's
+// conversation thread, even though the route sits behind auth only and the DB
+// foreign key permits any valid conversation_id.
+func TestChatRepo_AppendMessage_OwnershipGuard(t *testing.T) {
+	pool := chatTestDB(t)
+	userB := seedTestUser(t, pool)
+	userA := seedTestUser(t, pool)
+	repo := NewChatRepo(pool)
+	ctx := context.Background()
+
+	// Conversation owned by B.
+	convoB, err := repo.CreateConversation(ctx, userB, "", "B's private thread")
+	if err != nil {
+		t.Fatalf("CreateConversation(B): %v", err)
+	}
+
+	// A tries to inject into B's conversation — must be rejected as not-owned.
+	err = repo.AppendMessage(ctx, userA, convoB.ID, "user", "injected by A")
+	if !errors.Is(err, ErrConversationNotOwned) {
+		t.Fatalf("expected ErrConversationNotOwned for cross-tenant append, got %v", err)
+	}
+
+	// Nothing must have been written into B's thread — read it back as B.
+	msgs, err := repo.GetMessages(ctx, userB, convoB.ID)
+	if err != nil {
+		t.Fatalf("GetMessages(B): %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("cross-tenant write leaked into B's thread: got %d messages, want 0", len(msgs))
+	}
+
+	// A non-existent conversation id is likewise reported as not-owned (no panic,
+	// no FK error surfacing) so callers can fall back to a fresh thread.
+	if err := repo.AppendMessage(ctx, userA, convoB.ID+9_999_999, "user", "ghost"); !errors.Is(err, ErrConversationNotOwned) {
+		t.Fatalf("expected ErrConversationNotOwned for unknown conversation id, got %v", err)
+	}
+
+	// The legitimate owner can still write to their own conversation.
+	if err := repo.AppendMessage(ctx, userB, convoB.ID, "user", "hi from B"); err != nil {
+		t.Fatalf("owner append rejected: %v", err)
+	}
+	msgs, err = repo.GetMessages(ctx, userB, convoB.ID)
+	if err != nil {
+		t.Fatalf("GetMessages(B) after owner write: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "hi from B" {
+		t.Fatalf("owner write not persisted correctly: %+v", msgs)
 	}
 }
 
@@ -140,7 +193,7 @@ func TestChatRepo_ListConversations(t *testing.T) {
 	}
 
 	// AppendMessage on the oldest should bump it to the top.
-	if err := repo.AppendMessage(ctx, ids[0], "user", "bump"); err != nil {
+	if err := repo.AppendMessage(ctx, userID, ids[0], "user", "bump"); err != nil {
 		t.Fatalf("AppendMessage: %v", err)
 	}
 	convos, err = repo.ListConversations(ctx, userID, 10)

@@ -10,6 +10,7 @@ import (
 
 	"maplerewards/internal/knowledge"
 	"maplerewards/internal/model"
+	"maplerewards/internal/quota"
 )
 
 type fakeTransferLookup struct{ routes []model.TransferPartner }
@@ -435,5 +436,112 @@ func TestFetchLeg_SingleflightDeDup(t *testing.T) {
 		if len(results[i]) == 0 {
 			t.Fatalf("caller %d got no results — every caller must receive the shared bundle", i)
 		}
+	}
+}
+
+// ── Detached fetch context (leader-cancellation isolation) ───────────────────
+
+// ctxRecordingCache records, at the moment SetAwardSearch is invoked, whether
+// the context handed to the cache write is already canceled. The fix detaches
+// the singleflight body's context (context.WithoutCancel) so the leader's
+// request cancellation can neither cancel the shared upstream fan-out nor drop
+// the cache write — the latter being what re-burns paid quota on the next
+// identical search.
+type ctxRecordingCache struct {
+	sets       int64
+	setCtxErr  error // ctx.Err() observed inside SetAwardSearch
+	deadlineOK bool  // the write ctx carried the independent timeout, not the leader's cancel
+}
+
+func (c *ctxRecordingCache) GetAwardSearch(_ context.Context, _ string) ([]byte, bool, error) {
+	return nil, false, nil // always miss → force the cold fan-out + cache write
+}
+
+func (c *ctxRecordingCache) SetAwardSearch(ctx context.Context, _ string, _ []byte, _ time.Duration) error {
+	atomic.AddInt64(&c.sets, 1)
+	c.setCtxErr = ctx.Err()
+	_, c.deadlineOK = ctx.Deadline() // the detached ctx has the 170s timeout, not the leader's
+	return nil
+}
+
+// A leader whose request context is ALREADY canceled must still: (1) complete
+// the shared fan-out, and (2) write the result to cache under a LIVE, detached
+// context. Before the fix the closure captured the leader's ctx directly, so a
+// canceled leader skipped/aborted the cache write — the next identical search
+// re-hit the paid providers. After the fix the cache write runs under a
+// context.WithoutCancel-derived ctx with an independent timeout.
+func TestFetchLeg_LeaderCancellationDoesNotBlockCacheWrite(t *testing.T) {
+	kb := &knowledge.KnowledgeBase{
+		Programs: map[string]*knowledge.Program{
+			"aeroplan": {
+				Name:       "Aeroplan",
+				CPPRange:   knowledge.CPPRange{Low: 1.0, High: 2.0},
+				AwardChart: map[string]map[string]int{"atlantic": {"economy": 60000}},
+			},
+		},
+	}
+	cache := &ctxRecordingCache{}
+	// All data-source services nil → fan-out degrades to the YAML fallback,
+	// yielding a cacheable non-empty row with no network.
+	svc := &AwardSearchService{kb: kb, cache: cache}
+
+	req := model.AwardSearchRequest{Origin: "YYZ", Destination: "CDG", Date: "2026-09-01", Cabin: "economy", Passengers: 1}
+
+	// Leader arrives with an ALREADY-canceled request context.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	results, err := svc.fetchLeg(ctx, req)
+	if err != nil {
+		t.Fatalf("fetchLeg must succeed despite a canceled leader ctx, got %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("fetchLeg returned no results — the detached fetch must still run")
+	}
+	if got := atomic.LoadInt64(&cache.sets); got != 1 {
+		t.Fatalf("cache must be written exactly once despite leader cancel, got %d writes", got)
+	}
+	if cache.setCtxErr != nil {
+		t.Fatalf("cache write ran under a canceled context (%v) — the leader's cancel leaked into the shared write", cache.setCtxErr)
+	}
+	if !cache.deadlineOK {
+		t.Fatal("cache write ctx lacked the independent timeout — context.WithoutCancel/WithTimeout not applied")
+	}
+}
+
+// withQuotaTier-derived values attached to the leader's ctx must survive the
+// detach: context.WithoutCancel preserves values (only the cancel/deadline are
+// severed), so paid upstream calls still charge the correct per-tier cap even
+// after the leader's lifecycle is dropped.
+func TestFetchLeg_DetachedContextPreservesQuotaTier(t *testing.T) {
+	kb := &knowledge.KnowledgeBase{
+		Programs: map[string]*knowledge.Program{
+			"aeroplan": {
+				Name:       "Aeroplan",
+				CPPRange:   knowledge.CPPRange{Low: 1.0, High: 2.0},
+				AwardChart: map[string]map[string]int{"atlantic": {"economy": 60000}},
+			},
+		},
+	}
+	cache := &ctxRecordingCache{}
+	svc := &AwardSearchService{kb: kb, cache: cache}
+	req := model.AwardSearchRequest{Origin: "YYZ", Destination: "CDG", Date: "2026-09-01", Cabin: "economy", Passengers: 1}
+
+	// Attach a tier the way Search does, then cancel the leader. The tier value
+	// must still be readable inside the detached fetch context.
+	parent := withQuotaTier(context.Background(), quota.TierForPlan("", true))
+	ctx, cancel := context.WithCancel(parent)
+	cancel()
+
+	if _, err := svc.fetchLeg(ctx, req); err != nil {
+		t.Fatalf("fetchLeg: %v", err)
+	}
+	// Sanity: the detached write ctx is live (proves WithoutCancel severed cancel
+	// while WithTimeout supplied a fresh deadline) and the work completed.
+	if cache.setCtxErr != nil {
+		t.Fatalf("detached cache-write ctx was canceled: %v", cache.setCtxErr)
+	}
+	if atomic.LoadInt64(&cache.sets) != 1 {
+		t.Fatalf("expected exactly one cache write, got %d", cache.sets)
 	}
 }

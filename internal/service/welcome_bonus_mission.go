@@ -28,25 +28,25 @@ func NewWelcomeBonusMissionService(walletRepo WalletRepository, bonusRepo BonusR
 // MissionItem is one card's enriched bonus state.
 type MissionItem struct {
 	model.WelcomeBonus
-	DaysElapsed         int     `json:"days_elapsed"`
-	DaysTotal           int     `json:"days_total"`
-	DailyVelocityCAD    float64 `json:"daily_velocity_cad"`     // current_spend / days_elapsed
-	RequiredDailyCAD    float64 `json:"required_daily_cad"`     // (min - current) / days_left
-	ProjectedTotalCAD   float64 `json:"projected_total_cad"`    // velocity × days_total
+	DaysElapsed           int     `json:"days_elapsed"`
+	DaysTotal             int     `json:"days_total"`
+	DailyVelocityCAD      float64 `json:"daily_velocity_cad"`      // current_spend / days_elapsed
+	RequiredDailyCAD      float64 `json:"required_daily_cad"`      // (min - current) / days_left
+	ProjectedTotalCAD     float64 `json:"projected_total_cad"`     // velocity × days_total
 	ProjectedShortfallCAD float64 `json:"projected_shortfall_cad"` // max(0, min - projected_total)
-	WillMiss            bool    `json:"will_miss"`              // projected_total < min_spend
-	WillMissByCAD       float64 `json:"will_miss_by_cad"`       // diagnostic = projected_shortfall_cad
-	Severity            string  `json:"severity"`               // "on-track" | "tight" | "critical" | "missed"
-	Recommendation      string  `json:"recommendation"`         // human-friendly action sentence
+	WillMiss              bool    `json:"will_miss"`               // projected_total < min_spend
+	WillMissByCAD         float64 `json:"will_miss_by_cad"`        // diagnostic = projected_shortfall_cad
+	Severity              string  `json:"severity"`                // "on-track" | "tight" | "critical" | "missed"
+	Recommendation        string  `json:"recommendation"`          // human-friendly action sentence
 }
 
 // MissionReport is the top-level payload — a list of active missions sorted
 // most-urgent-first plus a roll-up of total at-risk dollars and points.
 type MissionReport struct {
-	Items                []MissionItem `json:"items"`
-	TotalActive          int           `json:"total_active"`
-	TotalAtRiskPoints    int           `json:"total_at_risk_points"`
-	TotalRequiredDailyCAD float64      `json:"total_required_daily_cad"`
+	Items                 []MissionItem `json:"items"`
+	TotalActive           int           `json:"total_active"`
+	TotalAtRiskPoints     int           `json:"total_at_risk_points"`
+	TotalRequiredDailyCAD float64       `json:"total_required_daily_cad"`
 }
 
 // Compute returns the mission report for a session. Completed bonuses are
@@ -145,7 +145,12 @@ func enrich(b model.WelcomeBonus, now time.Time) MissionItem {
 
 func severityOf(b model.WelcomeBonus, projected, shortfall, required, velocity float64, now time.Time) string {
 	deadline, _ := time.Parse("2006-01-02", b.DeadlineAt)
-	if now.After(deadline) && b.CurrentSpend < b.MinSpend {
+	// The deadline is a DATE and is inclusive: the user has the entire deadline
+	// day to make the qualifying purchase. Compare calendar-date to calendar-date
+	// (TZ-safe) so a mid-day `now` on the deadline date is not treated as missed.
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	deadlineDate := time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 0, 0, 0, 0, time.UTC)
+	if nowDate.After(deadlineDate) && b.CurrentSpend < b.MinSpend {
 		return "missed"
 	}
 	if projected < b.MinSpend*0.85 {

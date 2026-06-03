@@ -322,7 +322,19 @@ func (s *AwardSearchService) fetchLeg(ctx context.Context, req model.AwardSearch
 	// one paid fan-out. fetchGroup.Do blocks the duplicates until the leader
 	// finishes, then hands them the same []AwardSearchResult.
 	v, err, shared := s.fetchGroup.Do(cacheKey, func() (interface{}, error) {
-		results, ferr := s.fetchLegFresh(ctx, req)
+		// Detached context for the shared work. singleflight runs this body
+		// under the LEADER's ctx, so without detaching, one caller navigating
+		// away (their request ctx cancels) would cancel the in-flight paid
+		// fan-out for EVERY waiting sharer, and the cache write below would be
+		// dropped — re-burning paid Apify/Seats.aero/SerpAPI quota on the next
+		// identical search. context.WithoutCancel keeps the quota-tier value
+		// set in Search (so paid calls still charge the right cap) while
+		// severing the leader's cancel/deadline; the timeout bounds the shared
+		// run independently of any single caller's lifecycle.
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 170*time.Second)
+		defer cancel()
+
+		results, ferr := s.fetchLegFresh(fetchCtx, req)
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -331,7 +343,7 @@ func (s *AwardSearchService) fetchLeg(ctx context.Context, req model.AwardSearch
 		// must not be cached as "no availability" for the whole TTL window.
 		if s.cache != nil && len(results) > 0 {
 			if payload, merr := json.Marshal(results); merr == nil {
-				if serr := s.cache.SetAwardSearch(ctx, cacheKey, payload, awardCacheTTL); serr != nil {
+				if serr := s.cache.SetAwardSearch(fetchCtx, cacheKey, payload, awardCacheTTL); serr != nil {
 					slog.Warn("[award-search] cache set failed", "err", serr)
 				}
 			}

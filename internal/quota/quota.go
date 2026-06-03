@@ -290,9 +290,12 @@ func reserveBackstop(provider string) bool {
 // This is the denial-of-wallet guarantee: a Redis outage degrades the feature,
 // it never uncaps spend.
 //
-// The atomic backstop is consulted FIRST so it bounds spend even while Redis is
-// unreachable. The backstop slot is only claimed when the call is actually
-// authorized.
+// The atomic backstop slot is claimed LAST — only after Redis has authorized
+// the call (INCR + TTL ok AND under cap). A denied call therefore never
+// consumes a backstop slot; since the per-process counter is never decremented,
+// counting denied calls would permanently leak slots and eventually trip the
+// hard cap for the whole process even when a fresh month's Redis budget would
+// allow the call.
 //
 // Call this exactly once per call that will actually be made: never for cache
 // hits, never again on a retry of an already-charged call.
@@ -312,19 +315,14 @@ func (c *Client) SpendTier(ctx context.Context, provider string, tier Tier) (rem
 		return 0, true, nil
 	}
 
-	// (1) Per-process atomic backstop — the hard, Redis-independent ceiling.
-	if !reserveBackstop(provider) {
-		return 0, true, fmt.Errorf("process hard cap reached for %s", provider)
-	}
-
-	// (2) Redis monthly per-tier counter. FAIL CLOSED on any error.
+	// (1) Redis monthly per-tier counter. FAIL CLOSED on any error.
 	key := monthKeyTier(provider, tier)
 	n, err := c.rdb.Incr(ctx, key).Result()
 	if err != nil {
 		// Deny: with no way to read the cap, allowing the call is exactly the
-		// uncapped-spend outage scenario. (The backstop slot stays claimed —
-		// being conservative on the per-process bound during an outage is
-		// correct; it resets on restart.)
+		// uncapped-spend outage scenario. The backstop slot has NOT been claimed
+		// yet, so a denied call here never burns the per-process ceiling. (An
+		// outage therefore denies calls — fail-closed — without leaking slots.)
 		return 0, true, fmt.Errorf("quota incr: %w", err)
 	}
 	// Ensure the key always carries a TTL. ExpireNX sets it only when the key
@@ -343,7 +341,21 @@ func (c *Client) SpendTier(ctx context.Context, provider string, tier Tier) (rem
 	}
 	// exhausted once the count strictly exceeds the cap: the call landing
 	// exactly ON the cap is still allowed, the next one is denied.
-	return rem, int(n) > limit, nil
+	if int(n) > limit {
+		return rem, true, nil
+	}
+
+	// (2) Per-process atomic backstop — the hard, Redis-independent ceiling.
+	// Claimed ONLY after Redis authorized the call (INCR + TTL ok AND under
+	// cap), so every denied call — Redis error, expire error, or over-cap —
+	// exits above WITHOUT consuming a slot. The counter is process-lifetime and
+	// never decremented, so counting denied attempts would permanently leak
+	// slots and eventually trip the hard cap for the whole process.
+	if !reserveBackstop(provider) {
+		return rem, true, fmt.Errorf("process hard cap reached for %s", provider)
+	}
+
+	return rem, false, nil
 }
 
 // Spend is the legacy tier-agnostic entry point, retained for callers that do
@@ -359,10 +371,6 @@ func (c *Client) Spend(ctx context.Context, provider string) (remaining int, exh
 		return 0, true, nil
 	}
 
-	if !reserveBackstop(provider) {
-		return 0, true, fmt.Errorf("process hard cap reached for %s", provider)
-	}
-
 	key := monthKey(provider)
 	n, err := c.rdb.Incr(ctx, key).Result()
 	if err != nil {
@@ -376,7 +384,18 @@ func (c *Client) Spend(ctx context.Context, provider string) (remaining int, exh
 	if rem < 0 {
 		rem = 0
 	}
-	return rem, int(n) > limit, nil
+	if int(n) > limit {
+		return rem, true, nil
+	}
+
+	// Claim the backstop slot only after Redis authorized the call (same
+	// ordering as SpendTier) so a denied call never leaks a process-lifetime
+	// slot.
+	if !reserveBackstop(provider) {
+		return rem, true, fmt.Errorf("process hard cap reached for %s", provider)
+	}
+
+	return rem, false, nil
 }
 
 // Remaining reports how many calls are left this month on the shared

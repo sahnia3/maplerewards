@@ -17,6 +17,21 @@ func NewBonusRepo(db *pgxpool.Pool) *BonusRepo {
 	return &BonusRepo{db: db}
 }
 
+// inclusiveDaysLeft returns the number of calendar days remaining until the
+// deadline, counting the deadline day itself (so a deadline of "today" yields
+// 1, not 0). Both times are normalized to their UTC calendar date first, so a
+// mid-day `now` does not truncate a fractional day off the count. The result is
+// floored at 0 once the deadline day has passed.
+func inclusiveDaysLeft(now, deadline time.Time) int {
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	deadlineDate := time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 0, 0, 0, 0, time.UTC)
+	daysLeft := int(deadlineDate.Sub(nowDate).Hours()/24) + 1
+	if daysLeft < 0 {
+		daysLeft = 0
+	}
+	return daysLeft
+}
+
 // GetUserBonuses returns all bonus tracking rows for a user, with card info and computed progress.
 func (r *BonusRepo) GetUserBonuses(ctx context.Context, userID string) ([]model.WelcomeBonus, error) {
 	rows, err := r.db.Query(ctx, `
@@ -66,13 +81,10 @@ func (r *BonusRepo) GetUserBonuses(ctx context.Context, userID string) ([]model.
 			b.Progress = math.Min(b.CurrentSpend/b.MinSpend, 1.0)
 		}
 
-		// Compute days left
+		// Compute days left (inclusive calendar-day count: the deadline day
+		// itself counts, so "deadline today" => 1 day left, not 0).
 		if !b.IsCompleted {
-			daysLeft := int(deadlineAt.Sub(now).Hours() / 24)
-			if daysLeft < 0 {
-				daysLeft = 0
-			}
-			b.DaysLeft = daysLeft
+			b.DaysLeft = inclusiveDaysLeft(now, deadlineAt)
 		}
 
 		bonuses = append(bonuses, b)
@@ -111,12 +123,7 @@ func (r *BonusRepo) ActivateBonus(ctx context.Context, userID, cardID string) (*
 		b.Progress = math.Min(b.CurrentSpend/b.MinSpend, 1.0)
 	}
 
-	now := time.Now()
-	daysLeft := int(deadlineAt.Sub(now).Hours() / 24)
-	if daysLeft < 0 {
-		daysLeft = 0
-	}
-	b.DaysLeft = daysLeft
+	b.DaysLeft = inclusiveDaysLeft(time.Now(), deadlineAt)
 
 	return &b, nil
 }
