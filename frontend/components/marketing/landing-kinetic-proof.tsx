@@ -21,7 +21,10 @@ import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-mot
  * instantly, so it scrubs smoothly instead of ping-ponging between sparse
  * keyframes. A poster gives an instant first paint and a no-decode fallback. */
 const VIDEO_SCRUB_SRC = "/landing/toronto-dolly-scrub.mp4";
-const VIDEO_LOOP_SRC = "/landing/toronto-dolly.mp4";
+// Mobile loop is a phone-sized 960x540 / faststart / no-audio encode (~0.5MB vs
+// the 7.6MB 720p master) so it starts instantly and never rebuffers mid-loop on
+// cellular. Desktop keeps the full-res scrub above.
+const VIDEO_LOOP_SRC = "/landing/toronto-dolly-mobile.mp4";
 const VIDEO_POSTER = "/landing/toronto-dolly-poster.jpg";
 const VIDEO_DURATION_SEC = 8;
 
