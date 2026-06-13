@@ -98,17 +98,25 @@ func (r *BonusRepo) ActivateBonus(ctx context.Context, userID, cardID string) (*
 	var activatedAt, deadlineAt time.Time
 
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO user_card_bonuses (user_id, card_id, deadline_at, min_spend, bonus_points)
-		SELECT $1, $2,
-			CURRENT_DATE + (c.welcome_bonus_months || ' months')::interval,
-			c.welcome_bonus_min_spend,
-			c.welcome_bonus_points
-		FROM cards c WHERE c.id = $2
-		ON CONFLICT (user_id, card_id) DO UPDATE
-			SET user_id = user_card_bonuses.user_id
-		RETURNING id, user_id, card_id, activated_at, deadline_at, min_spend, current_spend, bonus_points, is_completed
+		WITH ins AS (
+			INSERT INTO user_card_bonuses (user_id, card_id, deadline_at, min_spend, bonus_points)
+			SELECT $1, $2,
+				CURRENT_DATE + (c.welcome_bonus_months || ' months')::interval,
+				c.welcome_bonus_min_spend,
+				c.welcome_bonus_points
+			FROM cards c WHERE c.id = $2
+			ON CONFLICT (user_id, card_id) DO UPDATE
+				SET user_id = user_card_bonuses.user_id
+			RETURNING id, user_id, card_id, activated_at, deadline_at, min_spend, current_spend, bonus_points, is_completed
+		)
+		SELECT ins.id, ins.user_id, ins.card_id, c.name, c.issuer,
+		       ins.activated_at, ins.deadline_at, ins.min_spend, ins.current_spend,
+		       ins.bonus_points, ins.is_completed
+		FROM ins
+		JOIN cards c ON c.id = ins.card_id
 	`, userID, cardID).Scan(
 		&b.ID, &b.UserID, &b.CardID,
+		&b.CardName, &b.CardIssuer,
 		&activatedAt, &deadlineAt,
 		&b.MinSpend, &b.CurrentSpend, &b.BonusPoints, &b.IsCompleted,
 	)

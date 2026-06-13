@@ -1,9 +1,29 @@
 package repo
 
 import (
+	"context"
 	"testing"
 	"time"
 )
+
+// TestActivateBonus_ReturnsCardName guards P3-19: the activate response must
+// carry the joined card name so the UI never falls back to a literal "Card".
+// Skipped unless MAPLEREWARDS_TEST_DB is set.
+func TestActivateBonus_ReturnsCardName(t *testing.T) {
+	pool := chatTestDB(t)
+	userID := seedTestUser(t, pool)
+
+	b, err := NewBonusRepo(pool).ActivateBonus(context.Background(), userID, cobaltCardID)
+	if err != nil {
+		t.Fatalf("ActivateBonus: %v", err)
+	}
+	if b.CardName != "Amex Cobalt" {
+		t.Errorf("CardName = %q, want Amex Cobalt", b.CardName)
+	}
+	if b.CardIssuer == "" {
+		t.Error("CardIssuer is empty, want the joined issuer")
+	}
+}
 
 // TestInclusiveDaysLeft pins bug #10: "days left" must count the deadline day
 // itself and must not truncate a fractional day off a mid-day `now`.

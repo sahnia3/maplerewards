@@ -62,6 +62,33 @@ func (h *ApplicationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, app)
 }
 
+// UpdateStatus handles PUT /wallet/{sessionID}/applications/{applicationID}
+func (h *ApplicationHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	appID := chi.URLParam(r, "applicationID")
+	if sessionID == "" || appID == "" {
+		jsonError(w, "session_id and application_id required", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Status == "" {
+		jsonError(w, "status required", http.StatusBadRequest)
+		return
+	}
+	app, err := h.svc.UpdateStatus(r.Context(), sessionID, appID, req.Status)
+	if err != nil {
+		jsonMaskedError(w, "update-application", err, "could not update application", http.StatusBadRequest)
+		return
+	}
+	jsonOK(w, app)
+}
+
 // Delete handles DELETE /wallet/{sessionID}/applications/{applicationID}
 func (h *ApplicationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")

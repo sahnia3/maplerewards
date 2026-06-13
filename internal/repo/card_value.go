@@ -125,26 +125,129 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 		spendBasket = standardAnnualSpend
 	}
 
-	var out []model.CardValueSummary
-	for _, k := range cards {
-		s := model.CardValueSummary{CardID: k.id, CardName: k.name, AnnualFee: k.fee, Components: []model.CardValueComponent{}}
-		compRows, err := r.db.Query(ctx, `
-			SELECT component_type, annual_ev_cad, COALESCE(description,''), sort_order
-			FROM card_value_components WHERE card_id = $1 ORDER BY sort_order
-		`, k.id)
+	if len(cards) == 0 {
+		return nil, nil
+	}
+
+	// Bulk lookups — 3 constant ANY($1) queries instead of 3 per card
+	// (MR-006 N+1). The per-card EV math below is untouched; the loop just
+	// indexes into these maps instead of re-querying.
+	ids := make([]string, len(cards))
+	for i, k := range cards {
+		ids[i] = k.id
+	}
+
+	compsByCard := map[string][]model.CardValueComponent{}
+	{
+		rows, err := r.db.Query(ctx, `
+			SELECT card_id, component_type, annual_ev_cad, COALESCE(description,''), sort_order
+			FROM card_value_components WHERE card_id = ANY($1) ORDER BY card_id, sort_order
+		`, ids)
 		if err != nil {
 			return nil, err
 		}
-		for compRows.Next() {
+		for rows.Next() {
+			var cardID string
 			var c model.CardValueComponent
-			if err := compRows.Scan(&c.ComponentType, &c.AnnualEVCAD, &c.Description, &c.SortOrder); err != nil {
-				compRows.Close()
+			if err := rows.Scan(&cardID, &c.ComponentType, &c.AnnualEVCAD, &c.Description, &c.SortOrder); err != nil {
+				rows.Close()
 				return nil, err
 			}
+			compsByCard[cardID] = append(compsByCard[cardID], c)
+		}
+		rowsErr := rows.Err()
+		rows.Close()
+		if rowsErr != nil {
+			return nil, fmt.Errorf("card-value components: %w", rowsErr)
+		}
+	}
+
+	type baseInfo struct {
+		cpp        float64
+		globalType string
+	}
+	baseByCard := map[string]baseInfo{}
+	{
+		rows, err := r.db.Query(ctx, `
+			SELECT c.id, COALESCE(lp.base_cpp, 1.0),
+			       COALESCE((SELECT cm.earn_type FROM card_multipliers cm
+			                 JOIN categories cat ON cat.id = cm.category_id
+			                 WHERE cm.card_id = c.id AND cat.slug = 'everything-else'
+			                   AND cm.effective_to IS NULL LIMIT 1), 'points')
+			FROM cards c
+			JOIN loyalty_programs lp ON lp.id = c.loyalty_program_id
+			WHERE c.id = ANY($1)
+		`, ids)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			var bi baseInfo
+			if err := rows.Scan(&id, &bi.cpp, &bi.globalType); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			baseByCard[id] = bi
+		}
+		rowsErr := rows.Err()
+		rows.Close()
+		if rowsErr != nil {
+			return nil, fmt.Errorf("card-value base cpp: %w", rowsErr)
+		}
+	}
+
+	type multRow struct {
+		rate, fallback, annualCap float64
+		earnType                  string
+	}
+	multsByCard := map[string]map[string]multRow{}
+	{
+		rows, err := r.db.Query(ctx, `
+			SELECT cm.card_id, cat.slug, cm.earn_rate, cm.earn_type,
+			       COALESCE(cm.fallback_earn_rate, 1.0), cm.cap_amount, cm.cap_period
+			FROM card_multipliers cm
+			JOIN categories cat ON cat.id = cm.category_id
+			WHERE cm.card_id = ANY($1) AND cm.effective_to IS NULL
+		`, ids)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var cardID, slug, et string
+			var rate, fallback float64
+			var capAmount *float64
+			var capPeriod *string
+			if err := rows.Scan(&cardID, &slug, &rate, &et, &fallback, &capAmount, &capPeriod); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			annualCap := 0.0
+			if capAmount != nil && *capAmount > 0 {
+				annualCap = *capAmount
+				if capPeriod != nil && *capPeriod == "monthly" {
+					annualCap *= 12
+				}
+			}
+			if multsByCard[cardID] == nil {
+				multsByCard[cardID] = map[string]multRow{}
+			}
+			multsByCard[cardID][slug] = multRow{rate: rate, fallback: fallback, annualCap: annualCap, earnType: et}
+		}
+		rowsErr := rows.Err()
+		rows.Close()
+		if rowsErr != nil {
+			return nil, fmt.Errorf("card-value multipliers: %w", rowsErr)
+		}
+	}
+
+	var out []model.CardValueSummary
+	for _, k := range cards {
+		s := model.CardValueSummary{CardID: k.id, CardName: k.name, AnnualFee: k.fee, Components: []model.CardValueComponent{}}
+		for _, c := range compsByCard[k.id] {
 			s.Components = append(s.Components, c)
 			s.TotalEVCAD += c.AnnualEVCAD
 		}
-		compRows.Close()
 
 		// Earning value was MISSING for EVERY card: the 98 uncurated cards
 		// had no components at all, and the 6 curated cards carry only perk
@@ -164,58 +267,23 @@ func (r *CardValueRepo) SummaryForUserCards(ctx context.Context, userID string) 
 			}
 		}
 		if !hasEarnComponent {
-			var baseCPP float64
-			var globalType string
-			if err := r.db.QueryRow(ctx, `
-				SELECT COALESCE(lp.base_cpp, 1.0),
-				       COALESCE((SELECT cm.earn_type FROM card_multipliers cm
-				                 JOIN categories cat ON cat.id = cm.category_id
-				                 WHERE cm.card_id = c.id AND cat.slug = 'everything-else'
-				                   AND cm.effective_to IS NULL LIMIT 1), 'points')
-				FROM cards c
-				JOIN loyalty_programs lp ON lp.id = c.loyalty_program_id
-				WHERE c.id = $1
-			`, k.id).Scan(&baseCPP, &globalType); err != nil {
-				baseCPP, globalType = 1.0, "points"
+			// Missing-id fallback mirrors the old per-card QueryRow error path:
+			// default values, no error.
+			bi, ok := baseByCard[k.id]
+			if !ok {
+				bi = baseInfo{cpp: 1.0, globalType: "points"}
 			}
+			baseCPP, globalType := bi.cpp, bi.globalType
 
 			rateBySlug := map[string]float64{}
 			typeBySlug := map[string]string{}
 			fallbackBySlug := map[string]float64{}
 			capBySlug := map[string]float64{} // annual-equivalent cap in CAD spend; 0 = none
-			if mrows, err := r.db.Query(ctx, `
-				SELECT cat.slug, cm.earn_rate, cm.earn_type,
-				       COALESCE(cm.fallback_earn_rate, 1.0), cm.cap_amount, cm.cap_period
-				FROM card_multipliers cm
-				JOIN categories cat ON cat.id = cm.category_id
-				WHERE cm.card_id = $1 AND cm.effective_to IS NULL
-			`, k.id); err == nil {
-				for mrows.Next() {
-					var slug, et string
-					var rate, fallback float64
-					var capAmount *float64
-					var capPeriod *string
-					if err := mrows.Scan(&slug, &rate, &et, &fallback, &capAmount, &capPeriod); err == nil {
-						rateBySlug[slug] = rate
-						typeBySlug[slug] = et
-						fallbackBySlug[slug] = fallback
-						annualCap := 0.0
-						if capAmount != nil && *capAmount > 0 {
-							annualCap = *capAmount
-							if capPeriod != nil && *capPeriod == "monthly" {
-								annualCap *= 12
-							}
-						}
-						capBySlug[slug] = annualCap
-					}
-				}
-				rowsErr := mrows.Err()
-				mrows.Close()
-				if rowsErr != nil {
-					// A mid-iteration read error would otherwise silently yield a
-					// partial multiplier set and an under-stated EV. Surface it.
-					return nil, fmt.Errorf("card-value multipliers for %s: %w", k.id, rowsErr)
-				}
+			for slug, m := range multsByCard[k.id] {
+				rateBySlug[slug] = m.rate
+				typeBySlug[slug] = m.earnType
+				fallbackBySlug[slug] = m.fallback
+				capBySlug[slug] = m.annualCap
 			}
 			baseRate := rateBySlug["everything-else"]
 			if baseRate == 0 {

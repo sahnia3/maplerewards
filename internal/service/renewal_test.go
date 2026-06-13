@@ -103,3 +103,30 @@ func TestRenewal_Verdicts(t *testing.T) {
 		t.Errorf("expected positive potential savings, got %.2f", rep.PotentialSavings)
 	}
 }
+
+// P1-9: a quadrennial credit (e.g. $100 NEXUS every 4 years) must contribute
+// its amortized ~value/4 to the annual renewal math, not its full face value.
+func TestRenewal_QuadrennialCreditAmortized(t *testing.T) {
+	wallet := &mockRenWallet{
+		user:  &model.User{ID: "u1"},
+		cards: []model.UserCard{renUCard("c-vip", "TD Aeroplan VIP", "TD", "p1", 599)},
+	}
+	spend := &mockRenSpend{stats: &model.SpendStats{}}
+	credit := &mockRenCredit{credits: []model.CardCreditStatus{
+		{CardID: "c-vip", ValueCAD: 100, Recurrence: "quadrennial", RedeemedAmount: 0},
+		{CardID: "c-vip", ValueCAD: 200, Recurrence: "annual", RedeemedAmount: 0},
+	}}
+
+	svc := NewRenewalService(wallet, spend, credit, &mockRenCard{})
+	rep, err := svc.Assess(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("assess: %v", err)
+	}
+	if len(rep.Assessments) != 1 {
+		t.Fatalf("expected 1 assessment, got %d", len(rep.Assessments))
+	}
+	// $100 quadrennial → $25/yr, plus $200 annual = $225 (full-value bug = $300).
+	if got := rep.Assessments[0].CreditsValue; got != 225 {
+		t.Errorf("CreditsValue = %.2f, want 225 (quadrennial credit amortized to value/4)", got)
+	}
+}

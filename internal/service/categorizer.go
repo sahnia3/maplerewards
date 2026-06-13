@@ -107,8 +107,9 @@ var merchantRules = []merchantRule{
 	{"no frills", "groceries"},
 	{"superstore", "groceries"},
 	{"wholesale club", "groceries"},
-	{"shoppers", "groceries"},
-	{"shoppers drug mart", "groceries"},
+	{"shoppers", "pharmacy"},
+	{"shoppers drug mart", "pharmacy"},
+	{"pharmaprix", "pharmacy"},
 	{"costco wholesale", "groceries"},
 	{"costco gas", "gas-transit"}, // override — costco gas is gas
 	{"costco", "groceries"},

@@ -86,6 +86,26 @@ func (r *ApplicationRepo) Create(ctx context.Context, userID, cardID, appliedAt,
 	return &a, nil
 }
 
+// UpdateStatus sets the user-maintained status on one application row. The
+// user_id predicate scopes the write to the owner (same shape as Delete).
+func (r *ApplicationRepo) UpdateStatus(ctx context.Context, userID, applicationID, status string) (*CardApplication, error) {
+	row := r.db.QueryRow(ctx, `
+		UPDATE card_applications a
+		SET status = $3
+		FROM cards c
+		WHERE a.id = $1 AND a.user_id = $2 AND c.id = a.card_id
+		RETURNING a.id, a.user_id, a.card_id, c.name, c.issuer,
+		          to_char(a.applied_at, 'YYYY-MM-DD'),
+		          a.status, COALESCE(a.notes, ''), a.created_at
+	`, applicationID, userID, status)
+	var a CardApplication
+	if err := row.Scan(&a.ID, &a.UserID, &a.CardID, &a.CardName, &a.Issuer,
+		&a.AppliedAt, &a.Status, &a.Notes, &a.CreatedAt); err != nil {
+		return nil, fmt.Errorf("update application status: %w", err)
+	}
+	return &a, nil
+}
+
 func (r *ApplicationRepo) Delete(ctx context.Context, userID, applicationID string) error {
 	_, err := r.db.Exec(ctx, `
 		DELETE FROM card_applications WHERE id = $1 AND user_id = $2

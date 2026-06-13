@@ -17,8 +17,9 @@ import (
 //  2. Logs a click row (with user_id when JWT is present, anon otherwise).
 //  3. 302-redirects to the affiliate URL.
 //
-// If no affiliate_url is configured for the card, falls back to the public
-// card detail page so the user still gets a useful next step.
+// If no affiliate_url is configured for the card, responds 404 — the schema
+// stores no per-card issuer application URL to fall back to, and redirecting
+// back to the card detail page the user just clicked from is a dead loop.
 type AffiliateHandler struct {
 	repo        *repo.AffiliateRepo
 	frontendURL string
@@ -55,14 +56,12 @@ func (h *AffiliateHandler) Click(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("affiliate click log failed", "err", logErr, "card_id", cardID)
 	}
 
-	// Falling back to the card detail page when no affiliate URL is wired up
-	// keeps the CTA functional even before commercial relationships exist.
+	// No affiliate URL configured and no issuer application URL stored
+	// anywhere in the schema — a 302 back to the card page the user clicked
+	// from is a dead loop, so 404 honestly instead.
 	if url == "" {
-		fallback := h.frontendURL
-		if fallback == "" {
-			fallback = "/"
-		}
-		http.Redirect(w, r, fallback+"/cards/"+cardID, http.StatusFound)
+		slog.Warn("no affiliate or application url configured for card", "card_id", cardID)
+		http.Error(w, "no application link configured for this card", http.StatusNotFound)
 		return
 	}
 

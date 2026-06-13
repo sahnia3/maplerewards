@@ -352,6 +352,9 @@ func main() {
 	cardOfferH := handler.NewCardOfferHandler(cardOfferSvc)
 	compareH := handler.NewCompareHandler(cardRepo, transferRepo)
 
+	// Pre-launch waitlist — anonymous signup with referral tracking.
+	waitlistH := handler.NewWaitlistHandler(service.NewWaitlistService(repo.NewWaitlistRepo(pool)))
+
 	// Welcome-bonus Mission Control. Enriches the raw bonus tracker with
 	// velocity, miss-risk projection, and per-card recommendations.
 	wbMissionSvc := service.NewWelcomeBonusMissionService(walletRepo, bonusRepo)
@@ -513,6 +516,7 @@ func main() {
 			r.Post("/wallet", walletH.Create)
 			r.Post("/optimize", optimizerH.GetBestCard)
 			r.Post("/recommend", recommendH.Recommend)
+			r.Post("/waitlist", waitlistH.Join)
 		})
 
 		// ── Long-running compute (chat tool-loop + trip planner) ────────
@@ -651,6 +655,7 @@ func main() {
 			// (RBC 90d, TD 365d, BMO 90d, etc. — see issuer_rules table).
 			r.Get("/wallet/{sessionID}/applications", applicationH.List)
 			r.Post("/wallet/{sessionID}/applications", applicationH.Create)
+			r.Put("/wallet/{sessionID}/applications/{applicationID}", applicationH.UpdateStatus)
 			r.Delete("/wallet/{sessionID}/applications/{applicationID}", applicationH.Delete)
 			r.Get("/wallet/{sessionID}/cards/{cardID}/eligibility", applicationH.Eligibility)
 		})

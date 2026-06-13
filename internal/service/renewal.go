@@ -85,7 +85,7 @@ func (s *RenewalService) Assess(ctx context.Context, sessionID string) (*model.R
 			a = &creditAgg{}
 			creditByCard[cr.CardID] = a
 		}
-		a.value += cr.ValueCAD
+		a.value += annualizedCreditValue(cr.ValueCAD, cr.Recurrence)
 		a.used += cr.RedeemedAmount
 		if a.renewal == nil && cr.FeeRenewalDate != nil {
 			a.renewal = cr.FeeRenewalDate
@@ -168,6 +168,19 @@ func (s *RenewalService) Assess(ctx context.Context, sessionID string) (*model.R
 	report.TotalNetValue = renewalRound(report.TotalNetValue)
 	report.PotentialSavings = renewalRound(report.PotentialSavings)
 	return report, nil
+}
+
+// annualizedCreditValue amortizes a credit's face value over its recurrence
+// period so a quadrennial credit (e.g. $100 NEXUS every 4 years) contributes
+// ~$25/yr to the annual renewal decision instead of its full value every year.
+func annualizedCreditValue(valueCAD float64, recurrence string) float64 {
+	switch recurrence {
+	case "biennial":
+		return valueCAD / 2
+	case "quadrennial":
+		return valueCAD / 4
+	}
+	return valueCAD
 }
 
 // classifyRenewal turns the value/fee math into a verdict + plain-language reason.

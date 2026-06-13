@@ -79,6 +79,9 @@ func (s *StackService) Recommend(ctx context.Context, req model.StackRecommendRe
 			SpendAmount:  req.SpendAmount,
 		})
 		if err == nil && len(recs) > 0 {
+			recs = s.filterByNetworkAcceptance(ctx, req.SessionID, merchant, recs)
+		}
+		if err == nil && len(recs) > 0 {
 			best := recs[0]
 			rec.BestCard = &best
 			rec.Components = append(rec.Components, model.StackComponent{
@@ -158,6 +161,51 @@ func (s *StackService) Recommend(ctx context.Context, req model.StackRecommendRe
 		rec.EffectiveReturn = (rec.TotalValueCAD / req.SpendAmount) * 100
 	}
 	return rec, nil
+}
+
+// filterByNetworkAcceptance drops recommendations whose card network the
+// merchant's terminals don't accept (the merchants table's accepts_amex/
+// accepts_visa/accepts_mastercard flags) — the same constraint the optimizer
+// page enforces via merchant routing. Card networks are resolved from the
+// user's wallet; unresolvable lookups fail open so a transient wallet error
+// can't silently drop the card layer.
+func (s *StackService) filterByNetworkAcceptance(ctx context.Context, sessionID string, merchant *model.Merchant, recs []model.CardRecommendation) []model.CardRecommendation {
+	if merchant.AcceptsAmex && merchant.AcceptsVisa && merchant.AcceptsMastercard {
+		return recs
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil || user == nil {
+		return recs
+	}
+	cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
+	if err != nil {
+		return recs
+	}
+	networkByCard := make(map[string]string, len(cards))
+	for _, uc := range cards {
+		if uc.Card != nil {
+			networkByCard[uc.CardID] = uc.Card.Network
+		}
+	}
+	filtered := make([]model.CardRecommendation, 0, len(recs))
+	for _, rc := range recs {
+		switch networkByCard[rc.CardID] {
+		case "amex":
+			if !merchant.AcceptsAmex {
+				continue
+			}
+		case "visa":
+			if !merchant.AcceptsVisa {
+				continue
+			}
+		case "mastercard":
+			if !merchant.AcceptsMastercard {
+				continue
+			}
+		}
+		filtered = append(filtered, rc)
+	}
+	return filtered
 }
 
 func portalLabel(slug string) string {

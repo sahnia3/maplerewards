@@ -30,6 +30,9 @@ func (m *mockAppRepo) List(_ context.Context, _ string) ([]repo.CardApplication,
 func (m *mockAppRepo) Create(_ context.Context, _, _, _, _, _ string) (*repo.CardApplication, error) {
 	return nil, nil
 }
+func (m *mockAppRepo) UpdateStatus(_ context.Context, _, _, _ string) (*repo.CardApplication, error) {
+	return nil, nil
+}
 func (m *mockAppRepo) Delete(_ context.Context, _, _ string) error { return nil }
 func (m *mockAppRepo) ListIssuerRules(_ context.Context) ([]repo.IssuerRule, error) {
 	return m.rules, m.rulesErr
@@ -105,6 +108,23 @@ func cooldownRule(days int) repo.IssuerRule {
 }
 func maxRule(n int) repo.IssuerRule {
 	return repo.IssuerRule{Issuer: appTestIssuer, RuleType: "max_per_year", Value: n, Notes: "max note"}
+}
+
+// ── UpdateStatus ────────────────────────────────────────────────────────────
+
+// UpdateStatus must reject anything outside the user-maintained status enum
+// before the DB check constraint can fire (P2-14).
+func TestApplications_UpdateStatusValidation(t *testing.T) {
+	svc, _ := appSvc(nil, time.Time{}, 0)
+
+	if _, err := svc.UpdateStatus(context.Background(), "sess", "a1", "cancelled"); err == nil {
+		t.Error("expected error for invalid status, got nil")
+	}
+	for _, status := range []string{"pending", "approved", "declined"} {
+		if _, err := svc.UpdateStatus(context.Background(), "sess", "a1", status); err != nil {
+			t.Errorf("UpdateStatus(%q): unexpected error: %v", status, err)
+		}
+	}
 }
 
 // ── Cooldown-only ───────────────────────────────────────────────────────────

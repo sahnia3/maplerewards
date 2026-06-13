@@ -20,7 +20,8 @@ func TestCategorizeMerchant(t *testing.T) {
 		{"NETFLIX.COM", "streaming-digital"},
 		{"SPOTIFY P1234567", "streaming-digital"},
 		{"APPLE.COM/BILL", "streaming-digital"},
-		{"SHOPPERS DRUG MART #1234", "groceries"}, // PC empire — Loblaws-owned, sells groceries
+		{"SHOPPERS DRUG MART #1234", "pharmacy"}, // MCC 5912 — cards code it as drug store, not grocery
+		{"PHARMAPRIX MONTREAL", "pharmacy"},
 		{"REXALL PHARMACY 1112", "pharmacy"},
 		{"CINEPLEX ENTERTAINMENT", "entertainment"},
 		{"AIR CANADA*1234567", "travel"},

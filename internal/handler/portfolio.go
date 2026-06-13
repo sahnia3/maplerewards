@@ -335,7 +335,10 @@ func (h *PortfolioHandler) computeUtilization(ctx context.Context, userCards []m
 						}
 					}
 				}
-				effectiveReturn = mult.EarnRate * cpp / 100
+				// Percent return = earn rate × cpp (¢/$ spent), matching the
+				// optimizer's EffectiveReturn units; the cashback branch above
+				// is already in percent.
+				effectiveReturn = mult.EarnRate * cpp
 			}
 
 			if effectiveReturn > bestRate {

@@ -1,23 +1,21 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	mw "maplerewards/internal/middleware"
 	"maplerewards/internal/model"
 	"maplerewards/internal/service"
 )
 
 type BonusHandler struct {
-	walletRepo service.WalletRepository
-	bonusRepo  service.BonusRepository
+	svc *service.BonusService
 }
 
 func NewBonusHandler(walletRepo service.WalletRepository, bonusRepo service.BonusRepository) *BonusHandler {
-	return &BonusHandler{
-		walletRepo: walletRepo,
-		bonusRepo:  bonusRepo,
-	}
+	return &BonusHandler{svc: service.NewBonusService(walletRepo, bonusRepo)}
 }
 
 // ListBonuses returns all bonus tracking rows for the user.
@@ -28,14 +26,12 @@ func (h *BonusHandler) ListBonuses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.walletRepo.GetUserBySession(r.Context(), sessionID)
+	bonuses, err := h.svc.ListBonuses(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, "user not found", http.StatusNotFound)
-		return
-	}
-
-	bonuses, err := h.bonusRepo.GetUserBonuses(r.Context(), user.ID)
-	if err != nil {
+		if errors.Is(err, service.ErrSessionNotFound) {
+			jsonError(w, "user not found", http.StatusNotFound)
+			return
+		}
 		jsonInternalError(w, "bonuses.list", err)
 		return
 	}
@@ -48,6 +44,8 @@ func (h *BonusHandler) ListBonuses(w http.ResponseWriter, r *http.Request) {
 }
 
 // ActivateBonus creates or retrieves a bonus tracking row for a specific card.
+// Free tier is capped at 3 ACTIVE trackers (service.ErrBonusLimitReached →
+// 402), matching the wallet's 5-card pattern.
 func (h *BonusHandler) ActivateBonus(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 	cardID := chi.URLParam(r, "cardID")
@@ -57,14 +55,16 @@ func (h *BonusHandler) ActivateBonus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.walletRepo.GetUserBySession(r.Context(), sessionID)
+	bonus, err := h.svc.ActivateBonus(r.Context(), sessionID, cardID, mw.IsProFromContext(r.Context()))
 	if err != nil {
-		jsonError(w, "user not found", http.StatusNotFound)
-		return
-	}
-
-	bonus, err := h.bonusRepo.ActivateBonus(r.Context(), user.ID, cardID)
-	if err != nil {
+		if errors.Is(err, service.ErrBonusLimitReached) {
+			jsonError(w, "Free tier tracks up to 3 welcome bonuses — upgrade to Pro for unlimited tracking.", http.StatusPaymentRequired)
+			return
+		}
+		if errors.Is(err, service.ErrSessionNotFound) {
+			jsonError(w, "user not found", http.StatusNotFound)
+			return
+		}
 		jsonInternalError(w, "bonuses.activate", err)
 		return
 	}

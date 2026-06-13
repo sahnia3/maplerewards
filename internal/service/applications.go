@@ -16,6 +16,7 @@ import (
 type applicationRepository interface {
 	List(ctx context.Context, userID string) ([]repo.CardApplication, error)
 	Create(ctx context.Context, userID, cardID, appliedAt, status, notes string) (*repo.CardApplication, error)
+	UpdateStatus(ctx context.Context, userID, applicationID, status string) (*repo.CardApplication, error)
 	Delete(ctx context.Context, userID, applicationID string) error
 	ListIssuerRules(ctx context.Context) ([]repo.IssuerRule, error)
 	LastApplicationForIssuer(ctx context.Context, userID, issuer string) (time.Time, error)
@@ -224,6 +225,25 @@ func (s *ApplicationService) Record(ctx context.Context, sessionID, cardID, appl
 		return nil, fmt.Errorf("session not found")
 	}
 	return s.appRepo.Create(ctx, user.ID, cardID, appliedAt, status, notes)
+}
+
+// UpdateStatus transitions an application's user-maintained status
+// (pending → approved/declined). Validated here so user input never trips
+// the DB check constraint.
+func (s *ApplicationService) UpdateStatus(ctx context.Context, sessionID, applicationID, status string) (*repo.CardApplication, error) {
+	switch status {
+	case "pending", "approved", "declined":
+	default:
+		return nil, fmt.Errorf("status must be pending, approved, or declined")
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
+	return s.appRepo.UpdateStatus(ctx, user.ID, applicationID, status)
 }
 
 func (s *ApplicationService) Delete(ctx context.Context, sessionID, applicationID string) error {
