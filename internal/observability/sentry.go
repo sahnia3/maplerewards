@@ -72,10 +72,17 @@ func NewReporter(cfg Config) Reporter {
 
 // ── Default singleton ───────────────────────────────────────────────────────
 
-var defaultReporter atomic.Value // holds Reporter
+var defaultReporter atomic.Value // holds reporterHolder
+
+// reporterHolder pins a single concrete type inside the atomic.Value. Storing
+// the Reporter interface directly stores its DYNAMIC type, so the init-time
+// NoopReporter and a later *sentryReporter are different concrete types —
+// atomic.Value panics ("store of inconsistently typed value") on the second
+// Store. Wrapping every value in the same struct keeps the concrete type stable.
+type reporterHolder struct{ r Reporter }
 
 func init() {
-	defaultReporter.Store(Reporter(NoopReporter{}))
+	defaultReporter.Store(reporterHolder{r: NoopReporter{}})
 }
 
 // SetDefault installs the package-level reporter. Call once at boot.
@@ -83,17 +90,17 @@ func SetDefault(r Reporter) {
 	if r == nil {
 		r = NoopReporter{}
 	}
-	defaultReporter.Store(r)
+	defaultReporter.Store(reporterHolder{r: r})
 }
 
 // Default returns the currently installed reporter. Safe to call before
 // SetDefault — returns NoopReporter until configured.
 func Default() Reporter {
-	r, _ := defaultReporter.Load().(Reporter)
-	if r == nil {
+	h, _ := defaultReporter.Load().(reporterHolder)
+	if h.r == nil {
 		return NoopReporter{}
 	}
-	return r
+	return h.r
 }
 
 // ── Noop reporter ───────────────────────────────────────────────────────────
