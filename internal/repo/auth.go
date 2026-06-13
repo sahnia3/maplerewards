@@ -169,13 +169,22 @@ func (r *AuthRepo) CreateAuthUser(ctx context.Context, email, passwordHash, disp
 
 func (r *AuthRepo) UpsertGoogleUser(ctx context.Context, googleID, email, displayName, sessionID string) (*model.User, error) {
 	var u model.User
+	// Conflict on EMAIL, not google_id. A Google login whose verified email
+	// already belongs to an existing (password or prior) account must LINK to
+	// that account, not blind-INSERT and trip the email UNIQUE constraint — that
+	// was a hard 500 for every pre-existing user who clicked "Continue with
+	// Google". The email is Google-verified upstream (verifyGoogleIDToken fails
+	// closed on email_verified), so auto-linking is safe. COALESCE keeps an
+	// already-set google_id and never blanks an existing display_name; deleted
+	// accounts have their email scrambled (see DeleteUser) so they can't be
+	// resurrected through this conflict.
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO users (google_id, email, display_name, session_id, auth_provider, updated_at)
-		VALUES ($1, NULLIF($2, ''), $3, $4, 'google', NOW())
-		ON CONFLICT (google_id) DO UPDATE SET
-			email = COALESCE(EXCLUDED.email, users.email),
-			display_name = COALESCE(EXCLUDED.display_name, users.display_name),
-			updated_at = NOW()
+		VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, 'google', NOW())
+		ON CONFLICT (email) DO UPDATE SET
+			google_id    = COALESCE(users.google_id, EXCLUDED.google_id),
+			display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), users.display_name),
+			updated_at   = NOW()
 		RETURNING id, email, session_id, password_hash, google_id, display_name,
 		          is_pro, plan, auth_provider, stripe_customer_id, created_at, updated_at
 	`, googleID, email, displayName, sessionID).Scan(

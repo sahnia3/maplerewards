@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
@@ -34,9 +35,12 @@ type PushPayload struct {
 // a no-op stub (logs the payload only). Use the same RESEND_API_KEY-style
 // gating so the production path is "set the secrets, behavior flips".
 func NewPusherFromEnv() Pusher {
-	pub := os.Getenv("VAPID_PUBLIC_KEY")
-	priv := os.Getenv("VAPID_PRIVATE_KEY")
-	subject := os.Getenv("VAPID_SUBJECT") // mailto:hello@maplerewards.app
+	// Trim whitespace and stray surrounding quotes — a secrets-manager value
+	// like VAPID_PRIVATE_KEY="..." would otherwise be stored with the quotes and
+	// fail every send while IsAvailable() still reported true.
+	pub := strings.Trim(strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")), `"'`)
+	priv := strings.Trim(strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")), `"'`)
+	subject := strings.TrimSpace(os.Getenv("VAPID_SUBJECT")) // mailto:hello@maplerewards.app
 
 	if pub == "" || priv == "" {
 		return &LogPusher{}

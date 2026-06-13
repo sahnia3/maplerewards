@@ -67,14 +67,14 @@ func NewAIService(
 	// Model is env-overridable so we can A/B against Haiku 4.5 for cost
 	// or move to a future Sonnet revision without a redeploy. Default
 	// stays on the most recent Sonnet alias Anthropic supports.
-	modelID := os.Getenv("ANTHROPIC_MODEL")
+	modelID := strings.TrimSpace(os.Getenv("ANTHROPIC_MODEL"))
 	if modelID == "" {
 		modelID = "claude-sonnet-4-6"
 	}
 	// Cheap model for simple turns. Env-overridable so the routing can be
 	// disabled (set ANTHROPIC_FAST_MODEL == ANTHROPIC_MODEL) or retargeted
 	// without a redeploy.
-	fastModelID := os.Getenv("ANTHROPIC_FAST_MODEL")
+	fastModelID := strings.TrimSpace(os.Getenv("ANTHROPIC_FAST_MODEL"))
 	if fastModelID == "" {
 		fastModelID = "claude-haiku-4-5-20251001"
 	}

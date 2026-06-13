@@ -40,7 +40,7 @@ type PromoSentinelService struct {
 }
 
 func NewPromoSentinelService(tavily *TavilyService, bonusRepo *repo.TransferBonusRepo, anthropicAPIKey string) *PromoSentinelService {
-	model := os.Getenv("ANTHROPIC_MODEL")
+	model := strings.TrimSpace(os.Getenv("ANTHROPIC_MODEL"))
 	if model == "" {
 		model = "claude-sonnet-4-6"
 	}

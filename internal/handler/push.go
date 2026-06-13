@@ -149,8 +149,12 @@ func (h *PushHandler) Test(w http.ResponseWriter, r *http.Request) {
 // calls PushManager.subscribe(). Intentionally unauthenticated — the
 // public key is public. Frontend treats an empty string as "push disabled".
 func (h *PushHandler) PublicVAPIDKey(w http.ResponseWriter, r *http.Request) {
+	// Trim whitespace and stray surrounding quotes so a secrets-manager value
+	// like VAPID_PUBLIC_KEY="BNc..." never reaches the browser, where atob()
+	// throws on the quotes and silently breaks push enrollment.
+	key := strings.Trim(strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")), `"'`)
 	jsonOK(w, map[string]string{
-		"public_key": os.Getenv("VAPID_PUBLIC_KEY"),
+		"public_key": key,
 	})
 }
 
