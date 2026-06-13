@@ -13,6 +13,7 @@ import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types
 import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
 import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proof";
+import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { Counter } from "@/components/editorial/counter";
 import { Term } from "@/components/term";
 import { HomeTour } from "@/components/home-tour";
@@ -65,11 +66,23 @@ export default function HomePage() {
   const router = useRouter();
   const { sessionId, isReady } = useSession();
   const { wallet, isLoading: walletLoading } = useWallet();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isPro } = useAuth();
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
   const [recentSpend, setRecentSpend] = useState<SpendEntry[]>([]);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const redirectedRef = useRef(false);
+
+  // Referral code from a shared waitlist link (/?ref=CODE). Read from
+  // window.location instead of useSearchParams so the page needs no
+  // Suspense boundary. Lazy initializer, not an effect: the value never
+  // affects rendered DOM (it only rides along in the waitlist POST body),
+  // so the server/client initial-value difference can't cause a hydration
+  // mismatch.
+  const [waitlistRef] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("ref") ?? "",
+  );
 
   // Redirect AUTHENTICATED users with an empty wallet to onboarding.
   // Unauthenticated visitors stay on this page and see the marketing landing — no auto-redirect.
@@ -82,12 +95,18 @@ export default function HomePage() {
   }, [isReady, walletLoading, wallet.length, isAuthenticated, router]);
 
   const loadDashboardData = useCallback(async () => {
-    if (!isReady || !sessionId) return;
+    // Authenticated wallets only — anonymous visitors have a session id but
+    // no auth, so these calls would just 401 in the console (P2-1).
+    if (!isReady || !isAuthenticated || !sessionId) return;
     try {
       const [summary, spend, missedReport] = await Promise.all([
         getWalletSummary(sessionId),
         getSpendHistory(sessionId, 5, 0).catch(() => []),
-        getMissedRewards(sessionId, { sinceDays: 90, top: 1 }).catch(() => null),
+        // Missed-rewards is Pro-gated server-side; skip the guaranteed-402
+        // request for free users and let the existing missed=null fallback run.
+        isPro
+          ? getMissedRewards(sessionId, { sinceDays: 90, top: 1 }).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setWalletSummary(summary);
       setRecentSpend(spend ?? []);
@@ -95,7 +114,7 @@ export default function HomePage() {
     } catch {
       setWalletSummary(null);
     }
-  }, [isReady, sessionId]);
+  }, [isReady, isAuthenticated, isPro, sessionId]);
 
   useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
 
@@ -235,8 +254,8 @@ export default function HomePage() {
                 borderBottom: "1px solid var(--rule)",
               }}
             >
-              <Stat label="Cards modelled" value="104" />
-              <Stat label="Loyalty programs" value="28" />
+              <Stat label="Cards modelled" value="94" />
+              <Stat label="Loyalty programs" value="41" />
               <Stat label="Transfer routes" value="20+" />
             </div>
           </div>
@@ -253,34 +272,60 @@ export default function HomePage() {
            * number IS the visual; no illustration needed. */}
         <LandingKineticProof />
 
-        {/* Social proof + origin note */}
+        {/* Early-access recruitment — honest beta framing, no invented quotes */}
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px clamp(20px, 4vw, 60px) 80px" }}>
-          {/* Social proof — short quotes from Canadian users */}
           <div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
-              <span className="eyebrow" style={{ color: "var(--accent)" }}>From the wallet</span>
+              <span className="eyebrow" style={{ color: "var(--accent)" }}>Early access</span>
               <span style={{ flex: 1, height: 1, background: "var(--rule)", maxWidth: 80 }} />
               <span className="eyebrow">
-                Early beta · two of two
+                Beta · now open
               </span>
             </div>
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                gap: 16,
+                padding: "22px 22px",
+                border: "1px solid var(--rule)",
+                borderRadius: 14,
+                background: "var(--card-fill)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
               }}
             >
-              <QuoteCard
-                quote="Finally something that handles the Cobalt-to-Aeroplan transfer the way I actually use it. The optimizer just knows."
-                name="Anne D."
-                location="Montréal"
-              />
-              <QuoteCard
-                quote="I'd been guessing for years. Now I tap a category and use the card that wins. The SQC tracker is the reason I'll pay for Pro."
-                name="Sam K."
-                location="Vancouver"
-              />
+              <h2
+                className="display"
+                style={{ margin: 0, fontSize: "clamp(24px, 2.6vw, 32px)", lineHeight: 1.1 }}
+              >
+                Be one of the <span style={{ fontStyle: "italic", color: "var(--accent)" }}>first</span> wallets.
+              </h2>
+              <p
+                className="serif"
+                style={{ margin: 0, fontSize: 15, color: "var(--ink-2)", lineHeight: 1.5, maxWidth: 640 }}
+              >
+                Maple is in early beta — no testimonials yet, because we&rsquo;d rather earn
+                them. Add your cards, run your real spend through the optimizer, and tell us
+                where the math falls short.
+              </p>
+              <WaitlistForm source="homepage" refCode={waitlistRef} />
+              <Link
+                href="/onboarding"
+                className="mono"
+                style={{
+                  alignSelf: "flex-start",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontSize: 11,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--accent)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                Or try Maple free now →
+              </Link>
             </div>
           </div>
 
@@ -295,9 +340,9 @@ export default function HomePage() {
               maxWidth: 720,
             }}
           >
-            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 10 }}>
+            <h2 className="eyebrow" style={{ color: "var(--accent)", margin: "0 0 10px" }}>
               Built in Canada
-            </div>
+            </h2>
             <p
               className="serif"
               style={{
@@ -314,6 +359,46 @@ export default function HomePage() {
             </p>
           </aside>
         </div>
+
+        {/* Slim marketing footer — the only path to /terms before signup */}
+        <footer style={{ maxWidth: 1280, margin: "0 auto", padding: "0 clamp(20px, 4vw, 60px) 40px" }}>
+          <div
+            style={{
+              borderTop: "1px solid var(--rule)",
+              paddingTop: 20,
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <span className="eyebrow">Maple Rewards · Canada</span>
+            <nav aria-label="Footer" style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
+              {[
+                ["Privacy", "/privacy"],
+                ["Terms", "/terms"],
+                ["Pricing", "/pricing"],
+                ["Tools", "/tools"],
+              ].map(([label, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--ink-2)",
+                    textDecoration: "none",
+                  }}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </footer>
 
         <style>{`
           @media (max-width: 900px) {
@@ -375,7 +460,7 @@ export default function HomePage() {
                 <div className="display home-stat-num">
                   $<Counter value={Math.round(totalValue)} />
                 </div>
-                <div className="mono home-stat-sub">CAD · est. high</div>
+                <div className="mono home-stat-sub">CAD · est. high (sweet-spot CPP)</div>
               </div>
               <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Points</div>
@@ -535,45 +620,5 @@ function Stat({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
-  );
-}
-
-function QuoteCard({ quote, name, location }: { quote: string; name: string; location: string }) {
-  return (
-    <figure
-      style={{
-        margin: 0,
-        padding: "22px 22px",
-        border: "1px solid var(--rule)",
-        borderRadius: 14,
-        background: "var(--card-fill)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-      }}
-    >
-      <blockquote
-        className="serif"
-        style={{
-          margin: 0,
-          fontSize: 15,
-          color: "var(--ink)",
-          lineHeight: 1.5,
-        }}
-      >
-        &ldquo;{quote}&rdquo;
-      </blockquote>
-      <figcaption
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: "var(--ink-3)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
-        {name} · {location}
-      </figcaption>
-    </figure>
   );
 }

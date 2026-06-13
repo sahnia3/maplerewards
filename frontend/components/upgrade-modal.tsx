@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { X, Sparkles } from "lucide-react";
 
 interface UpgradeModalProps {
   open: boolean;
   onClose: () => void;
+  /** Server-provided upsell message (e.g. the 402 free-tier limit copy). */
+  message?: string;
 }
 
-export function UpgradeModal({ open, onClose }: UpgradeModalProps) {
+export function UpgradeModal({ open, onClose, message }: UpgradeModalProps) {
   if (!open) return null;
 
   return (
@@ -49,25 +52,32 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps) {
         </div>
 
         <h2 className="text-[18px] font-bold text-white mb-2">
-          Pro is Coming Soon!
+          Upgrade to Pro
         </h2>
         <p
           className="text-[14px] leading-relaxed mb-6"
           style={{ color: "var(--text-secondary)" }}
         >
-          Payment processing is being set up. During beta, all Pro features are
-          available for free. Enjoy!
+          {message ??
+            "Free includes 5 wallet cards. Pro unlocks unlimited cards, missed-rewards forensics, and the full tool suite."}
         </p>
 
-        <button
-          onClick={onClose}
-          className="w-full h-11 rounded-xl font-semibold text-[14px] text-black transition-all hover:scale-[1.01] active:scale-[0.99]"
+        <Link
+          href="/pricing?tier=pro"
+          className="flex w-full h-11 rounded-xl font-semibold text-[14px] text-black items-center justify-center transition-all hover:scale-[1.01] active:scale-[0.99]"
           style={{
             background: "linear-gradient(135deg, var(--accent), var(--accent-2, #74131D))",
             boxShadow: "0 4px 20px rgba(165,31,45,0.3)",
           }}
         >
-          Got it!
+          See Pro — $39.99/yr
+        </Link>
+        <button
+          onClick={onClose}
+          className="w-full mt-3 text-[12px] transition-colors"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          Not now
         </button>
       </div>
     </div>

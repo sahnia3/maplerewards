@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/wallet-context";
-import { listCards } from "@/lib/api";
+import { ApiError, listCards } from "@/lib/api";
 import type { Card, UserCard } from "@/lib/types";
 import { CardEditModal } from "@/components/cards/card-edit-modal";
+import { UpgradeModal } from "@/components/upgrade-modal";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
 import { HeadToHeadPicker } from "@/components/cards/head-to-head-picker";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -36,6 +37,9 @@ export default function CardsPage() {
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [editingCard, setEditingCard] = useState<UserCard | null>(null);
   const [filter, setFilter] = useState<Filter>({});
+  const [search, setSearch] = useState("");
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,8 +57,13 @@ export default function CardsPage() {
     try {
       await addCard(cardId);
       setAddedIds((prev) => new Set([...prev, cardId]));
-    } catch {
-      /* noop */
+    } catch (err) {
+      // Free tier hit the 5-card wall (402) — surface the server's upsell
+      // message instead of silently reverting the button.
+      if (err instanceof ApiError && err.status === 402) {
+        setLimitError(err.message);
+        setUpgradeOpen(true);
+      }
     } finally {
       setAddingCardId(null);
     }
@@ -71,7 +80,15 @@ export default function CardsPage() {
   }, [allCards]);
 
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return allCards.filter((c) => {
+      if (
+        q &&
+        !c.name.toLowerCase().includes(q) &&
+        !c.issuer.toLowerCase().includes(q) &&
+        !(c.loyalty_program?.name.toLowerCase().includes(q) ?? false)
+      )
+        return false;
       if (filter.network && c.network !== filter.network) return false;
       if (filter.issuer && c.issuer !== filter.issuer) return false;
       if (filter.feeTier === "free" && c.annual_fee !== 0) return false;
@@ -79,7 +96,7 @@ export default function CardsPage() {
       if (filter.feeTier === "premium" && c.annual_fee < 150) return false;
       return true;
     });
-  }, [allCards, filter]);
+  }, [allCards, filter, search]);
 
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
@@ -273,6 +290,68 @@ export default function CardsPage() {
             </span>
           </div>
 
+          {limitError && (
+            <div
+              role="alert"
+              style={{
+                border: "1px solid var(--accent)",
+                borderLeft: "3px solid var(--accent)",
+                borderRadius: 12,
+                padding: "14px 18px",
+                background: "var(--card-fill)",
+                marginBottom: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 14, margin: 0, lineHeight: 1.45 }}>
+                {limitError}
+              </p>
+              <Link
+                href="/pricing"
+                className="mono"
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: 8,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Upgrade to Pro →
+              </Link>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 12 }}>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by card, issuer, or program (e.g. Cobalt, RBC, Aeroplan)"
+              aria-label="Search cards"
+              style={{
+                width: "100%",
+                maxWidth: 460,
+                padding: "11px 16px",
+                borderRadius: 10,
+                border: "1px solid var(--rule-strong)",
+                background: "var(--surface)",
+                color: "var(--ink)",
+                fontSize: 14,
+                outline: "none",
+              }}
+            />
+          </div>
+
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
             {/* Network */}
             <FilterChip
@@ -396,6 +475,12 @@ export default function CardsPage() {
             onClose={() => setEditingCard(null)}
           />
         )}
+
+        <UpgradeModal
+          open={upgradeOpen}
+          onClose={() => setUpgradeOpen(false)}
+          message={limitError ?? undefined}
+        />
       </div>
     </div>
   );

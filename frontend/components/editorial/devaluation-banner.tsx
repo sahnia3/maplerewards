@@ -6,6 +6,7 @@ import {
   getAeroplanJune2026Projection,
   type AeroplanProjection,
 } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
 /**
  * DevaluationBanner — Aeroplan June 1 2026 chart-hike urgency.
@@ -19,23 +20,26 @@ import {
  * the editorial system already shipped in /wallet and /insights.
  */
 export function DevaluationBanner({ sessionId }: { sessionId: string }) {
+  const { isPro } = useAuth();
   const [data, setData] = useState<AeroplanProjection | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!sessionId) return;
+    // Pro-only endpoint: skip the request entirely for free users instead of
+    // collecting a guaranteed 402 console error on every page load.
+    if (!sessionId || !isPro) return;
     let cancelled = false;
     getAeroplanJune2026Projection(sessionId)
       .then((d) => {
         if (!cancelled) setData(d);
       })
       .catch(() => {
-        // Free users get 402 here; silent-fail keeps the page clean.
+        // Transient failure — banner stays hidden.
       });
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, isPro]);
 
   // Render gate: hide once dismissed, once the hike is more than a week old,
   // or when the user has no exposure (zero Aeroplan balance).

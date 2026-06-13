@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Scale } from "lucide-react";
-import { listCategories, optimize } from "@/lib/api";
+import { ApiError, listCategories, optimize } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
+import { useAuth } from "@/contexts/auth-context";
+import { useWallet } from "@/contexts/wallet-context";
 import { AnimatedSection } from "@/components/ui/animated-list";
 import { SkeletonChart } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,12 +18,16 @@ function fmtCAD(v: number) { return Number.isFinite(v) ? `$${v.toFixed(2)}` : "�
 
 export default function ComparePage() {
   const { ensureSession } = useSession();
+  const { isAuthenticated } = useAuth();
+  const { wallet, isLoading: walletLoading } = useWallet();
   const [categories, setCategories] = useState<Category[]>([]);
   const [spendAmounts, setSpendAmounts] = useState<Record<string, string>>({});
   const [segment, setSegment] = useState<"base" | "business">("base");
   const [results, setResults] = useState<Record<string, CardRecommendation[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletEmpty, setWalletEmpty] = useState(false);
+  const [stale, setStale] = useState(false);
   const [catLoading, setCatLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +48,14 @@ export default function ComparePage() {
 
   async function handleCompare() {
     setError(null);
+    setWalletEmpty(false);
+    setStale(false);
+    // Known-empty wallet: every category request would 400 with WALLET_EMPTY
+    // (14 doomed POSTs + console errors). Show the empty state directly.
+    if (!walletLoading && wallet.length === 0) {
+      setWalletEmpty(true);
+      return;
+    }
     setLoading(true);
     setResults({});
     try {
@@ -57,14 +72,21 @@ export default function ComparePage() {
               redemption_segment: segment,
             });
             return [cat.slug, recs] as [string, CardRecommendation[]];
-          } catch {
+          } catch (err) {
+            // Empty wallet fails every category identically — surface it once
+            // as a real empty state instead of a silent blank table.
+            if (err instanceof ApiError && err.code === "WALLET_EMPTY") throw err;
             return [cat.slug, []] as [string, CardRecommendation[]];
           }
         })
       );
       setResults(Object.fromEntries(entries));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      if (err instanceof ApiError && err.code === "WALLET_EMPTY") {
+        setWalletEmpty(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      }
     } finally {
       setLoading(false);
     }
@@ -167,7 +189,12 @@ export default function ComparePage() {
                 >
                   {(["base", "business"] as const).map((seg) => (
                     <button
-                      key={seg} type="button" onClick={() => setSegment(seg)}
+                      key={seg} type="button"
+                      onClick={() => {
+                        if (seg === segment) return;
+                        setSegment(seg);
+                        if (hasResults) setStale(true);
+                      }}
                       className="mono"
                       style={{
                         padding: "6px 14px",
@@ -221,8 +248,63 @@ export default function ComparePage() {
           </div>
         )}
 
+        {/* Wallet-empty state — the optimizer 400s with WALLET_EMPTY for every
+            category, so there is nothing to compare until cards exist. */}
+        {walletEmpty && !loading && (
+          <AnimatedSection delay={0.1}>
+            <div
+              style={{
+                padding: "48px 32px",
+                textAlign: "center",
+                border: "1px dashed var(--rule-strong)",
+                borderRadius: 14,
+                background: "var(--card-fill)",
+              }}
+            >
+              <span className="eyebrow">Empty wallet</span>
+              <h3 className="display" style={{ fontSize: 28, margin: "8px 0 6px" }}>
+                Nothing to compare yet.
+              </h3>
+              <p
+                className="serif"
+                style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink-2)", maxWidth: 420, marginInline: "auto", marginBottom: 20, lineHeight: 1.4 }}
+              >
+                Comparison runs against the cards in your wallet. Add the cards you
+                carry and run it again.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                <Link href="/wallet" className="btn btn-primary" style={{ fontSize: 13 }}>
+                  Add cards →
+                </Link>
+                {!isAuthenticated && (
+                  <Link
+                    href="/login?redirect=/compare"
+                    className="mono"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "0 18px",
+                      height: 40,
+                      borderRadius: 10,
+                      border: "1px solid var(--rule-strong)",
+                      color: "var(--ink-2)",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            </div>
+          </AnimatedSection>
+        )}
+
         {/* Empty state */}
-        {!hasResults && !loading && (
+        {!hasResults && !walletEmpty && !loading && (
           <AnimatedSection delay={0.1}>
             <EmptyState
               icon={Scale}
@@ -232,12 +314,34 @@ export default function ComparePage() {
           </AnimatedSection>
         )}
 
+        {/* Stale notice — segment changed after the last run */}
+        {stale && hasResults && !loading && (
+          <div
+            role="status"
+            className="mono"
+            style={{
+              marginBottom: 14,
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--rule-strong)",
+              background: "var(--card-fill)",
+              fontSize: 11,
+              color: "var(--ink-2)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Redemption changed — results below are for the previous setting. Hit
+            &ldquo;Compare all categories&rdquo; to recompute.
+          </div>
+        )}
+
         {/* Best card per category summary */}
         <AnimatePresence>
           {bestPerCategory.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
+              animate={{ opacity: stale ? 0.55 : 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 position: "relative",
@@ -308,7 +412,7 @@ export default function ComparePage() {
           {hasResults && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
+              animate={{ opacity: stale ? 0.55 : 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
               className="overflow-x-auto"
               style={{

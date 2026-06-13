@@ -153,7 +153,7 @@ export const TIER_GROUPS: TierGroup[] = [
     features: [
       { name: "Card catalog",                  free: true,              pro: true },
       { name: "Card comparison",               free: true,              pro: true },
-      { name: "Welcome bonus tracking",        free: true,              pro: true },
+      { name: "Welcome bonus tracking",        free: "Up to 3",         pro: "Unlimited" },
       { name: "Feed & articles",               free: true,              pro: true },
     ],
   },

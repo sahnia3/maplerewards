@@ -81,7 +81,8 @@ export function ProFOMOStrip() {
             </>
           )}
           <span style={{ color: "var(--ink-3)" }}>
-            Pro shows you which ones touch your wallet and the exact dollar exposure.
+            Loyalty programs devalue and issuers change terms all year — Pro shows
+            you which changes touch your wallet and the exact dollar exposure.
           </span>
         </div>
       </div>

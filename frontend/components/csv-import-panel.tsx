@@ -149,7 +149,12 @@ export function CSVImportPanel() {
           id="mr-csv-input"
           type="file"
           accept=".csv,text/csv"
-          onChange={(e) => handleFile(e.target.files?.[0])}
+          onChange={(e) => {
+            handleFile(e.target.files?.[0]);
+            // Reset so picking the same file again (e.g. right after a commit)
+            // still fires a change event.
+            e.target.value = "";
+          }}
           style={{ display: "none" }}
         />
       </label>
@@ -296,8 +301,14 @@ export function CSVImportPanel() {
           className="serif"
         >
           <Check size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
-          Imported {done.created} transactions{done.error ? ` (then errored: ${done.error})` : ""}.
-          Visit Pro Tools → Missed-rewards forensics to see the report.
+          {done.created === 0 && !done.error ? (
+            <>0 new — these look like duplicates of transactions already in your ledger.</>
+          ) : (
+            <>
+              Imported {done.created} transactions{done.error ? ` (then errored: ${done.error})` : ""}.
+              Visit Pro Tools → Missed-rewards forensics to see the report.
+            </>
+          )}
         </div>
       )}
     </section>

@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   Zap,
@@ -116,6 +116,23 @@ export function Sidebar() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Drawer focus management: when the mobile drawer opens, move focus to its
+  // first focusable control (screen-reader + keyboard users land inside the
+  // dialog); restore focus to the previously-focused element on close.
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (isMobileOpen) {
+      lastFocusedRef.current = document.activeElement as HTMLElement | null;
+      drawerRef.current
+        ?.querySelector<HTMLElement>("a[href], button:not([disabled])")
+        ?.focus();
+    } else {
+      lastFocusedRef.current?.focus?.();
+      lastFocusedRef.current = null;
+    }
+  }, [isMobileOpen]);
+
   const sidebarWidth = isCollapsed ? 56 : 240;
   const isDark = mounted && theme === "dark";
 
@@ -216,6 +233,7 @@ export function Sidebar() {
               {isMobile && (
                 <button
                   onClick={() => setMobileOpen(false)}
+                  aria-label="Close navigation menu"
                   className="p-1.5 rounded-lg transition-colors"
                   style={{ color: "var(--ink-3)" }}
                 >
@@ -226,7 +244,8 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Sidebar portfolio summary card (editorial) */}
+        {/* Sidebar portfolio summary card (editorial). Logged-out visitors get
+         * a preview framing instead of a glitch-looking "LIVE $0". */}
         {!collapsed && (
           <div className="px-3 pt-4 pb-3 shrink-0">
             <div className="sidebar-portfolio">
@@ -234,47 +253,64 @@ export function Sidebar() {
                 <span className="eyebrow" style={{ letterSpacing: "0.14em" }}>
                   Portfolio
                 </span>
-                <span
-                  className="mono inline-flex items-center gap-1"
-                  style={{ fontSize: 11, color: "var(--gain)" }}
-                >
+                {isAuthenticated ? (
                   <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: "var(--gain)",
-                    }}
-                  />
-                  LIVE
-                </span>
+                    className="mono inline-flex items-center gap-1"
+                    style={{ fontSize: 11, color: "var(--gain)" }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "var(--gain)",
+                      }}
+                    />
+                    LIVE
+                  </span>
+                ) : (
+                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                    PREVIEW
+                  </span>
+                )}
               </div>
-              <div
-                className="display"
-                style={{ fontSize: 26, lineHeight: 1, color: "var(--ink)" }}
-              >
-                {summary?.value_range_high
-                  ? `$${summary.value_range_high.toFixed(0)}`
-                  : `$${(totalPoints / 100).toFixed(0)}`}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2.5">
-                <div>
-                  <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
-                    POINTS
+              {isAuthenticated ? (
+                <>
+                  <div
+                    className="display"
+                    style={{ fontSize: 26, lineHeight: 1, color: "var(--ink)" }}
+                  >
+                    {summary?.value_range_high
+                      ? `$${summary.value_range_high.toFixed(0)}`
+                      : `$${(totalPoints / 100).toFixed(0)}`}
                   </div>
-                  <div className="mono" style={{ fontSize: 12, color: "var(--ink)" }}>
-                    {(totalPoints / 1000).toFixed(1)}K
+                  <div className="grid grid-cols-2 gap-2 mt-2.5">
+                    <div>
+                      <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
+                        POINTS
+                      </div>
+                      <div className="mono" style={{ fontSize: 12, color: "var(--ink)" }}>
+                        {(totalPoints / 1000).toFixed(1)}K
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
+                        CARDS
+                      </div>
+                      <div className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
+                        {wallet.length}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.08em" }}>
-                    CARDS
-                  </div>
-                  <div className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>
-                    {wallet.length}
-                  </div>
-                </div>
-              </div>
+                </>
+              ) : (
+                <p
+                  className="serif"
+                  style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", lineHeight: 1.45 }}
+                >
+                  Your numbers appear here once you sign in and add cards.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -436,6 +472,11 @@ export function Sidebar() {
 
       {/* Mobile drawer */}
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation menu"
+        aria-hidden={!isMobileOpen}
         className="fixed left-0 top-0 bottom-0 z-50 flex flex-col lg:hidden"
         style={{
           // Cap to the viewport so it doesn't crowd a 360px phone, but keep it

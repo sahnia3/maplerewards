@@ -6,8 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
-import { chatStream, ApiError } from "@/lib/api";
-import type { ChatMessage } from "@/lib/api";
+import { chatStream, request, ApiError } from "@/lib/api";
+import type { ChatMessage, ChatRequest } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { MapleLeaf } from "@/components/editorial/leaf-divider";
 import { FREE_LIMITS } from "@/lib/pro-features";
@@ -24,14 +24,48 @@ type ToolPill = {
 const TOOL_LABELS: Record<string, string> = {
   search_award_space: "Searching award space",
   search_cash_flights: "Checking cash prices",
+  search_hotels: "Searching hotels",
   get_transfer_partners: "Loading transfer partners",
   get_program_cpp: "Looking up CPP",
+  get_devaluation_history: "Loading devaluation history",
   web_search: "Searching the web",
   evaluate_buy_points: "Evaluating buy-points deal",
   recommend_stack: "Building optimal stack",
   evaluate_missed_rewards: "Auditing missed rewards",
   project_sqc: "Projecting Aeroplan SQC",
+  find_card_for_merchant: "Finding your best card",
+  lookup_card: "Looking up card details",
+  simulate_transfer_with_bonus: "Simulating points transfer",
+  project_aeroplan_devaluation: "Projecting devaluation exposure",
+  list_my_award_watches: "Checking your award watches",
+  create_award_watch: "Creating award watch",
 };
+
+// One row from GET /chat/conversations — enough to label the history list.
+type ConversationSummary = {
+  id: number;
+  title?: string;
+  updated_at: string;
+};
+
+async function fetchConversationMessages(id: number): Promise<ChatMessage[]> {
+  const res = await request<{ messages: Array<{ role: string; content: string }> }>(
+    `/chat/conversations/${id}/messages`,
+  );
+  return (res.messages ?? [])
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({ role: m.role as ChatMessage["role"], content: m.content }));
+}
+
+function conversationLabel(c: ConversationSummary): string {
+  const title = (c.title ?? "").trim();
+  const short = title.length > 48 ? `${title.slice(0, 48)}…` : title;
+  const date = c.updated_at
+    ? new Date(c.updated_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })
+    : "";
+  if (short) return date ? `${short} · ${date}` : short;
+  return date || `Conversation ${c.id}`;
+}
 
 const SUGGESTIONS = [
   { label: "Best way to fly business class to London", prompt: "Best way to fly business class to London with my points" },
@@ -44,7 +78,7 @@ const SUGGESTIONS = [
 
 export default function ChatPage() {
   const { sessionId, ensureSession } = useSession();
-  const { isPro } = useAuth();
+  const { isPro, isAuthenticated } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,11 +86,18 @@ export default function ChatPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
+  // Server-side history (signed-in users only). conversationId rides along on
+  // every send so the backend appends to the same thread across reloads.
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationId, setConversationId] = useState<number | null>(null);
   // Tool-pill state for the in-flight turn. Cleared on send and when the
   // assistant's response arrives.
   const [pills, setPills] = useState<ToolPill[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Guards the mount-time auto-restore against clobbering a thread the user
+  // already started or picked before the history fetch resolved.
+  const hasInteractedRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -71,9 +112,57 @@ export default function ChatPage() {
     }
   }, [input]);
 
+  // Restore history on mount for signed-in users: load the conversation list,
+  // then resume the most recent thread (server-side persistence already works —
+  // the frontend just never called it).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await request<{ conversations: ConversationSummary[] }>("/chat/conversations");
+        if (cancelled) return;
+        const convos = res.conversations ?? [];
+        setConversations(convos);
+        if (convos.length === 0 || hasInteractedRef.current) return;
+        const msgs = await fetchConversationMessages(convos[0].id);
+        if (cancelled || msgs.length === 0 || hasInteractedRef.current) return;
+        setConversationId(convos[0].id);
+        setMessages(msgs);
+      } catch {
+        // History unavailable — start a fresh thread.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  async function openConversation(id: number) {
+    if (loading) return;
+    hasInteractedRef.current = true;
+    try {
+      const msgs = await fetchConversationMessages(id);
+      setConversationId(id);
+      setMessages(msgs);
+      setError(null);
+      setPills([]);
+    } catch {
+      setError("Couldn't load that conversation. Please try again.");
+    }
+  }
+
+  function startNewConversation() {
+    if (loading) return;
+    hasInteractedRef.current = true;
+    setConversationId(null);
+    setMessages([]);
+    setError(null);
+    setPills([]);
+  }
+
   async function handleSend(messageText?: string) {
     const text = (messageText ?? input).trim();
     if (!text || loading) return;
+    hasInteractedRef.current = true;
     setInput("");
     setError(null);
     setLoading(true);
@@ -83,8 +172,15 @@ export default function ChatPage() {
     try {
       const sid = await ensureSession();
       if (researchMode) setSearching(true);
+      const req: ChatRequest & { conversation_id?: number } = {
+        session_id: sid,
+        message: text,
+        history: messages,
+        research_mode: researchMode,
+      };
+      if (conversationId) req.conversation_id = conversationId;
       await chatStream(
-        { session_id: sid, message: text, history: messages, research_mode: researchMode },
+        req,
         (e) => {
           if (e.type === "tool_start") {
             setPills((prev) => [...prev, { id: e.id, name: e.name, state: "running" }]);
@@ -96,6 +192,18 @@ export default function ChatPage() {
             );
           } else if (e.type === "done") {
             setMessages(e.history);
+            // The done payload carries the conversation_id (new or existing)
+            // for signed-in users — keep it so the next send continues the
+            // same thread, and surface a freshly minted thread in the list.
+            const convoID = (e as { conversation_id?: number }).conversation_id;
+            if (convoID) {
+              setConversationId(convoID);
+              setConversations((prev) =>
+                prev.some((c) => c.id === convoID)
+                  ? prev
+                  : [{ id: convoID, title: text, updated_at: new Date().toISOString() }, ...prev]
+              );
+            }
             // Clear pills after the final message lands so the answer reads cleanly.
             setPills([]);
           } else if (e.type === "error") {
@@ -159,6 +267,57 @@ export default function ChatPage() {
           }
           lede="Ask anything about your wallet, card-stack, transfer partners, or sweet-spot redemptions. Wired to your live wallet data."
         />
+
+        {/* Conversation history — signed-in users only (anon chats aren't persisted). */}
+        {isAuthenticated && conversations.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+            <span className="eyebrow">History</span>
+            <select
+              value={conversationId ?? ""}
+              onChange={(e) => { if (e.target.value) openConversation(Number(e.target.value)); }}
+              disabled={loading}
+              aria-label="Previous conversations"
+              className="mono"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                maxWidth: 380,
+                padding: "7px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--rule-strong)",
+                background: "var(--surface)",
+                color: "var(--ink-2)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              <option value="">Pick a past conversation…</option>
+              {conversations.map((c) => (
+                <option key={c.id} value={c.id}>{conversationLabel(c)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={startNewConversation}
+              disabled={loading}
+              className="mono"
+              style={{
+                padding: "7px 12px",
+                borderRadius: 999,
+                border: "1px solid var(--rule)",
+                background: "transparent",
+                color: "var(--ink-3)",
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              New chat
+            </button>
+          </div>
+        )}
 
         {messages.length === 0 ? (
           <>
@@ -419,8 +578,15 @@ export default function ChatPage() {
                       Upgrade for unlimited
                     </Link>
                   </>
-                ) : (
+                ) : isAuthenticated ? (
                   <>Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month · upgrade for unlimited</>
+                ) : (
+                  <>
+                    Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month ·{" "}
+                    <Link href="/login?redirect=/chat" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                      Sign in to save your chats
+                    </Link>
+                  </>
                 )}
               </span>
             )}

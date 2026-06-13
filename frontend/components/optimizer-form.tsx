@@ -4,9 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { listCategories, optimize, logSpend } from "@/lib/api";
+import { ApiError, listCategories, optimize, logSpend } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
+import { useWallet } from "@/contexts/wallet-context";
 import { Term } from "@/components/term";
 import type { Category, CardRecommendation } from "@/lib/types";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
@@ -53,7 +54,7 @@ const QUICK_AMOUNTS = [25, 50, 100, 250, 500, 1000];
 // Soft category tints (light editorial palette). Hue + tint carry the visual
 // identity; per-category emoji markers were removed to stay consistent with
 // the editorial system (which is emoji-free everywhere else).
-const CAT_TINTS: Record<string, { hue: string; tint: string }> = {
+const CAT_TINTS: Record<string, { hue: string; tint: string; activeInk?: string }> = {
   groceries:        { hue: "var(--chart-forest)",  tint: "rgba(36,116,90,0.12)"  },
   dining:           { hue: "var(--chart-copper)",  tint: "rgba(168,90,40,0.12)"  },
   travel:           { hue: "var(--chart-sky)",     tint: "rgba(56,107,152,0.12)" },
@@ -61,7 +62,11 @@ const CAT_TINTS: Record<string, { hue: string; tint: string }> = {
   pharmacy:         { hue: "var(--chart-plum)",    tint: "rgba(108,78,121,0.12)" },
   entertainment:    { hue: "var(--chart-gold)",    tint: "rgba(167,122,34,0.14)" },
   "streaming-digital": { hue: "var(--chart-teal)", tint: "rgba(46,115,121,0.12)" },
-  "everything-else": { hue: "var(--ink-2)",        tint: "var(--card-fill)"      },
+  /* Fallback (everything-else + uncharted categories like air-canada): the
+   * ink/paper pairing keeps the active pill readable in BOTH themes — #fff on
+   * --ink-2 is 1.59:1 against the dark theme's cream ink. Mirrors the VALUE
+   * toggle's colors. */
+  "everything-else": { hue: "var(--ink)",          tint: "var(--card-fill)",     activeInk: "var(--paper)" },
 };
 function tintFor(slug: string) {
   return CAT_TINTS[slug] ?? CAT_TINTS["everything-else"];
@@ -70,6 +75,7 @@ function tintFor(slug: string) {
 export function OptimizerForm() {
   const { ensureSession } = useSession();
   const { isAuthenticated } = useAuth();
+  const { wallet, isLoading: walletLoading } = useWallet();
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categorySlug, setCategorySlug] = useState("");
@@ -105,6 +111,12 @@ export function OptimizerForm() {
       setError("Enter a valid amount");
       return;
     }
+    // Known-empty wallet: the optimize call would 400 with WALLET_EMPTY —
+    // show the add-card empty state without the doomed request.
+    if (!walletLoading && wallet.length === 0) {
+      setResults([]);
+      return;
+    }
     setLoading(true);
     setLoggedIds(new Set());
     try {
@@ -118,7 +130,13 @@ export function OptimizerForm() {
       });
       setResults(recs);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      // Empty wallet is a first-visit state, not an error — show the add-card
+      // empty state instead of a bare warning with no path forward.
+      if (err instanceof ApiError && err.code === "WALLET_EMPTY") {
+        setResults([]);
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      }
     } finally {
       setLoading(false);
     }
@@ -282,7 +300,7 @@ export function OptimizerForm() {
                   cursor: "pointer",
                   border: `1px solid ${active ? t.hue : "var(--rule)"}`,
                   background: active ? t.hue : "transparent",
-                  color: active ? "#fff" : "var(--ink-2)",
+                  color: active ? (t.activeInk ?? "#fff") : "var(--ink-2)",
                   padding: "6px 13px",
                   borderRadius: 999,
                   fontSize: 13,
@@ -419,7 +437,7 @@ export function OptimizerForm() {
                   style={{
                     padding: "10px 18px",
                     background: active ? ct.hue : ct.tint,
-                    color: active ? "#fff" : ct.hue,
+                    color: active ? (ct.activeInk ?? "#fff") : ct.hue,
                     border: `1px solid ${active ? ct.hue : "transparent"}`,
                     borderRadius: 999,
                     cursor: "pointer",
@@ -475,9 +493,32 @@ export function OptimizerForm() {
           <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", marginBottom: 18, fontSize: 15 }}>
             Add cards before we can rank them for this purchase.
           </p>
-          <Link href="/wallet" className="btn btn-primary mono" style={{ letterSpacing: "0.06em", textTransform: "uppercase", fontSize: 11 }}>
-            Build wallet →
-          </Link>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <Link href="/wallet" className="btn btn-primary mono" style={{ letterSpacing: "0.06em", textTransform: "uppercase", fontSize: 11 }}>
+              Add your first card →
+            </Link>
+            {!isAuthenticated && (
+              <Link
+                href="/signup?redirect=/optimizer"
+                className="mono"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "12px 18px",
+                  borderRadius: 10,
+                  border: "1px solid var(--rule-strong)",
+                  color: "var(--ink-2)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  textDecoration: "none",
+                }}
+              >
+                Create a free account
+              </Link>
+            )}
+          </div>
         </div>
       )}
 
@@ -501,7 +542,7 @@ export function OptimizerForm() {
               Heads up — Amex blackout
             </div>
             <div style={{ fontSize: 14, color: "var(--ink-2)", fontStyle: "italic", lineHeight: 1.45 }}>
-              {best.card_name} doesn&rsquo;t work at Costco, Loblaws, No Frills, Superstore, Shoppers, T&amp;T, or any other store in the Loblaws empire — they&rsquo;re Mastercard/Visa only. Best for groceries at Metro, Sobeys, IGA, Whole Foods. Pair with a Tangerine or Costco MC for the rest.
+              {best.card_name}{" "}doesn&rsquo;t work at Costco, Loblaws, No Frills, Superstore, Shoppers, T&amp;T, or any other store in the Loblaws empire — they&rsquo;re Mastercard/Visa only. Best for groceries at Metro, Sobeys, IGA, Whole Foods. Pair with a Tangerine or Costco MC for the rest.
             </div>
           </div>
         </div>
@@ -618,7 +659,13 @@ export function OptimizerForm() {
                 }}
               >
                 <Stat label="Cash value" value={`$${best.dollar_value.toFixed(2)}`} accent={t.hue} />
-                <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
+                {/* Cashback cards earn dollars, not points (points_earned is
+                    always 0 server-side) — "Points earned 0" reads like a bug. */}
+                {best.points_earned === 0 && best.dollar_value > 0 ? (
+                  <Stat label="Cashback" value={`${best.earn_rate.toFixed(2)}%`} />
+                ) : (
+                  <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
+                )}
                 <Stat label={<>Effective <Term k="redemption">return</Term></>} value={`${best.effective_return.toFixed(2)}%`} />
                 <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} last />
               </div>

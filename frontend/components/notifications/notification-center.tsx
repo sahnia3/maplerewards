@@ -67,6 +67,8 @@ export function NotificationCenter() {
       {/* Bell button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
+        aria-expanded={isOpen}
         className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all"
         style={{
           background: isOpen ? "var(--info-soft)" : "rgba(255,255,255,0.04)",

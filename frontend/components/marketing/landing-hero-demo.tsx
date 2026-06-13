@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 /* Live decision engine — VISUAL version. Cards in front, text out of the way.
@@ -25,6 +25,13 @@ const CARDS: Scenario[] = [
 
 const CYCLE_MS = 2800;
 
+/* Half-width of the fan at rest (outermost slot x=180 + rotated card reach).
+ * Used to scale the whole stack down when the viewport can't fit it — the
+ * page clips at the viewport, so at 1024 the fan was cut ~96px mid-card and
+ * at 375 both outer cards were cut mid-face (MR-017). At 1440 the scale
+ * resolves to 1, leaving the verified-good look untouched. */
+const FAN_HALF_WIDTH = 295;
+
 /* Per-card resting transform when not active — fan positions behind the
  * active card. Rotations + offsets stay constant so cards seem to occupy
  * fixed places in a pile; only the FRONT card identity changes. */
@@ -38,10 +45,34 @@ const FAN: { x: number; y: number; rot: number; scale: number }[] = [
 
 export function LandingHeroDemo() {
   const [activeIdx, setActiveIdx] = useState(0);
+  const stackRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(1);
 
   useEffect(() => {
     const id = setInterval(() => setActiveIdx((p) => (p + 1) % CARDS.length), CYCLE_MS);
     return () => clearInterval(id);
+  }, []);
+
+  /* Scale the stack so the outermost cards never get cut by the viewport:
+   * the fan stays centred on its column, so the binding constraint is the
+   * distance from the stack centre to the nearest viewport edge. */
+  useEffect(() => {
+    const el = stackRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const center = r.left + r.width / 2;
+      const room = Math.min(center, window.innerWidth - center) - 8;
+      setFit(Math.min(1, room / FAN_HALF_WIDTH));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro.disconnect();
+    };
   }, []);
 
   return (
@@ -96,11 +127,13 @@ export function LandingHeroDemo() {
         * The "active" one promotes to front (z-index 10, scale 1.08, lifts up,
         * unrotates, gets the maple shadow). Others stay in their fan slots. */}
       <div
+        ref={stackRef}
         style={{
           position: "relative",
           width: "100%",
           maxWidth: 560,
           height: 280,
+          transform: fit < 1 ? `scale(${fit})` : undefined,
         }}
       >
         {CARDS.map((card, i) => {

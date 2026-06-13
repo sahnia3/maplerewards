@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { listFeedArticles, type FeedArticle } from "@/lib/api";
+import { ApiError, listFeedArticles, type FeedArticle } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 
@@ -33,7 +33,7 @@ export default function WeeklyDigestPage({
     if (!parsed) return;
     listFeedArticles("all")
       .then((rows) => setArticles(rows))
-      .catch((e) => setErr(e instanceof Error ? e.message : "Could not load feed"));
+      .catch((e) => setErr(feedErrorMessage(e)));
   }, [parsed]);
 
   if (!parsed) {
@@ -97,7 +97,11 @@ export default function WeeklyDigestPage({
 
         <LeafDivider />
 
-        {err && <p style={{ color: "var(--accent)" }}>{err}</p>}
+        {err && (
+          <p style={{ color: "var(--ink-2)", fontStyle: "italic", padding: 32 }}>
+            {err}
+          </p>
+        )}
         {!articles && !err && (
           <p className="eyebrow">LOADING…</p>
         )}
@@ -253,6 +257,16 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
+
+// The public feed endpoint sits behind a strict per-IP rate limit, so a few
+// pages of normal browsing can 429. Don't surface the raw backend string.
+function feedErrorMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "Could not load feed";
+  if ((e instanceof ApiError && (e.code === "RATE_LIMITED" || e.status === 429)) || /too many requests/i.test(msg)) {
+    return "Lots of traffic right now — give it a few seconds and refresh.";
+  }
+  return msg;
+}
 
 function parseWeekParam(s: string): { year: number; week: number } | null {
   // Accept "2026-W20", "2026-20", "2026W20", or "2026W20". The character

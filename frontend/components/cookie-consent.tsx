@@ -48,13 +48,8 @@ export function CookieConsent() {
       role="dialog"
       aria-labelledby="cookie-consent-title"
       aria-describedby="cookie-consent-body"
+      className="mr-cookie-consent"
       style={{
-        position: "fixed",
-        bottom: 16,
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 90,
-        width: "min(640px, calc(100vw - 32px))",
         padding: "18px 22px",
         background: "var(--surface)",
         border: "1px solid var(--rule-strong)",
@@ -78,12 +73,20 @@ export function CookieConsent() {
           className="serif"
           style={{ fontSize: 14, lineHeight: 1.5, color: "var(--ink-2)", margin: 0 }}
         >
-          Maple Rewards uses essential cookies for sign-in and CSRF protection. No
-          third-party trackers, no ad cookies. See our{" "}
-          <Link href="/privacy" style={{ color: "var(--accent)" }}>
-            Privacy Policy
-          </Link>{" "}
-          for the full list.
+          <span className="mr-cookie-full">
+            Maple Rewards uses essential cookies for sign-in and CSRF protection.
+            No third-party trackers, no ad cookies. See our{" "}
+            <Link href="/privacy" style={{ color: "var(--accent)" }}>
+              Privacy Policy
+            </Link>{" "}
+            for the full list.
+          </span>
+          <span className="mr-cookie-short">
+            Essential cookies only — sign-in + CSRF, no trackers.{" "}
+            <Link href="/privacy" style={{ color: "var(--accent)" }}>
+              Privacy Policy
+            </Link>
+          </span>
         </p>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -126,6 +129,45 @@ export function CookieConsent() {
           Got it
         </button>
       </div>
+      {/* Positioning lives in CSS so the banner can dodge the chrome per
+       * breakpoint: bottom-left and narrow on mobile (clear of the Ask Maple
+       * FAB at right 20 / bottom 80), bottom-right above the FAB on desktop
+       * (clear of the hero CTA column), and z-index below the mobile nav
+       * drawer (z-50), its backdrop (z-40) and the FAB (z-50). */}
+      <style>{`
+        .mr-cookie-consent {
+          position: fixed;
+          bottom: 16px;
+          left: 16px;
+          z-index: 30;
+          width: min(340px, calc(100vw - 128px));
+        }
+        .mr-cookie-short { display: none; }
+        /* Small phones: compact single-purpose banner. Height must stay under
+         * ~130px so the top edge clears the hero CTA (ends ~y658 at 375x812)
+         * while the narrow width keeps the Ask Maple FAB column (x>=271) clear. */
+        @media (max-width: 479px) {
+          .mr-cookie-consent {
+            bottom: 12px;
+            left: 12px;
+            padding: 12px 14px !important;
+            gap: 8px !important;
+          }
+          .mr-cookie-consent #cookie-consent-title { display: none; }
+          .mr-cookie-consent #cookie-consent-body { font-size: 12px; line-height: 1.45; }
+          .mr-cookie-full { display: none; }
+          .mr-cookie-short { display: inline; }
+          .mr-cookie-consent button { padding: 6px 10px !important; font-size: 10px !important; }
+        }
+        @media (min-width: 1024px) {
+          .mr-cookie-consent {
+            left: auto;
+            right: 16px;
+            bottom: 124px;
+            width: 340px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

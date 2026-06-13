@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWallet } from "@/contexts/wallet-context";
+import { useAuth } from "@/contexts/auth-context";
 import { listCards, getRecommendations } from "@/lib/api";
 import { useReportableError } from "@/lib/use-reportable-error";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
@@ -79,6 +80,7 @@ const PERKS = [
 export default function OnboardingPage() {
   const router = useRouter();
   const { addCard } = useWallet();
+  const { isAuthenticated } = useAuth();
 
   // Lazy initializers hydrate from localStorage so a refresh mid-flow
   // doesn't wipe partially-entered answers. The form should feel like a
@@ -101,6 +103,7 @@ export default function OnboardingPage() {
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultsError, setResultsError] = useState<string | null>(null);
   const [addingCards, setAddingCards] = useState(false);
+  const [addCardsError, setAddCardsError] = useState<string | null>(null);
 
   const reportCards = useReportableError("onboarding.listCards");
   const reportResults = useReportableError("onboarding.getRecommendations");
@@ -149,17 +152,46 @@ export default function OnboardingPage() {
   };
 
   const handleAddTopCards = async () => {
-    setAddingCards(true);
-    try {
-      // Seed the wallet with the cards the user said they CARRY (step 1),
-      // not the recommendations — adding cards they don't hold misrepresents
-      // their wallet. Recommendations stay on-screen as suggestions. Fall
-      // back to the top-3 recs only if (somehow) nothing was selected.
-      const toAdd = selectedCardIds.length > 0
-        ? selectedCardIds
-        : results.slice(0, 3).map((s) => s.card_id);
+    // Seed the wallet with the cards the user said they CARRY (step 1),
+    // not the recommendations — adding cards they don't hold misrepresents
+    // their wallet. Recommendations stay on-screen as suggestions. Fall
+    // back to the top-3 recs only if (somehow) nothing was selected.
+    const toAdd = selectedCardIds.length > 0
+      ? selectedCardIds
+      : results.slice(0, 3).map((s) => s.card_id);
+
+    // Logged-out sessions can't write to a server wallet. addCard stashes
+    // each pick and redirects to /signup?redirect= — let that flow run
+    // instead of clobbering it with router.push("/") below. The post-auth
+    // drain in wallet-context replays the stash once they're back.
+    if (!isAuthenticated) {
       for (const id of toAdd) {
-        try { await addCard(id); } catch {}
+        await addCard(id);
+      }
+      return;
+    }
+
+    setAddingCards(true);
+    setAddCardsError(null);
+    const failed: string[] = [];
+    let lastError: unknown = null;
+    try {
+      for (const id of toAdd) {
+        try {
+          await addCard(id);
+        } catch (e) {
+          failed.push(id);
+          lastError = e;
+        }
+      }
+      if (failed.length > 0) {
+        const names = failed
+          .map((id) => allCards.find((c) => c.id === id)?.name ?? "a card")
+          .join(", ");
+        setAddCardsError(
+          `Couldn't add ${names}${lastError instanceof Error && lastError.message ? ` — ${lastError.message}` : ""}`
+        );
+        return;
       }
       // User finished onboarding — discard the cached form state so a
       // returning user (e.g. resetting their wallet) starts fresh.
@@ -743,6 +775,23 @@ export default function OnboardingPage() {
               })}
             </div>
 
+            {addCardsError && (
+              <div
+                role="alert"
+                style={{
+                  border: "1px solid var(--accent)",
+                  borderLeft: "3px solid var(--accent)",
+                  borderRadius: 12,
+                  padding: "14px 18px",
+                  background: "var(--card-fill)",
+                  marginBottom: 12,
+                }}
+              >
+                <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+                  {addCardsError}
+                </p>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleAddTopCards}

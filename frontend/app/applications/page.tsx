@@ -9,12 +9,27 @@ import {
   deleteApplication,
   listCards,
   getCardEligibility,
+  request,
   type CardApplication,
   type CardEligibility,
 } from "@/lib/api";
 import type { Card } from "@/lib/types";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+
+// PUT /wallet/{sessionID}/applications/{id} — inline status update on history
+// rows. Lives here (not lib/api.ts) because that file is owned by a parallel
+// workstream this run; same request() plumbing either way.
+async function updateApplicationStatus(
+  sessionId: string,
+  applicationId: string,
+  status: CardApplication["status"],
+): Promise<void> {
+  await request(`/wallet/${sessionId}/applications/${applicationId}`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
 
 /**
  * /applications — user-recorded card application history with issuer-cooldown
@@ -133,6 +148,16 @@ export default function ApplicationsPage() {
       await refresh();
     } catch (e) {
       setRecordedMsg({ tone: "warn", text: e instanceof Error ? e.message : "Couldn't delete that application. Try again." });
+    }
+  }
+
+  async function handleStatusChange(id: string, newStatus: CardApplication["status"]) {
+    if (!sessionId) return;
+    try {
+      await updateApplicationStatus(sessionId, id, newStatus);
+      await refresh();
+    } catch (e) {
+      setRecordedMsg({ tone: "warn", text: e instanceof Error ? e.message : "Couldn't update that application. Try again." });
     }
   }
 
@@ -374,7 +399,7 @@ export default function ApplicationsPage() {
                   <div style={{ minWidth: 0 }}>
                     <div className="display" style={{ fontSize: 18 }}>{a.card_name ?? "Unknown card"}</div>
                     <div className="eyebrow" style={{ color: "var(--ink-2)", marginTop: 4 }}>
-                      {(a.issuer ?? "—")} · {a.applied_at} · {a.status}
+                      {(a.issuer ?? "—")} · {a.applied_at}
                     </div>
                     {a.notes && (
                       <p className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)", marginTop: 6 }}>
@@ -382,24 +407,45 @@ export default function ApplicationsPage() {
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(a.id)}
-                    className="mono"
-                    style={{
-                      padding: "6px 10px",
-                      border: "1px solid var(--rule)",
-                      borderRadius: 8,
-                      background: "transparent",
-                      color: "var(--ink-3)",
-                      fontSize: 10,
-                      letterSpacing: "0.10em",
-                      textTransform: "uppercase",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Remove
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <select
+                      value={a.status}
+                      onChange={(e) => handleStatusChange(a.id, e.target.value as CardApplication["status"])}
+                      aria-label={`Status for ${a.card_name ?? "application"}`}
+                      className="mono"
+                      style={{
+                        padding: "6px 10px",
+                        border: "1px solid var(--rule)",
+                        borderRadius: 8,
+                        background: "var(--surface)",
+                        color: "var(--ink-2)",
+                        fontSize: 11,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="declined">Declined</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(a.id)}
+                      className="mono"
+                      style={{
+                        padding: "6px 10px",
+                        border: "1px solid var(--rule)",
+                        borderRadius: 8,
+                        background: "transparent",
+                        color: "var(--ink-3)",
+                        fontSize: 10,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>

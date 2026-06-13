@@ -27,7 +27,7 @@ const PRO_TOOL_PITCH: { kicker: string; title: string; lede: string }[] = [
     kicker: "2026 Aeroplan SQC",
     title: "Project status with confidence",
     lede:
-      "Maple is the only Canadian app that turns the new Status Qualifying Credits framework into a forecast. Current tier, gap to the next, and the cheapest card to close it.",
+      "Maple is the first Canadian app we know of that turns the new Status Qualifying Credits framework into a forecast. Current tier, gap to the next, and the cheapest card to close it.",
   },
   {
     kicker: "Missed-rewards forensics",
@@ -55,7 +55,13 @@ function PricingContent() {
   const { isPro, isAuthenticated, refreshSession } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [interval, setInterval] = useState<IntervalKey>("pro");
+  // Deep-link tier selection: /pricing?tier=proplus etc. lands on the right tab.
+  const [interval, setInterval] = useState<IntervalKey>(() => {
+    const tier = searchParams.get("tier");
+    if (tier === "proplus" || tier === "pro-plus" || tier === "plus") return "proPlus";
+    if (tier === "lifetime") return "lifetime";
+    return "pro";
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -133,7 +139,7 @@ function PricingContent() {
           }
           lede={
             <>
-              Built for <Term k="aeroplan" />, Air Miles, <Term k="scene-plus" />, <Term k="amex-mr" /> Canada, RBC Avion. The Pro tier ships an <Term k="sqc" /> projector and missed-rewards forensics that no US app even attempts. That&rsquo;s the entire pitch.
+              Built for <Term k="aeroplan" />, Air Miles, <Term k="scene-plus" />, <Term k="amex-mr" /> Canada, RBC Avion. The Pro tier ships an <Term k="sqc" />{" "}(Status Qualifying Credits) projector and missed-rewards forensics that no US app we&rsquo;ve seen even attempts. That&rsquo;s the entire pitch.
             </>
           }
         />
@@ -359,11 +365,19 @@ function PricingContent() {
                   loading={loading}
                   style={{ width: "100%" }}
                 >
-                  {loading ? "Redirecting" : `Start Pro · ${plan.label}`}
+                  {loading
+                    ? "Redirecting"
+                    : interval === "lifetime"
+                    ? `Get lifetime Pro · ${plan.label}`
+                    : interval === "proPlus"
+                    ? `Start Pro Plus · ${plan.label}`
+                    : `Start Pro · ${plan.label}`}
                 </Button>
               )}
               <p className="eyebrow" style={{ marginTop: 10, textAlign: "center" }}>
-                30-day refund · Cancel anytime · Stripe checkout
+                {interval === "lifetime"
+                  ? "One-time payment · 30-day refund · Stripe checkout"
+                  : "30-day refund · Cancel anytime · Stripe checkout"}
               </p>
             </div>
           </PaperTile>
@@ -382,7 +396,7 @@ function PricingContent() {
               The four tools that <span style={{ fontStyle: "italic" }}>justify</span> the subscription.
             </h2>
             <p className="serif" style={{ marginTop: 8, fontSize: 15, fontStyle: "italic", color: "var(--ink-2)", maxWidth: 720, lineHeight: 1.45 }}>
-              Each of these exists in MapleRewards because no Canadian app has shipped them. Visit the live tools at{" "}
+              Each of these exists in MapleRewards because no Canadian app we know of has shipped them. Visit the live tools at{" "}
               <Link href="/pro-tools" style={{ color: "var(--accent)", textDecoration: "underline" }}>
                 /pro-tools
               </Link>
@@ -559,10 +573,23 @@ function PricingContent() {
                 ? "Redirecting"
                 : interval === "lifetime"
                 ? `Get lifetime Pro · ${PRICING.lifetime.label}`
+                : interval === "proPlus"
+                ? `Get Pro Plus · ${plan.label}`
                 : `Get Pro · ${plan.label}`}
             </Button>
             <p className="eyebrow" style={{ marginTop: 12 }}>
-              30-day refund · Cancel anytime · Stripe checkout
+              {interval === "lifetime"
+                ? "One-time payment · 30-day refund · Stripe checkout"
+                : "30-day refund · Cancel anytime · Stripe checkout"}
+            </p>
+            <p
+              className="serif"
+              style={{ marginTop: 10, fontSize: 14, color: "var(--ink-2)", lineHeight: 1.5, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}
+            >
+              How they fit together: Pro and Pro Plus start with the 3-day free trial,
+              Lifetime is a single one-time payment, and every paid plan carries the
+              30-day refund — after that, subscriptions run to the end of the period
+              you&rsquo;ve already paid for, with no pro-rated partial refunds.
             </p>
           </div>
         )}

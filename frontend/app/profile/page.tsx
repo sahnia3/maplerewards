@@ -46,6 +46,12 @@ export default function ProfilePage() {
 
   const [displayName, setDisplayName] = useState(user?.display_name || "");
   const [saving, setSaving] = useState(false);
+
+  // `user` resolves after mount (cookie refresh), so the lazy initializer
+  // above runs while it's still null — sync the saved name in once it lands.
+  useEffect(() => {
+    setDisplayName(user?.display_name || "");
+  }, [user?.display_name]);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");

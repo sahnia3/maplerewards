@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
+import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { CostcoRouter } from "./CostcoRouter";
 
 /**
@@ -10,7 +11,7 @@ import { CostcoRouter } from "./CostcoRouter";
  * cards they hold; we apply two verified facts (Mastercard-only at the till,
  * Costco codes as a warehouse club so grocery bonuses don't apply) and rank
  * their Mastercards by effective return. SEO/lead-magnet asset that funnels
- * into the waitlist.
+ * into onboarding.
  *
  * Server component shell (exports metadata + renders the static editorial
  * chrome) wrapping a "use client" island that does the catalogue fetch,
@@ -54,7 +55,35 @@ export default function CostcoCardRouterPage() {
 
         <CostcoRouter />
 
-        {/* CTA into the waitlist — Maple does this for every store, not just Costco. */}
+        {/* Primary conversion for the launch window: the waitlist. */}
+        <div
+          style={{
+            border: "1px solid var(--rule)",
+            borderRadius: 14,
+            background: "var(--card-fill)",
+            padding: "26px 28px",
+            marginBottom: 28,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          <div>
+            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}>
+              Join the waitlist
+            </div>
+            <h2 className="display" style={{ fontSize: "clamp(22px, 2.8vw, 30px)", lineHeight: 1.15, margin: 0 }}>
+              Get Maple <span style={{ fontStyle: "italic" }}>before</span> everyone else.
+            </h2>
+            <p className="serif" style={{ fontSize: 15, color: "var(--ink-2)", lineHeight: 1.5, margin: "12px 0 0" }}>
+              Maple is in early beta. Leave your email and we&rsquo;ll send your invite — and a referral
+              link that moves you up the queue.
+            </p>
+          </div>
+          <WaitlistForm source="costco-card-router" />
+        </div>
+
+        {/* Secondary CTA into onboarding — Maple does this for every store, not just Costco. */}
         <div
           style={{
             border: "1px solid var(--accent)",
@@ -81,7 +110,7 @@ export default function CostcoCardRouterPage() {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <Link
-              href="/"
+              href="/onboarding"
               className="mono"
               style={{
                 display: "inline-flex",
@@ -98,7 +127,7 @@ export default function CostcoCardRouterPage() {
                 textTransform: "uppercase",
               }}
             >
-              Join the waitlist →
+              Try Maple free →
             </Link>
             <Link
               href="/tools"

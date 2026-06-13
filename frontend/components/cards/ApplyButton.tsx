@@ -23,7 +23,9 @@ interface ApplyButtonProps {
  * Behavior:
  *   - hidden when no affiliate URL is wired and alwaysShow=false (default)
  *   - target=_blank with rel=noopener
- *   - small disclosure subtext underneath so users know it's a commission link
+ *   - small disclosure subtext underneath telling users where the link goes.
+ *     Current URLs are the issuers' own application pages, not paid affiliate
+ *     links — add rel="sponsored" back when real affiliate links land.
  */
 export function ApplyButton({
   cardId,
@@ -47,7 +49,7 @@ export function ApplyButton({
       <a
         href={href}
         target="_blank"
-        rel="noopener noreferrer sponsored"
+        rel="noopener noreferrer"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         aria-label={cardName ? `Apply for ${cardName}` : "Apply for this card"}
@@ -78,7 +80,7 @@ export function ApplyButton({
           letterSpacing: "0.04em",
         }}
       >
-        Commission link · no extra cost to you
+        Opens the issuer&rsquo;s official application page
       </div>
     </div>
   );

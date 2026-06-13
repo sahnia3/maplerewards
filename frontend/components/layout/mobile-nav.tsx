@@ -11,12 +11,13 @@ import { useSidebar } from "@/contexts/sidebar-context";
  * bottom tab bar so mobile and desktop share one navigation surface.
  */
 export function MobileNavTrigger() {
-  const { setMobileOpen } = useSidebar();
+  const { isMobileOpen, setMobileOpen } = useSidebar();
 
   return (
     <button
       type="button"
       aria-label="Open navigation menu"
+      aria-expanded={isMobileOpen}
       onClick={() => setMobileOpen(true)}
       className="fixed z-40 flex items-center justify-center lg:hidden"
       style={{

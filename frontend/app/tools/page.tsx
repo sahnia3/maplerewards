@@ -80,7 +80,7 @@ export default function ToolsIndexPage() {
             href="/tools/points-to-cad"
             eyebrow="Calculator"
             title="What are your points worth?"
-            body="Pick a Canadian loyalty program, type in a balance, instantly see the CAD value at the program's base CPP. 27 programs covered."
+            body="Pick a Canadian loyalty program, type in a balance, instantly see the CAD value at the program's base CPP. 41 programs covered."
             cta="Convert points →"
           />
           <ToolCard
@@ -108,7 +108,7 @@ export default function ToolsIndexPage() {
             href="/cards"
             eyebrow="Catalog"
             title="Every Canadian card"
-            body="All 104 cards we model — filter by issuer, network, fee tier. Pair this with the head-to-head picker on the same page to dig into specifics."
+            body="All 94 cards we model — filter by issuer, network, fee tier. Pair this with the head-to-head picker on the same page to dig into specifics."
             cta="Browse the catalog →"
           />
         </div>

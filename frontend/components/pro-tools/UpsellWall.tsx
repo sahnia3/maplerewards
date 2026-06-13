@@ -89,7 +89,7 @@ export function ProToolsUpsell({ signedIn }: { signedIn: boolean }) {
             className="serif"
             style={{ fontSize: 17, fontStyle: "italic", color: "var(--ink-2)", marginTop: 14, lineHeight: 1.5, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}
           >
-            14 tools across forensics, status tracking, stacking, and program intel. Every one built for Canadian rewards.
+            20 tools across forensics, status tracking, stacking, and program intel. Every one built for Canadian rewards.
           </p>
         </header>
 

@@ -36,8 +36,10 @@ export function setAuthRefreshHandler(fn: () => Promise<string | null>) {
 
 // Single-flight refresh: if multiple requests get 401 at the same time,
 // they all wait on the same /auth/refresh call instead of stampeding it.
+// Exported so auth-context's mount restore rides the same in-flight call
+// instead of issuing a parallel raw fetch.
 let inFlightRefresh: Promise<string | null> | null = null;
-async function refreshOnce(): Promise<string | null> {
+export async function refreshOnce(): Promise<string | null> {
   if (!_refreshAccessToken) return null;
   if (inFlightRefresh) return inFlightRefresh;
   inFlightRefresh = _refreshAccessToken().finally(() => {
@@ -245,11 +247,6 @@ const RETIRED_CARD_NAMES: ReadonlySet<string> = new Set([
   /* National Bank retired Syncro Mastercard in their lineup revamp (~2019); the
    * card no longer appears on nbc.ca and is replaced by ECHO Cashback. */
   "National Bank Syncro Mastercard",
-  /* User-requested removals — sprite art quality could not be resolved despite
-   * multiple sourcing attempts. Cards remain in market but are excluded from
-   * the catalogue UI to avoid presenting low-quality / wrong imagery. */
-  "Tangerine Money-Back Credit Card",
-  "Simplii Financial Cash Back Visa",
 ]);
 
 export async function listCards(): Promise<Card[]> {

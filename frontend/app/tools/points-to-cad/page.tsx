@@ -149,13 +149,20 @@ export default function PointsToCADPage() {
           >
             {pointsNumeric.toLocaleString()} {selected?.currency_name ?? "points"}{" "}
             at <strong>{cppCents.toFixed(2)}¢</strong> per point.
-            {selected && (
-              <>
-                {" "}
-                The base CPP reflects everyday redemptions; transferring to a
-                premium partner can push this number 2–3×.
-              </>
-            )}
+            {selected &&
+              (selected.program_type === "cashback" || selected.slug === "scene-plus" ? (
+                <>
+                  {" "}
+                  This is a fixed-value program — the number above is what your
+                  points are worth, however you redeem them.
+                </>
+              ) : (
+                <>
+                  {" "}
+                  The base CPP reflects everyday redemptions; transferring to a
+                  premium partner can push this number 2–3×.
+                </>
+              ))}
           </div>
         </section>
 

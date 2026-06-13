@@ -101,7 +101,8 @@ const RAW: Record<string, string> = {
   "MBNA Smart Cash Platinum Plus Mastercard":     "/images/cardart/mbna/smartcash.png", // alias — same card, rebrand
   "MBNA Amazon.ca Rewards Mastercard":            "/images/cardart/mbna/mbnaamazon.jpg",
   // ─── Tangerine ────────────────────────────────────────────────
-  "Tangerine Money-Back Credit Card":             "/images/cardart/Tangerine/tangerine.jpg",
+  /* Tangerine Money-Back — RC's `tangerine.jpg` quality could not be resolved
+   * despite multiple sourcing attempts. Falling back to gradient sprite. */
   "Tangerine World Mastercard":                   "/images/cardart/Tangerine/tangerinewe.jpg",
   // ─── PC Financial / Rogers / Walmart / Simplii / Brim / Neo ──
   "PC Financial World Elite Mastercard":          "/images/cardart/PC/pcworldelite.png",
@@ -110,8 +111,8 @@ const RAW: Record<string, string> = {
    * Rogers Bank's site is JS-rendered; falling back to gradient sprite. */
   "Walmart Rewards Mastercard":                   "/images/cardart/Walmart/walmart.png",
   "Walmart Rewards World Mastercard":             "/images/cardart/Walmart/walmartworld.png",
-  "Simplii Financial Cash Back Visa":             "/images/cardart/Simplii/simplii.jpg",
-  "Simplii Cash Back Visa":                       "/images/cardart/Simplii/simplii.jpg", // alias
+  /* Simplii Cash Back — RC's `simplii.jpg` quality could not be resolved
+   * despite multiple sourcing attempts. Falling back to gradient sprite. */
   "Brim Mastercard":                              "/images/cardart/Brim/brim.png",
   /* Brim WE — RC's `brimwe.png` was confirmed wrong by user. Falling back to gradient sprite. */
   "Neo Credit Mastercard":                        "/images/cardart/Neo/neo.jpg",

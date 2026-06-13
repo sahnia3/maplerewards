@@ -34,7 +34,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { sessionId, isReady } = useSession();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [wallet, setWallet] = useState<UserCard[]>([]);
@@ -90,6 +90,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (drainedRef.current) return;
     if (!isAuthenticated || !isReady || !sessionId) return;
+    // After registration the anonymous session is deleted server-side during
+    // the merge step and SessionProvider adopts the auth user's session_id.
+    // isAuthenticated flips before that switch lands, so draining now would
+    // replay the stash against the dead anon session (404) and lose the cards.
+    // Hold until the context sessionId IS the authenticated session.
+    if (user?.session_id && user.session_id !== sessionId) return;
     const pending = readPendingCards();
     if (pending.length === 0) {
       // Nothing staged: mark drained so we don't re-read on every render.
@@ -98,20 +104,29 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
     drainedRef.current = true;
     (async () => {
-      let added = false;
+      let added = 0;
+      let failed = 0;
       for (const cardId of pending) {
         try {
           await addCardToWallet(sessionId, cardId);
-          added = true;
+          added++;
         } catch {
           // Already in the wallet, retired, or a transient failure — skip it
           // rather than blocking the rest of the carried selections.
+          failed++;
         }
       }
-      clearPendingCards();
-      if (added) await loadWallet();
+      if (added > 0 || failed === 0) {
+        clearPendingCards();
+      } else {
+        // Every replay failed (e.g. session not yet usable) — keep the stash
+        // and allow a retry when the session settles instead of dropping the
+        // user's picks.
+        drainedRef.current = false;
+      }
+      if (added > 0) await loadWallet();
     })();
-  }, [isAuthenticated, isReady, sessionId, loadWallet]);
+  }, [isAuthenticated, isReady, sessionId, user, loadWallet]);
 
   const addCard = useCallback(
     async (cardId: string) => {

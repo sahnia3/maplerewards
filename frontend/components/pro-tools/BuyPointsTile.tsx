@@ -8,13 +8,18 @@ import { FieldLabel, Stat, VerdictPill, ctaStyle, fieldStyle, fmtCAD, progLabel,
 
 export function BuyPointsTile() {
   const [promos, setPromos] = useState<BuyPromo[]>([]);
-  const [program, setProgram] = useState("aeroplan");
+  const [program, setProgram] = useState("");
   const [points, setPoints] = useState("60000");
   const [cash, setCash] = useState("1500");
   const [verdict, setVerdict] = useState<BuyPointsVerdict | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { listBuyPromos().then(setPromos).catch(() => {}); }, []);
+  useEffect(() => {
+    listBuyPromos().then((p) => {
+      setPromos(p);
+      if (p.length > 0) setProgram(p[0].program_slug);
+    }).catch(() => {});
+  }, []);
 
   async function evalIt() {
     setLoading(true);
@@ -57,7 +62,7 @@ export function BuyPointsTile() {
             <FieldLabel>Cash alternative (CAD)</FieldLabel>
             <input type="number" value={cash} onChange={e => setCash(e.target.value)} style={fieldStyle} />
           </div>
-          <button onClick={evalIt} disabled={loading} style={{ ...ctaStyle, opacity: loading ? 0.6 : 1 }}>
+          <button onClick={evalIt} disabled={loading || !program} style={{ ...ctaStyle, opacity: loading || !program ? 0.6 : 1 }}>
             {loading ? "Evaluating…" : "Evaluate →"}
           </button>
         </div>

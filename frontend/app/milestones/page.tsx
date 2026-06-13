@@ -5,11 +5,12 @@ import Link from "next/link";
 import { Target, Award, Clock, Check } from "lucide-react";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
-import { getUserBonuses, activateBonus } from "@/lib/api";
+import { ApiError, getUserBonuses, activateBonus } from "@/lib/api";
 import type { WelcomeBonus } from "@/lib/types";
 import { AnimatedSection } from "@/components/ui/animated-list";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { PageMasthead } from "@/components/editorial/page-masthead";
+import { UpgradeModal } from "@/components/upgrade-modal";
 
 function fmtCAD(v: number) {
   return `$${v.toLocaleString("en-CA", {
@@ -24,6 +25,8 @@ export default function MilestonesPage() {
   const [bonuses, setBonuses] = useState<WelcomeBonus[]>([]);
   const [loading, setLoading] = useState(true);
   const [activatingCards, setActivatingCards] = useState<Set<string>>(new Set());
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const loadBonuses = useCallback(async () => {
     if (!sessionId) {
@@ -56,9 +59,21 @@ export default function MilestonesPage() {
     setActivatingCards((prev) => new Set(prev).add(cardId));
     try {
       const bonus = await activateBonus(sessionId, cardId);
-      setBonuses((prev) => [...prev, bonus]);
-    } catch {
-      // silent fail
+      // Prefer card_name/card_issuer from the activate response; older API
+      // builds omit them, so fall back to the wallet card the user clicked
+      // instead of rendering a literal "Card" until reload.
+      const card = wallet.find((uc) => uc.card?.id === cardId)?.card;
+      setBonuses((prev) => [
+        ...prev,
+        { ...bonus, card_name: bonus.card_name ?? card?.name, card_issuer: bonus.card_issuer ?? card?.issuer },
+      ]);
+    } catch (err) {
+      // Free tier hit the 3-tracker wall (402) — surface the server's upsell
+      // message instead of silently swallowing the failure.
+      if (err instanceof ApiError && err.status === 402) {
+        setLimitError(err.message);
+        setUpgradeOpen(true);
+      }
     }
     setActivatingCards((prev) => {
       const next = new Set(prev);
@@ -82,6 +97,47 @@ export default function MilestonesPage() {
           title={<>The <span style={{ fontStyle: "italic" }}>welcome-bonus</span> ledger.</>}
           lede="Spend deadlines, dollar runway, and the points you'll bank when each bonus clears — quietly tracked against the cards you carry."
         />
+
+        {limitError && (
+          <div
+            role="alert"
+            style={{
+              border: "1px solid var(--accent)",
+              borderLeft: "3px solid var(--accent)",
+              borderRadius: 12,
+              padding: "14px 18px",
+              background: "var(--card-fill)",
+              marginBottom: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 14,
+              flexWrap: "wrap",
+            }}
+          >
+            <p className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 14, margin: 0, lineHeight: 1.45 }}>
+              {limitError}
+            </p>
+            <Link
+              href="/pricing"
+              className="mono"
+              style={{
+                padding: "9px 16px",
+                borderRadius: 8,
+                background: "var(--accent)",
+                color: "#fff",
+                textDecoration: "none",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Upgrade to Pro →
+            </Link>
+          </div>
+        )}
 
         {isPageLoading ? (
           <div className="flex flex-col gap-4">
@@ -511,6 +567,12 @@ export default function MilestonesPage() {
             </div>
           </div>
         )}
+
+        <UpgradeModal
+          open={upgradeOpen}
+          onClose={() => setUpgradeOpen(false)}
+          message={limitError ?? undefined}
+        />
       </div>
     </div>
   );

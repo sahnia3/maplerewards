@@ -70,6 +70,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={fontVars}>
       <body className="antialiased min-h-screen grain">
+        {/* Reapply the persisted reduce-motion preference before first paint —
+            same bootstrap pattern next-themes uses for data-theme. Settings
+            only sets the attribute in its onChange handler, so without this
+            the preference silently dies on every full page load. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'try{if(localStorage.getItem("mr.motion.reduce")==="true"){document.documentElement.setAttribute("data-reduce-motion","true")}}catch(e){}',
+          }}
+        />
         <Providers>
           <ErrorReporterInit />
           <AppShell>{children}</AppShell>

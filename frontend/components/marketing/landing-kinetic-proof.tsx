@@ -130,11 +130,15 @@ export function LandingKineticProof() {
     };
   }, [isMobile]);
 
-  /* Mobile autoplay: the `autoPlay` attribute alone is unreliable across
-   * engines (React-set attribute, buffering timing), so explicitly call
-   * play() once the frame is decodable. Muted + playsInline keeps it within
-   * iOS's allowed-autoplay rules; if a browser still blocks it the poster
-   * stays visible so the section is never an empty black box. */
+  /* Mobile autoplay: iOS Safari defers loading/playing an offscreen muted
+   * video and ignores a mount-time play() before the body is buffered — that
+   * left the section frozen on its poster (readyState stuck at metadata,
+   * currentTime pinned at 0) for several seconds on cellular, which reads as
+   * "broken". The reliable iOS pattern is: preload the body eagerly (preload
+   * "auto" on the element) AND fire play() when the section scrolls into view,
+   * which is when iOS actually permits inline muted autoplay. Muted +
+   * playsInline keeps it within the allowed-autoplay rules; if a browser still
+   * blocks it the poster stays visible so the section is never an empty box. */
   useEffect(() => {
     if (isMobile !== true) return;
     const v = videoRef.current;
@@ -144,9 +148,18 @@ export function LandingKineticProof() {
       const p = v.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     };
-    tryPlay();
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) tryPlay();
+      },
+      { threshold: 0.15 },
+    );
+    io.observe(v);
     v.addEventListener("canplay", tryPlay);
-    return () => v.removeEventListener("canplay", tryPlay);
+    return () => {
+      io.disconnect();
+      v.removeEventListener("canplay", tryPlay);
+    };
   }, [isMobile]);
 
   // ── Mobile: autoplaying muted loop with a scroll-linked dolly-in reveal ─────
@@ -189,7 +202,7 @@ export function LandingKineticProof() {
             loop
             autoPlay
             playsInline
-            preload="metadata"
+            preload="auto"
             aria-hidden
             style={{
               position: "absolute",
@@ -204,7 +217,7 @@ export function LandingKineticProof() {
         </motion.div>
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", padding: "0 8px" }}>
-          <span
+          <h2
             className="display"
             style={{
               fontSize: "clamp(24px, 7vw, 34px)",
@@ -214,10 +227,11 @@ export function LandingKineticProof() {
               textShadow: "0 2px 24px rgba(0,0,0,0.6)",
               lineHeight: 1.05,
               margin: 0,
+              fontWeight: 400,
             }}
           >
             Every Bay Street wallet, optimized.
-          </span>
+          </h2>
           <span
             className="serif"
             style={{
@@ -324,7 +338,7 @@ export function LandingKineticProof() {
             textAlign: "center",
           }}
         >
-          <span
+          <h2
             className="display"
             style={{
               fontSize: "clamp(28px, 3.5vw, 42px)",
@@ -334,10 +348,11 @@ export function LandingKineticProof() {
               textShadow: "0 2px 24px rgba(0,0,0,0.6)",
               lineHeight: 1.05,
               margin: 0,
+              fontWeight: 400,
             }}
           >
             Every Bay Street wallet, optimized.
-          </span>
+          </h2>
           <span
             className="serif"
             style={{

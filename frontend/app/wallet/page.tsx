@@ -91,7 +91,7 @@ export default function WalletPage() {
             className="wallet-stat-strip m-grid-2"
           >
             <Stat label="Total points" value={totalPoints.toLocaleString()} />
-            <Stat label="Est. value" value={`$${Math.round(totalValue).toLocaleString()}`} accent />
+            <Stat label="Est. value (base CPP)" value={`$${Math.round(totalValue).toLocaleString()}`} accent />
             <Stat label="Cards" value={String(wallet.length)} />
             <Stat label="Programs" value={String(programs.size)} last />
           </div>

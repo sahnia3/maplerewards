@@ -23,6 +23,7 @@ function SignupForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [duplicateEmail, setDuplicateEmail] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -33,13 +34,24 @@ function SignupForm() {
       return;
     }
     setError("");
+    setDuplicateEmail(false);
     setLoading(true);
     try {
       const sessionId = getSessionId() || undefined;
       await register(email, password, displayName, sessionId);
       router.push(redirect);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      // Map the backend's raw strings ("email already registered") and the
+      // browser's network error ("Failed to fetch") to human copy.
+      const raw = err instanceof Error ? err.message : "";
+      if (/already registered/i.test(raw)) {
+        setError("An account with this email already exists.");
+        setDuplicateEmail(true);
+      } else if (/failed to fetch/i.test(raw)) {
+        setError("Couldn't reach the server. Check your connection and try again.");
+      } else {
+        setError(raw || "Registration failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -105,29 +117,33 @@ function SignupForm() {
             </p>
           </header>
 
-          {/* Google */}
-          <GoogleSignInButton
-            disabled={loading}
-            onSuccess={() => router.push(redirect)}
-            onError={(msg) => setError(msg)}
-          />
+          {/* Google — hidden entirely when OAuth isn't configured */}
+          {!!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && (
+            <>
+              <GoogleSignInButton
+                disabled={loading}
+                onSuccess={() => router.push(redirect)}
+                onError={(msg) => setError(msg)}
+              />
 
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                color: "var(--ink-3)",
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-              }}
-            >
-              or with email
-            </span>
-            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-          </div>
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--ink-3)",
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  or with email
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+              </div>
+            </>
+          )}
 
           {/* Registration form */}
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
@@ -213,6 +229,23 @@ function SignupForm() {
               }
             >
               {error}
+              {duplicateEmail && (
+                <>
+                  {" "}
+                  <Link
+                    href={`/login?redirect=${encodeURIComponent(redirect)}`}
+                    style={{
+                      color: "var(--accent)",
+                      textDecoration: "underline",
+                      textUnderlineOffset: 2,
+                      fontStyle: "normal",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Sign in instead →
+                  </Link>
+                </>
+              )}
             </div>
 
             <Button

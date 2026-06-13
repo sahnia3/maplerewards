@@ -280,7 +280,6 @@ function CardColumn({
           cardId={c.id}
           cardName={c.name}
           hasAffiliate={Boolean(c.affiliate_url)}
-          alwaysShow
           size="sm"
         />
         <Link

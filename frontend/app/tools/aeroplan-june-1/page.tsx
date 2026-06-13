@@ -287,7 +287,7 @@ export default async function AeroplanJune1Page({ searchParams }: PageProps) {
             </a>
             {isPast ? (
               <>
-                . The {hikeDateLabel} chart prices above are now in effect — the &ldquo;before&rdquo; column is shown
+                . The {hikeDateLabel}{" "}chart prices above are now in effect — the &ldquo;before&rdquo; column is shown
                 for reference. Star Alliance partners (Lufthansa, SWISS, ANA, EVA) typically open business award space ~355 days out.
               </>
             ) : (

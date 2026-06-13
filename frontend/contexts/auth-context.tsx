@@ -9,7 +9,33 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { setAuthTokenAccessor, setAuthRefreshHandler, getCSRFToken, CSRF_HEADER, resetCSRFToken } from "@/lib/api";
+import { setAuthTokenAccessor, setAuthRefreshHandler, getCSRFToken, CSRF_HEADER, resetCSRFToken, refreshOnce } from "@/lib/api";
+
+// Session hint — set whenever the server has issued us a refresh cookie
+// (login/register/google/refresh-success), cleared on logout or a definitive
+// refresh 401. Lets anonymous visitors skip the guaranteed-401 POST
+// /auth/refresh on every page load: the httpOnly cookie itself is unreadable
+// from JS, so this flag is the only client-side signal that one might exist.
+const HAS_SESSION_KEY = "mr_has_session";
+
+function hasSessionHint(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(HAS_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionHint(on: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (on) window.localStorage.setItem(HAS_SESSION_KEY, "1");
+    else window.localStorage.removeItem(HAS_SESSION_KEY);
+  } catch {
+    /* private mode / quota — refresh just stays opportunistic */
+  }
+}
 
 // Small helper: build a headers map for a CSRF-protected auth POST. Mirrors
 // the api.ts request() wrapper for the call sites that bypass it.
@@ -116,6 +142,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // credentials:"include".
   useEffect(() => {
     setAuthRefreshHandler(async () => {
+      // No hint = the server never gave this browser a refresh cookie (or we
+      // logged out). Skip the guaranteed-401 round-trip entirely.
+      if (!hasSessionHint()) return null;
       try {
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: "POST",
@@ -128,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return null;
         }
         const data: TokenPair = await res.json();
+        writeSessionHint(true);
         setAccessToken(data.access_token);
         setUser(data.user);
         tokenRef.current = data.access_token;
@@ -138,35 +168,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Restore session on mount: attempt a cookie-based refresh. No cookie
-  // (logged-out) → 401 → anonymous; valid cookie → fresh access token.
+  // Restore session on mount. Only attempted when a session hint exists —
+  // first-time/anonymous visitors stay anonymous with zero network calls.
+  // Routed through lib/api.ts's single-flight refreshOnce so any concurrent
+  // 401-triggered refresh shares the same in-flight call; a failed first
+  // attempt is retried exactly once (covers a rotated-cookie race), then we
+  // treat the session as gone.
   useEffect(() => {
     (async () => {
-      const headers = await csrfHeaders();
-      return fetch(`${BASE_URL}/auth/refresh`, {
-        method: "POST",
-        headers,
-        credentials: "include",
-      });
-    })()
-      .then((res) => {
-        if (!res.ok) throw new Error("refresh failed");
-        return res.json();
-      })
-      .then((data: TokenPair) => {
-        setAccessToken(data.access_token);
-        setUser(data.user);
-      })
-      .catch(() => {
-        /* not logged in — stay anonymous */
-      })
-      .finally(() => setIsLoading(false));
+      if (!hasSessionHint()) return;
+      const token = (await refreshOnce()) ?? (await refreshOnce());
+      if (!token) writeSessionHint(false);
+    })().finally(() => setIsLoading(false));
   }, []);
 
   // Handle token pair response (shared by login/register/google). The
   // refresh token is set by the server as an httpOnly cookie; we only
   // hold the access token in memory.
   const handleTokenPair = useCallback((data: TokenPair) => {
+    writeSessionHint(true);
     setAccessToken(data.access_token);
     setUser(data.user);
     // The server rotates the CSRF cookie on login/register; that rotated value
@@ -250,6 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setAccessToken(null);
     setUser(null);
+    writeSessionHint(false);
     resetCSRFToken();
     // The httpOnly refresh cookie is cleared server-side by /auth/logout.
   }, [accessToken]);
@@ -286,6 +307,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) return false;
       const data: TokenPair = await res.json();
+      writeSessionHint(true);
       setAccessToken(data.access_token);
       setUser(data.user);
       tokenRef.current = data.access_token;

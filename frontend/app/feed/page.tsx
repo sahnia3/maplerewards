@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { ExternalLink, AlertTriangle, RefreshCw } from "lucide-react";
-import { listFeedArticles, type FeedArticle, type FeedCategory } from "@/lib/api";
+import { ApiError, listFeedArticles, type FeedArticle, type FeedCategory } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 
 /* Live feed — replaces the prior hardcoded ARTICLES list with a real
@@ -55,7 +55,14 @@ export default function FeedPage() {
       const res = await listFeedArticles(cat);
       setArticles(res ?? []);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not load articles";
+      // The public feed endpoint 429s readily under the per-IP limit — map the
+      // raw "too many requests" backend string to a friendly retry message.
+      const rateLimited =
+        (err instanceof ApiError && (err.code === "RATE_LIMITED" || err.status === 429)) ||
+        (err instanceof Error && /too many requests/i.test(err.message));
+      const msg = rateLimited
+        ? "Lots of traffic right now — give it a few seconds and refresh."
+        : err instanceof Error ? err.message : "Could not load articles";
       setError(msg);
       setArticles([]);
     } finally {

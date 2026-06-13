@@ -461,7 +461,6 @@ export default function CardDetailPage() {
                 cardId={card.id}
                 cardName={card.name}
                 hasAffiliate={Boolean(card.affiliate_url)}
-                alwaysShow
                 size="md"
               />
             </div>

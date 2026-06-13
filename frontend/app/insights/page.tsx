@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
-import { getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
+import { ApiError, getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
 import type { SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { Sparkline } from "@/components/editorial/sparkline";
@@ -20,11 +20,17 @@ const DATE_RANGES: { value: DateRange; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
+// Missed-rewards is Pro-gated (402 UPGRADE_REQUIRED for free users). Cache the
+// gate for the session so tab/date-range switches don't re-probe the endpoint
+// and spam the console with 402s.
+const missedRewardsGate = { locked: false };
+
 export default function InsightsPage() {
   const { sessionId, isReady } = useSession();
   const [allEntries, setAllEntries] = useState<SpendEntry[]>([]);
   const [stats, setStats] = useState<SpendStats | null>(null);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
+  const [missedLocked, setMissedLocked] = useState(missedRewardsGate.locked);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>("all");
@@ -41,7 +47,15 @@ export default function InsightsPage() {
       const [history, ss, mr] = await Promise.all([
         getSpendHistory(sessionId, 100, 0),
         getSpendStats(sessionId),
-        getMissedRewards(sessionId, { sinceDays, top: 5 }).catch(() => null),
+        missedRewardsGate.locked
+          ? Promise.resolve(null)
+          : getMissedRewards(sessionId, { sinceDays, top: 5 }).catch((e) => {
+              if (e instanceof ApiError && (e.code === "UPGRADE_REQUIRED" || e.status === 402)) {
+                missedRewardsGate.locked = true;
+                setMissedLocked(true);
+              }
+              return null;
+            }),
       ]);
       setAllEntries(history ?? []);
       setStats(ss);
@@ -229,13 +243,17 @@ export default function InsightsPage() {
               <KPI label="Total spend" value={`$${totalSpend.toLocaleString("en-CA", { maximumFractionDigits: 0 })}`} sub={`${entries.length} txns`} />
               <KPI label="Earned value" value={`$${totalValue.toFixed(2)}`} sub={`${avgReturn.toFixed(2)}% avg return`} subColor="var(--gain)" />
               <KPI label="Points earned" value={Math.round(totalPoints).toLocaleString()} sub="across cards" />
-              <KPI
-                label="Recoverable"
-                value={`$${(missed?.total_gap ?? 0).toFixed(2)}`}
-                sub={`${missed?.missed_count ?? 0} txns mis-routed`}
-                subColor={(missed?.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--ink-3)"}
-                accent={(missed?.total_gap ?? 0) > 0}
-              />
+              {missedLocked ? (
+                <LockedRecoverableKPI />
+              ) : (
+                <KPI
+                  label="Recoverable"
+                  value={`$${(missed?.total_gap ?? 0).toFixed(2)}`}
+                  sub={`${missed?.missed_count ?? 0} txns mis-routed`}
+                  subColor={(missed?.total_gap ?? 0) > 0 ? "var(--accent)" : "var(--ink-3)"}
+                  accent={(missed?.total_gap ?? 0) > 0}
+                />
+              )}
             </section>
 
             {/* ── Card ledger (program-row pattern) ───────────────────── */}
@@ -344,6 +362,44 @@ export default function InsightsPage() {
 }
 
 /* ── Subcomponents ─────────────────────────────────────────────────────── */
+
+/* Free tier: missed-rewards is Pro-gated server-side (402 UPGRADE_REQUIRED).
+ * Render an honest locked tile instead of a fabricated "$0.00 recoverable". */
+function LockedRecoverableKPI() {
+  return (
+    <div
+      style={{
+        padding: "22px 24px",
+        borderRight: "1px solid var(--rule)",
+        minWidth: 0,
+        position: "relative",
+      }}
+    >
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Recoverable</div>
+      <div
+        className="display"
+        style={{ fontSize: 36, lineHeight: 1, color: "var(--ink-3)", letterSpacing: "-0.01em", fontStyle: "italic" }}
+      >
+        Pro
+      </div>
+      <Link
+        href="/pricing"
+        className="mono"
+        style={{
+          display: "inline-block",
+          marginTop: 8,
+          fontSize: 11,
+          color: "var(--accent)",
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          textDecoration: "none",
+        }}
+      >
+        Unlock with Pro →
+      </Link>
+    </div>
+  );
+}
 
 function KPI({
   label,
