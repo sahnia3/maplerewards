@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeftRight, ChevronLeft } from "lucide-react";
 import { getProgramDetail, listCPPOverrides } from "@/lib/api";
 import type { ProgramDetailResponse, TransferPartner } from "@/lib/types";
+import { Term } from "@/components/term";
 import { useAuth } from "@/contexts/auth-context";
 import { useSession } from "@/contexts/session-context";
 
@@ -568,7 +569,7 @@ export default function ProgramDetailPage() {
 
         {/* Value tiles — display-typography, no emoji */}
         <div className="grid grid-cols-2 min-[520px]:grid-cols-3 gap-3 mb-8 fade-up-1">
-          {valueTiles.map(({ label, cpp }) => (
+          {valueTiles.map(({ label, cpp }, i) => (
             <div
               key={label}
               style={{
@@ -594,7 +595,7 @@ export default function ProgramDetailPage() {
                   fontWeight: 500,
                 }}
               >
-                per point
+                {i === 0 ? <Term k="cpp">per point</Term> : "per point"}
               </div>
               <div
                 className="serif"
@@ -612,7 +613,7 @@ export default function ProgramDetailPage() {
             className="eyebrow"
             style={{ color: "var(--ink-3)", marginBottom: 14, letterSpacing: "0.18em" }}
           >
-            Redemption sweet spots
+            Redemption <Term k="sweet-spot">sweet spots</Term>
           </h2>
           <div
             style={{
