@@ -457,15 +457,12 @@ rbc_avion:
   cpp_range:
     low: 1.0
     high: 2.0
-    sweet_spot: "2–3¢ via BA Avios short-haul transfers"
+    sweet_spot: "~1.0¢/pt fixed value via RBC Travel portal"
   transfers_to:
-    - { program: "British Airways Avios", ratio: "1:1", note: "Best use — short-haul sweet spots" }
-    - { program: "Cathay Pacific Asia Miles", ratio: "1:1", note: "Premium cabin Asia awards" }
     - { program: "WestJet dollars", ratio: "100:1", note: "100 Avion pts = $1 WestJet" }
   sweet_spots:
-    - "Transfer to BA Avios (1:1) for North America short-haul at 7,500 pts each way"
-    - "Asia Miles for Cathay Pacific premium cabin awards"
-    - "RBC Travel portal: ~1.0¢/pt fixed value — decent floor"
+    - "RBC Travel portal: ~1.0¢/pt fixed value — Avion is a fixed-value program"
+    - "WestJet transfer (100:1) for straightforward domestic redemption"
 
 td_rewards:
   name: "TD Rewards"

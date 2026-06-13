@@ -813,7 +813,7 @@ func TestGetCPP_CacheHit(t *testing.T) {
 	ts := newTestOptimizer()
 	ts.cache.valuations["amex-mr:base"] = 2.5
 
-	cpp, err := ts.svc.getCPP(context.Background(), "amex-mr", "base")
+	cpp, err := ts.svc.baseCPP(context.Background(), "amex-mr", "base")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -827,7 +827,7 @@ func TestGetCPP_CacheMissFallsToRepo(t *testing.T) {
 	// Cache empty, repo has value
 	ts.valuationRepo.cpps["aeroplan:base"] = 1.8
 
-	cpp, err := ts.svc.getCPP(context.Background(), "aeroplan", "base")
+	cpp, err := ts.svc.baseCPP(context.Background(), "aeroplan", "base")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -839,7 +839,7 @@ func TestGetCPP_CacheMissFallsToRepo(t *testing.T) {
 func TestGetCPP_BothMissReturnsError(t *testing.T) {
 	ts := newTestOptimizer()
 
-	_, err := ts.svc.getCPP(context.Background(), "nonexistent", "base")
+	_, err := ts.svc.baseCPP(context.Background(), "nonexistent", "base")
 	if err == nil {
 		t.Fatal("expected error when both cache and repo miss")
 	}

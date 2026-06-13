@@ -122,7 +122,7 @@ card_earning_rates:
       - "Do NOT use as main spending card (1x earn is weak)"
       - "Value is in upgrading Avion Premium to Avion Elite points"
       - "Avion Elite points redeem up to 2.3 cpp via air travel redemption schedule"
-      - "Transfer partners: BA Avios 1:1, Asia Miles 1:1, WestJet 100:1"
+      - "Avion is a fixed-value program; only outbound transfer partner is WestJet (100:1)"
 
   td_aeroplan_vi:
     name: "TD Aeroplan Visa Infinite"
@@ -1267,12 +1267,6 @@ transfer_strategies:
       value_increase: "Up to 2.3 cpp via air travel redemption schedule"
       critical_rule: "Do NOT redeem at Premium tier — always upgrade to Elite via Avion VI card"
     partners:
-      - program: "British Airways Avios"
-        ratio: "1:1"
-        best_use: "Short-haul sweet spots"
-      - program: "Cathay Pacific Asia Miles"
-        ratio: "1:1"
-        best_use: "Premium cabin Asia awards"
       - program: "WestJet Dollars"
         ratio: "100:1"
         best_use: "100 Avion pts = $1 WestJet; straightforward domestic redemption"
@@ -1348,10 +1342,10 @@ redemption_tips:
     do:
       - "Hold an Avion VI card to upgrade Avion Premium to Avion Elite tier"
       - "Redeem Avion Elite via air travel schedule at up to 2.3 cpp"
-      - "Transfer to BA Avios 1:1 for short-haul sweet spots"
+      - "Treat Avion as a fixed-value program (RBC Travel portal ~1.0¢/pt floor)"
     do_not:
       - "Do NOT redeem at Avion Premium tier — massive value lost"
-      - "Avoid RBC Travel portal if airline transfers are available"
+      - "Do NOT assume airline point transfers — Avion's only outbound route is WestJet (100:1)"
 
   pc_optimum:
     do:

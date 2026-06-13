@@ -6,7 +6,7 @@ import { getTransferSweetSpots } from "@/lib/api";
 import type { TransferSweetSpotReport, TransferSweetSpotSource } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { Stat, fmtCAD, fmtCAD2, progLabel, sectionStyle } from "./_shared";
+import { ExportButton, Stat, fmtCAD, fmtCAD2, progLabel, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -43,6 +43,25 @@ function SourceRow({ src }: { src: TransferSweetSpotSource }) {
             {ptsLabel(best.transferred_points)} → worth {fmtCAD(best.transfer_value_cad)} ·{" "}
             <span style={{ color: "var(--gain)", fontWeight: 600 }}>+{fmtCAD2(best.uplift_cad)} uplift</span>
           </div>
+          {best.bonus_label && (
+            <div
+              className="mono"
+              style={{
+                display: "inline-block",
+                marginTop: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                color: "var(--gain)",
+                background: "rgba(26,122,58,0.10)",
+                border: "1px solid var(--gain)",
+                borderRadius: 999,
+                padding: "2px 10px",
+              }}
+            >
+              {best.bonus_label}
+            </div>
+          )}
         </>
       ) : (
         <p className="serif" style={{ fontSize: 13.5, color: "var(--ink-3)", margin: "6px 0 0", lineHeight: 1.5 }}>
@@ -120,6 +139,10 @@ export function TransferSweetSpotsTile({ sessionId, isReady }: Props) {
                 {report.note}
               </p>
             )}
+
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <ExportButton sessionId={sessionId} report="sweet-spots" label="Export sweet-spots" />
+            </div>
           </>
         )}
       </PaperTile>

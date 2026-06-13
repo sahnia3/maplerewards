@@ -147,6 +147,14 @@ func main() {
 	cardOfferRepo := repo.NewCardOfferRepo(pool)
 	affiliateRepo := repo.NewAffiliateRepo(pool)
 	applicationRepo := repo.NewApplicationRepo(pool)
+	// Per-user CPP overrides (AU-5). Read by the optimizer, sweet-spot,
+	// simulator, and portfolio engines (prefer user_cpp, fall back to base CPP).
+	userCPPRepo := repo.NewUserCPPRepo(pool)
+
+	// Live transfer-bonus reads (AU-2): scraped into transfer_bonus_events by the
+	// promo sentinel. Wired into the sweet-spot engine + AI below so a live bonus
+	// reroutes the keep/transfer call; also backs the public transfer-promo list.
+	transferBonusRepo := repo.NewTransferBonusRepo(pool)
 
 	// ── Services ──────────────────────────────────────────────────────────
 	// JWT_SECRET length floor: 32 chars (HS256 best-practice). A 10-char
@@ -196,7 +204,10 @@ func main() {
 	}
 
 	walletSvc := service.NewWalletService(walletRepo, cardRepo, spendRepo, bonusRepo, redisCache)
-	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache)
+	optimizerSvc := service.NewOptimizerService(cardRepo, walletRepo, valuationRepo, transferRepo, spendRepo, redisCache).
+		WithUserCPP(userCPPRepo) // AU-5: prefer the wallet owner's own CPP over base
+	userCPPSvc := service.NewUserCPPService(walletRepo, userCPPRepo, cardRepo)
+	userCPPH := handler.NewUserCPPHandler(userCPPSvc)
 	tavilySvc := service.NewTavilyService(getEnv("TAVILY_API_KEY", ""), quotaClient)
 
 	// Load YAML knowledge base; fall back to hardcoded data on error.
@@ -220,7 +231,9 @@ func main() {
 	missedRewardsSvc := service.NewMissedRewardsService(walletRepo, spendRepo, optimizerSvc)
 	creditsSvc := service.NewCreditsService(walletRepo, creditRepo)
 	renewalSvc := service.NewRenewalService(walletRepo, spendRepo, creditRepo, cardRepo)
-	transferSweetSpotSvc := service.NewTransferSweetSpotService(walletRepo, loyaltyAccountRepo, cardRepo, transferRepo)
+	transferSweetSpotSvc := service.NewTransferSweetSpotService(walletRepo, loyaltyAccountRepo, cardRepo, transferRepo).
+		WithUserCPP(userCPPRepo).        // AU-5: price keep/transfer on the user's own CPP where set
+		WithBonusRepo(transferBonusRepo) // AU-2: surface + apply live transfer bonuses per route
 	sqcSvc := service.NewSQCService(walletRepo, sqcRepo)
 	awardWatchSvc := service.NewAwardWatchService(walletRepo, awardWatchRepo)
 	buyPointsSvc := service.NewBuyPointsService(buyPromoRepo)
@@ -260,7 +273,7 @@ func main() {
 			Devaluation:   devalSvc,
 			AwardWatch:    awardWatchSvc,
 		},
-	)
+	).WithTransferBonus(transferBonusRepo) // AU-2: auto-fill live bonus in simulate_transfer_with_bonus
 
 	// Apify smoke-test goroutine. Fires every 24h against a known query
 	// (YYZ→LHR business) and warns if the Apify schema drifts again. Catches
@@ -300,7 +313,8 @@ func main() {
 	churnH := handler.NewChurnPlannerHandler(churnSvc)
 	// Pro: wallet simulator — net annual-value impact of adding and/or dropping
 	// cards, re-pricing logged spend per category against a hypothetical wallet.
-	simulatorSvc := service.NewSimulatorService(walletRepo, spendRepo, cardRepo)
+	simulatorSvc := service.NewSimulatorService(walletRepo, spendRepo, cardRepo).
+		WithUserCPP(userCPPRepo) // AU-5: value logged spend on the user's own CPP where set
 	simulatorH := handler.NewSimulatorHandler(simulatorSvc)
 	// Pro: household optimizer — across the user's held cards + a partner's
 	// cards (supplied as catalog ids, never another user's account), who should
@@ -332,11 +346,16 @@ func main() {
 	tripH := handler.NewTripHandler(tripSvc, walletRepo)
 	awardH := handler.NewAwardSearchHandler(awardSearchSvc, walletRepo)
 	bonusH := handler.NewBonusHandler(walletRepo, bonusRepo)
-	portfolioH := handler.NewPortfolioHandler(walletRepo, cardRepo, spendRepo, transferRepo, optimizerSvc)
+	portfolioH := handler.NewPortfolioHandler(walletRepo, cardRepo, spendRepo, transferRepo, optimizerSvc).
+		WithUserCPP(userCPPRepo) // AU-5: utilization scoring prefers the user's own CPP where set
 	missedH := handler.NewMissedRewardsHandler(missedRewardsSvc)
 	creditsH := handler.NewCreditsHandler(creditsSvc)
 	renewalH := handler.NewRenewalHandler(renewalSvc)
 	transferSweetSpotH := handler.NewTransferSweetSpotHandler(transferSweetSpotSvc)
+	// Pro computed-analysis export — streams the optimizer ranking, churn plan,
+	// household coverage, transfer sweet-spots, or missed-rewards forensics as a
+	// CSV download (reuses the same already-computed services the tiles render).
+	exportH := handler.NewExportHandler(optimizerSvc, churnSvc, householdSvc, transferSweetSpotSvc, missedRewardsSvc)
 	sqcH := handler.NewSQCHandler(sqcSvc)
 	awardWatchH := handler.NewAwardWatchHandler(awardWatchSvc)
 	buyPointsH := handler.NewBuyPointsHandler(buyPointsSvc)
@@ -361,8 +380,8 @@ func main() {
 	wbMissionH := handler.NewWelcomeBonusMissionHandler(wbMissionSvc)
 
 	// Transfer-promo log. Worker populates via the Promo Sentinel sweep;
-	// the public endpoint just reads the latest active rows.
-	transferBonusRepo := repo.NewTransferBonusRepo(pool)
+	// the public endpoint just reads the latest active rows. (transferBonusRepo is
+	// constructed earlier and also wired into the sweet-spot + AI engines.)
 	transferPromoH := handler.NewTransferPromoHandler(transferBonusRepo)
 
 	// Web push: shared Pusher (WebPushSender when VAPID keys set, else stub),
@@ -658,6 +677,20 @@ func main() {
 			r.Put("/wallet/{sessionID}/applications/{applicationID}", applicationH.UpdateStatus)
 			r.Delete("/wallet/{sessionID}/applications/{applicationID}", applicationH.Delete)
 			r.Get("/wallet/{sessionID}/cards/{cardID}/eligibility", applicationH.Eligibility)
+
+			// Per-user CPP overrides (AU-5). The wallet owner sets their own
+			// cents-per-point for a program/segment; the value engines prefer it
+			// over the seeded base. Same RequireSessionOwner ownership rule as the
+			// rest of the wallet routes.
+			r.Get("/wallet/{sessionID}/cpp-overrides", userCPPH.List)
+			r.Put("/wallet/{sessionID}/cpp-overrides", userCPPH.Set)
+			r.Delete("/wallet/{sessionID}/cpp-overrides/{programSlug}/{segment}", userCPPH.Delete)
+
+			// Free-tier missed-rewards preview (NU-7). Returns AT MOST one computed
+			// missed-rewards line + a has-more flag so the Insights page can teach
+			// free users with a real example. Deliberately mounted in this non-Pro
+			// session-owner group; the full forensics stay Pro-gated below.
+			r.Get("/wallet/{sessionID}/missed-rewards/preview", missedH.GetPreview)
 		})
 
 		// ── Pro-tier routes (JWT + Pro required + session ownership) ────
@@ -671,6 +704,11 @@ func main() {
 
 			// Missed-rewards forensics
 			r.Get("/wallet/{sessionID}/missed-rewards", missedH.GetMissedRewards)
+
+			// Pro computed-analysis CSV export. {report} ∈ optimizer | churn |
+			// household | sweet-spots | missed-rewards. Lets the user take the
+			// analysis out of the app instead of rebuilding it in a spreadsheet.
+			r.Get("/pro/export/{sessionID}/{report}", exportH.Export)
 
 			// Card credits + renewal countdown
 			r.Get("/wallet/{sessionID}/credits", creditsH.ListCredits)

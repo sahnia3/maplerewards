@@ -16,7 +16,7 @@ import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proo
 import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { Counter } from "@/components/editorial/counter";
 import { Term } from "@/components/term";
-import { HomeTour } from "@/components/home-tour";
+import { useTour } from "@/contexts/tour-context";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Authenticated home — a single, inviting first-login hero.
@@ -67,6 +67,7 @@ export default function HomePage() {
   const { sessionId, isReady } = useSession();
   const { wallet, isLoading: walletLoading } = useWallet();
   const { user, isAuthenticated, isPro } = useAuth();
+  const tour = useTour();
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
   const [recentSpend, setRecentSpend] = useState<SpendEntry[]>([]);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
@@ -380,6 +381,7 @@ export default function HomePage() {
                 ["Terms", "/terms"],
                 ["Pricing", "/pricing"],
                 ["Tools", "/tools"],
+                ["Glossary", "/glossary"],
               ].map(([label, href]) => (
                 <Link
                   key={href}
@@ -419,7 +421,6 @@ export default function HomePage() {
 
   return (
     <div className="screen-shell dashboard-screen reveal" style={{ paddingTop: 0 }}>
-      <HomeTour />
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px clamp(16px, 1.5vw, 28px)" }}>
         {/* ── The one inviting, animated first-login hero ──────────────────
            * Single coherent stat surface (folded into the masthead) + the
@@ -439,6 +440,26 @@ export default function HomePage() {
             <motion.div className="home-hero-eyebrow" variants={heroItem}>
               <span className="eyebrow">{greeting}</span>
               <span className="mr-kicker-line" />
+              <button
+                type="button"
+                onClick={() => tour.start()}
+                className="mono"
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--rule-strong)",
+                  borderRadius: 999,
+                  color: "var(--ink-2)",
+                  padding: "6px 14px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Take the tour
+              </button>
             </motion.div>
 
             <motion.h1 className="display mr-hero-title" variants={heroItem}>

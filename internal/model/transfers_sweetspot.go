@@ -7,12 +7,22 @@ package model
 type TransferOption struct {
 	ToProgramSlug    string  `json:"to_program_slug"`
 	ToProgramName    string  `json:"to_program_name"`
-	TransferRatio    float64 `json:"transfer_ratio"`    // 1.0 = 1:1
-	TransferredPoints int64  `json:"transferred_points"` // floor(points * ratio)
+	TransferRatio    float64 `json:"transfer_ratio"`    // base 1.0 = 1:1
+	TransferredPoints int64  `json:"transferred_points"` // floor(points * effective ratio)
 	TransferValueCAD float64 `json:"transfer_value_cad"`
 	UpliftCAD        float64 `json:"uplift_cad"`     // transfer value - keep value
 	MinTransfer      int     `json:"min_transfer"`   // source-program minimum to transfer
 	Eligible         bool    `json:"eligible"`       // false when points < min_transfer
+
+	// Live transfer-bonus fields. Populated only when transfer_bonus_events has
+	// an active promo covering this exact (source → destination) route; the
+	// scraped data is reflected, never invented. EffectiveRatio already folds
+	// the bonus into TransferRatio*(1+bonus%), and TransferredPoints/
+	// TransferValueCAD/UpliftCAD above are computed on the boosted ratio.
+	BonusPercent   float64 `json:"bonus_percent,omitempty"`   // e.g. 30 for a +30% bonus; 0 when none live
+	BonusLabel     string  `json:"bonus_label,omitempty"`     // e.g. "BONUS LIVE: +30% through 2026-07-15"
+	BonusExpiresAt string  `json:"bonus_expires_at,omitempty"` // YYYY-MM-DD; empty when no bonus
+	EffectiveRatio float64 `json:"effective_ratio,omitempty"` // TransferRatio*(1+BonusPercent/100); 0 omits when == base
 }
 
 // TransferSweetSpotSource is one source program the user holds points in that

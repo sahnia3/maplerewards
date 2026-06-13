@@ -79,7 +79,7 @@ const PERKS = [
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { addCard } = useWallet();
+  const { addCard, wallet } = useWallet();
   const { isAuthenticated } = useAuth();
 
   // Lazy initializers hydrate from localStorage so a refresh mid-flow
@@ -104,6 +104,12 @@ export default function OnboardingPage() {
   const [resultsError, setResultsError] = useState<string | null>(null);
   const [addingCards, setAddingCards] = useState(false);
   const [addCardsError, setAddCardsError] = useState<string | null>(null);
+  // Per-card "Track this card" state on the step-4 result rows (NU-1). Keyed by
+  // card_id: tracks the in-flight add + any per-card failure independently of
+  // the bulk "Add my cards" button.
+  const [trackingCardId, setTrackingCardId] = useState<string | null>(null);
+  const [trackedCardIds, setTrackedCardIds] = useState<string[]>([]);
+  const [trackError, setTrackError] = useState<Record<string, string>>({});
 
   const reportCards = useReportableError("onboarding.listCards");
   const reportResults = useReportableError("onboarding.getRecommendations");
@@ -151,6 +157,31 @@ export default function OnboardingPage() {
     finally { setResultsLoading(false); }
   };
 
+  // Per-card "Track this card" on a step-4 result row (NU-1). Unauthenticated
+  // sessions are handled by addCard itself (stash + redirect to /signup), so we
+  // don't optimistically mark tracked in that case — the redirect takes over.
+  const handleTrackCard = async (cardId: string) => {
+    setTrackingCardId(cardId);
+    setTrackError((p) => {
+      const next = { ...p };
+      delete next[cardId];
+      return next;
+    });
+    try {
+      await addCard(cardId);
+      if (isAuthenticated) {
+        setTrackedCardIds((p) => (p.includes(cardId) ? p : [...p, cardId]));
+      }
+    } catch (e) {
+      setTrackError((p) => ({
+        ...p,
+        [cardId]: e instanceof Error && e.message ? e.message : "Couldn't track this card. Try again.",
+      }));
+    } finally {
+      setTrackingCardId(null);
+    }
+  };
+
   const handleAddTopCards = async () => {
     // Seed the wallet with the cards the user said they CARRY (step 1),
     // not the recommendations — adding cards they don't hold misrepresents
@@ -174,16 +205,19 @@ export default function OnboardingPage() {
     setAddingCards(true);
     setAddCardsError(null);
     const failed: string[] = [];
+    let succeeded = 0;
     let lastError: unknown = null;
     try {
       for (const id of toAdd) {
         try {
           await addCard(id);
+          succeeded += 1;
         } catch (e) {
           failed.push(id);
           lastError = e;
         }
       }
+      // Surface every per-card failure regardless of outcome (NU-3).
       if (failed.length > 0) {
         const names = failed
           .map((id) => allCards.find((c) => c.id === id)?.name ?? "a card")
@@ -191,12 +225,17 @@ export default function OnboardingPage() {
         setAddCardsError(
           `Couldn't add ${names}${lastError instanceof Error && lastError.message ? ` — ${lastError.message}` : ""}`
         );
-        return;
       }
-      // User finished onboarding — discard the cached form state so a
-      // returning user (e.g. resetting their wallet) starts fresh.
-      clearOnboardingState();
-      router.push("/");
+      // Only leave the page once at least one card actually landed in the
+      // wallet. On zero successful adds we stay put so the error above is
+      // visible and the user can retry — never navigate away on a total
+      // failure (NU-3).
+      if (succeeded > 0) {
+        // User finished onboarding — discard the cached form state so a
+        // returning user (e.g. resetting their wallet) starts fresh.
+        clearOnboardingState();
+        router.push("/");
+      }
     } finally { setAddingCards(false); }
   };
 
@@ -306,6 +345,42 @@ export default function OnboardingPage() {
               title={<>Which cards <span style={{ fontStyle: "italic" }}>do you carry?</span></>}
               lede="Tap every card you currently use. We'll model them against the optimizer to measure missed rewards and unused transfers."
             />
+
+            {/* Beginner branch (NU-1): a true new user has no cards to tap.
+                Clear any selection and route straight into the spend →
+                recommend flow so step 4 answers "what should I get?". */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCardIds([]);
+                setStep(2);
+              }}
+              className="m-tap"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                width: "100%",
+                marginBottom: 24,
+                padding: "16px 18px",
+                borderRadius: 12,
+                border: "1px dashed var(--rule-strong)",
+                background: "var(--card-fill)",
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span className="display" style={{ display: "block", fontSize: 16, color: "var(--ink)", lineHeight: 1.2 }}>
+                  I&rsquo;m new — I don&rsquo;t have any cards yet
+                </span>
+                <span className="serif" style={{ display: "block", fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", marginTop: 2 }}>
+                  Skip this step and we&rsquo;ll recommend cards from your spending.
+                </span>
+              </span>
+              <ChevronRight size={16} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            </button>
 
             {cardsLoading ? (
               <div style={{ display: "flex", justifyContent: "center", padding: "64px 0" }}>
@@ -769,6 +844,78 @@ export default function OnboardingPage() {
                           Welcome: {score.welcome_bonus_points.toLocaleString()} pts on ${score.welcome_bonus_min_spend.toLocaleString()} in {score.welcome_bonus_months}mo
                         </p>
                       )}
+
+                      {/* Per-card actions (NU-1): a "View card →" link into the
+                          in-app card detail page, and a "Track this card"
+                          button wiring the existing addCard. No affiliate
+                          Apply button — that's deferred (REF-2). */}
+                      {(() => {
+                        const alreadyTracked =
+                          trackedCardIds.includes(score.card_id) ||
+                          wallet.some((c) => c.card_id === score.card_id);
+                        const tracking = trackingCardId === score.card_id;
+                        return (
+                          <>
+                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, marginTop: 14 }}>
+                              <Link
+                                href={`/cards/${score.card_id}`}
+                                className="mono m-tap"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  padding: "8px 14px",
+                                  borderRadius: 8,
+                                  border: "1px solid var(--rule-strong)",
+                                  color: "var(--ink-2)",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  letterSpacing: "0.10em",
+                                  textTransform: "uppercase",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                View card <ChevronRight size={12} />
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => handleTrackCard(score.card_id)}
+                                disabled={tracking || alreadyTracked}
+                                className="mono m-tap"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  padding: "8px 14px",
+                                  borderRadius: 8,
+                                  border: `1px solid ${alreadyTracked ? "var(--rule)" : "var(--accent)"}`,
+                                  background: alreadyTracked ? "transparent" : "var(--accent)",
+                                  color: alreadyTracked ? "var(--ink-3)" : "#fff",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  letterSpacing: "0.10em",
+                                  textTransform: "uppercase",
+                                  cursor: tracking || alreadyTracked ? "default" : "pointer",
+                                  opacity: tracking ? 0.7 : 1,
+                                }}
+                              >
+                                {tracking ? (
+                                  <><Loader2 size={12} className="animate-spin" /> Tracking…</>
+                                ) : alreadyTracked ? (
+                                  <><Check size={12} strokeWidth={3} /> Tracked</>
+                                ) : (
+                                  "Track this card"
+                                )}
+                              </button>
+                            </div>
+                            {trackError[score.card_id] && (
+                              <p role="alert" className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 13, margin: "8px 0 0", lineHeight: 1.4 }}>
+                                {trackError[score.card_id]}
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

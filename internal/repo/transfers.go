@@ -22,7 +22,7 @@ func (r *TransferRepo) GetTransferRoutesFrom(ctx context.Context, toProgramID st
 			tp.id, tp.from_program_id, tp.to_program_id,
 			tp.transfer_ratio, tp.minimum_transfer,
 			COALESCE(tp.transfer_increment, 0), tp.processing_days,
-			tp.is_active, COALESCE(tp.notes, ''),
+			tp.is_active, COALESCE(tp.notes, ''), COALESCE(tp.source_url, ''),
 			lp.id, lp.name, lp.slug, lp.currency_name, lp.program_type,
 			lp.base_cpp, lp.is_active, lp.updated_at
 		FROM transfer_partners tp
@@ -45,7 +45,7 @@ func (r *TransferRepo) GetTransferRoutesFrom(ctx context.Context, toProgramID st
 			&tp.ID, &tp.FromProgramID, &tp.ToProgramID,
 			&tp.TransferRatio, &tp.MinimumTransfer,
 			&tp.TransferIncrement, &tp.ProcessingDays,
-			&tp.IsActive, &tp.Notes,
+			&tp.IsActive, &tp.Notes, &tp.SourceURL,
 			&tp.FromProgram.ID, &tp.FromProgram.Name, &tp.FromProgram.Slug,
 			&tp.FromProgram.CurrencyName, &tp.FromProgram.ProgramType,
 			&tp.FromProgram.BaseCPP, &tp.FromProgram.IsActive, &tp.FromProgram.UpdatedAt,
@@ -64,7 +64,7 @@ func (r *TransferRepo) GetTransferRoutes(ctx context.Context, fromProgramID stri
 			tp.id, tp.from_program_id, tp.to_program_id,
 			tp.transfer_ratio, tp.minimum_transfer,
 			COALESCE(tp.transfer_increment, 0), tp.processing_days,
-			tp.is_active, COALESCE(tp.notes, ''),
+			tp.is_active, COALESCE(tp.notes, ''), COALESCE(tp.source_url, ''),
 			lp.id, lp.name, lp.slug, lp.currency_name, lp.program_type,
 			lp.base_cpp, lp.is_active, lp.updated_at
 		FROM transfer_partners tp
@@ -87,7 +87,7 @@ func (r *TransferRepo) GetTransferRoutes(ctx context.Context, fromProgramID stri
 			&tp.ID, &tp.FromProgramID, &tp.ToProgramID,
 			&tp.TransferRatio, &tp.MinimumTransfer,
 			&tp.TransferIncrement, &tp.ProcessingDays,
-			&tp.IsActive, &tp.Notes,
+			&tp.IsActive, &tp.Notes, &tp.SourceURL,
 			&tp.ToProgram.ID, &tp.ToProgram.Name, &tp.ToProgram.Slug,
 			&tp.ToProgram.CurrencyName, &tp.ToProgram.ProgramType,
 			&tp.ToProgram.BaseCPP, &tp.ToProgram.IsActive, &tp.ToProgram.UpdatedAt,

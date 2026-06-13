@@ -19,10 +19,16 @@ func (m *mockRenWallet) GetUserCards(_ context.Context, _ string) ([]model.UserC
 	return m.cards, nil
 }
 
-type mockRenSpend struct{ stats *model.SpendStats }
+type mockRenSpend struct {
+	stats  *model.SpendStats
+	months int
+}
 
 func (m *mockRenSpend) GetSpendStats(_ context.Context, _ string) (*model.SpendStats, error) {
 	return m.stats, nil
+}
+func (m *mockRenSpend) SpendMonthsObserved(_ context.Context, _ string) (int, error) {
+	return m.months, nil
 }
 
 type mockRenCredit struct{ credits []model.CardCreditStatus }
@@ -61,7 +67,7 @@ func TestRenewal_Verdicts(t *testing.T) {
 			renUCard("c-free", "Free Card", "Brim", "p3", 0),
 		},
 	}
-	spend := &mockRenSpend{stats: &model.SpendStats{ByCard: []model.CardStat{
+	spend := &mockRenSpend{months: 12, stats: &model.SpendStats{ByCard: []model.CardStat{
 		{CardName: "Keep Card", TotalValue: 300},
 		{CardName: "Credit Card", TotalValue: 50},
 		{CardName: "Cancel Card", TotalValue: 20},
@@ -101,6 +107,43 @@ func TestRenewal_Verdicts(t *testing.T) {
 	// Potential savings should reflect the cancellable card's recoverable fee.
 	if rep.PotentialSavings <= 0 {
 		t.Errorf("expected positive potential savings, got %.2f", rep.PotentialSavings)
+	}
+}
+
+// AU-8(b): a card whose value math would say "cancel" must be softened to
+// insufficient_history when the user has logged too short a spend window, and
+// such a card must NOT contribute to PotentialSavings (the renewal optimizer
+// can't tell the user to cancel on one day of extrapolated data).
+func TestRenewal_ThinHistorySoftensCancel(t *testing.T) {
+	wallet := &mockRenWallet{
+		user:  &model.User{ID: "u1"},
+		cards: []model.UserCard{renUCard("c-cancel", "Cancel Card", "TD", "p2", 150)},
+	}
+	// Value far below the fee → would be downgrade_or_cancel on a full window.
+	spend := &mockRenSpend{months: 1, stats: &model.SpendStats{ByCard: []model.CardStat{
+		{CardName: "Cancel Card", TotalValue: 20},
+	}}}
+	card := &mockRenCard{cands: []model.Card{{ID: "c-dg", Name: "No-Fee TD", AnnualFee: 0}}}
+
+	svc := NewRenewalService(wallet, spend, &mockRenCredit{}, card)
+	rep, err := svc.Assess(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("assess: %v", err)
+	}
+	if len(rep.Assessments) != 1 {
+		t.Fatalf("expected 1 assessment, got %d", len(rep.Assessments))
+	}
+	if v := rep.Assessments[0].Verdict; v != "insufficient_history" {
+		t.Errorf("thin-history cancel: got %q want insufficient_history", v)
+	}
+	if len(rep.Assessments[0].DowngradeOptions) != 0 {
+		t.Errorf("insufficient_history should not surface downgrade options")
+	}
+	if rep.PotentialSavings != 0 {
+		t.Errorf("thin-history cancel must not count toward savings, got %.2f", rep.PotentialSavings)
+	}
+	if !rep.ThinSpendHistory || rep.SpendMonthsObserved != 1 {
+		t.Errorf("expected ThinSpendHistory=true, months=1; got %v, %d", rep.ThinSpendHistory, rep.SpendMonthsObserved)
 	}
 }
 

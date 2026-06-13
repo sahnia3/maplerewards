@@ -26,7 +26,7 @@ type RenewalAssessment struct {
 	CreditsUsed      float64                  `json:"credits_used"`  // redeemed this anniversary year
 	RealizedNet      float64                  `json:"realized_net"`  // spendValue + creditsUsed - fee
 	PotentialNet     float64                  `json:"potential_net"` // spendValue + creditsValue - fee
-	Verdict          string                   `json:"verdict"`       // keep | keep_no_fee | use_credits | downgrade_or_cancel
+	Verdict          string                   `json:"verdict"`       // keep | keep_no_fee | use_credits | downgrade_or_cancel | insufficient_history
 	Rationale        string                   `json:"rationale"`
 	DowngradeOptions []RenewalDowngradeOption `json:"downgrade_options,omitempty"`
 }
@@ -38,4 +38,10 @@ type RenewalReport struct {
 	TotalAnnualFees  float64             `json:"total_annual_fees"`
 	TotalNetValue    float64             `json:"total_net_value"`   // sum of realized net
 	PotentialSavings float64             `json:"potential_savings"` // fees recoverable by downgrading/cancelling
+	// SpendMonthsObserved is how many distinct calendar months of spend the
+	// user has logged. When it's thin, hard "cancel" verdicts are softened to
+	// insufficient_history because the value math is extrapolated from a short
+	// window (e.g. one day's spend ≠ an annual picture).
+	SpendMonthsObserved int  `json:"spend_months_observed"`
+	ThinSpendHistory    bool `json:"thin_spend_history"`
 }

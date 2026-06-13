@@ -68,6 +68,7 @@ function conversationLabel(c: ConversationSummary): string {
 }
 
 const SUGGESTIONS = [
+  { label: "I'm new to credit-card rewards — how should I start?", prompt: "I'm new to credit-card rewards — how should I start?" },
   { label: "Best way to fly business class to London", prompt: "Best way to fly business class to London with my points" },
   { label: "Hotels in Paris using my points", prompt: "Find me hotels in Paris using my points — 3 nights" },
   { label: "Points needed for Tokyo economy", prompt: "How many Aeroplan points do I need for Tokyo economy class from Toronto?" },
@@ -265,7 +266,7 @@ export default function ChatPage() {
               The <span style={{ fontStyle: "italic" }}>rewards</span> editor.
             </>
           }
-          lede="Ask anything about your wallet, card-stack, transfer partners, or sweet-spot redemptions. Wired to your live wallet data."
+          lede="Ask anything — which card to use, what your points are worth, or how rewards work. Wired to your live wallet data."
         />
 
         {/* Conversation history — signed-in users only (anon chats aren't persisted). */}

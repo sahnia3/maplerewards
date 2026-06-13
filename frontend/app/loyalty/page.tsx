@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Trophy } from "lucide-react";
 import { listPrograms } from "@/lib/api";
 import type { LoyaltyProgram } from "@/lib/types";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { Term } from "@/components/term";
 
 type ProgramType = "all" | "airline" | "bank" | "hotel" | "cashback";
 
@@ -272,7 +272,7 @@ export default function LoyaltyPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 fade-up-2">
+          <div data-tour-id="loyalty-programs-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-3 fade-up-2">
             {filtered.map((program, i) => {
               const colors = typeColor(program.program_type);
               return (
@@ -360,7 +360,9 @@ export default function LoyaltyPage() {
                       >
                         {program.base_cpp.toFixed(2)}¢/pt
                       </div>
-                      <InfoTooltip term="cpp" />
+                      <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+                        <Term k="cpp" />
+                      </span>
                     </div>
                   </div>
 

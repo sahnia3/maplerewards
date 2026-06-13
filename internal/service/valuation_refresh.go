@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -12,18 +11,20 @@ import (
 	"maplerewards/internal/repo"
 )
 
-// ValuationRefreshService re-anchors point_valuations.recorded_at for every
-// active row weekly. Without this the UI's "freshness chip" reports every
-// program as months-stale because the CLI binary that performs this work
-// (cmd/refresh-valuations) was never wired into a scheduler.
+// ValuationRefreshService previously re-UPSERTed every active point_valuations
+// row weekly, bumping recorded_at = now() each sweep so the UI "freshness chip"
+// reset to "reconfirmed today". But the sweep never CHANGES a CPP (its own
+// docstring admitted this) — it re-wrote the same hand-entered value, so the
+// chip claimed a re-confirmation that never happened on a months-stale number.
+// That manufactured-freshness signal is exactly the kind of cynical data
+// behavior a churner screenshots (AU-3).
 //
-// Migration 38 included a one-off Aeroplan CPP bump from 1.5 → 2.0¢; this
-// service ensures the same kind of staleness doesn't accumulate again. The
-// actual CPP values are NOT changed here — that's still a manual / admin
-// action — but the timestamp bump signals "we re-confirmed today".
-//
-// Mirrors cmd/refresh-valuations/main.go but as a service callable from the
-// worker tick. The CLI binary remains for one-off ops.
+// The sweep is now neutered: RunOnce no longer touches recorded_at and does not
+// re-write valuations, so the freshness signal reflects the true effective_date
+// of each valuation rather than the last sweep tick. The worker no longer calls
+// it. A real CPP update remains a deliberate manual / admin / CLI action via
+// repo.UpsertValuation (which legitimately stamps recorded_at when a value
+// actually changes).
 type ValuationRefreshService struct {
 	pool       *pgxpool.Pool
 	valRepo    *repo.ValuationRepo
@@ -42,63 +43,20 @@ type ValuationRefreshResult struct {
 	Elapsed     time.Duration
 }
 
-// RunOnce performs one full sweep. Safe to call from a goroutine. Logs at
-// INFO on success and WARN on partial failure; never panics (caller can
-// safeGo if it's running in a request-scoped context).
+// RunOnce is intentionally a no-op (AU-3). It used to re-UPSERT every
+// point_valuations row with its unchanged CPP and bump recorded_at = now(),
+// manufacturing a "reconfirmed today" freshness signal on stale hand-entered
+// values. We no longer touch recorded_at on a no-op refresh; the freshness
+// signal must reflect each valuation's true effective_date. A genuine CPP
+// change is still applied deliberately via repo.UpsertValuation (admin / CLI),
+// which stamps recorded_at only when a value actually changes.
+//
+// Kept (returning an empty result) so the worker / CLI call sites remain valid
+// and a future real refresh source can re-enable a sweep that only writes when
+// the underlying CPP differs.
 func (s *ValuationRefreshService) RunOnce(ctx context.Context) (*ValuationRefreshResult, error) {
-	start := time.Now()
-	res := &ValuationRefreshResult{}
-
-	rows, err := s.pool.Query(ctx, `
-		SELECT lp.slug, pv.segment, pv.cpp, COALESCE(pv.source, 'manual')
-		FROM point_valuations pv
-		JOIN loyalty_programs lp ON lp.id = pv.loyalty_program_id
-		ORDER BY lp.slug, pv.segment, pv.effective_date DESC
-	`)
-	if err != nil {
-		return res, fmt.Errorf("query point_valuations: %w", err)
-	}
-	defer rows.Close()
-
-	type vrow struct {
-		Slug, Segment, Source string
-		CPP                   float64
-	}
-	var snap []vrow
-	for rows.Next() {
-		var r vrow
-		if err := rows.Scan(&r.Slug, &r.Segment, &r.CPP, &r.Source); err != nil {
-			res.Failures = append(res.Failures, fmt.Sprintf("scan: %v", err))
-			continue
-		}
-		snap = append(snap, r)
-	}
-
-	// Dedupe to most-recent (slug, segment) — query is ORDER BY effective_date DESC.
-	seen := map[string]bool{}
-	for _, r := range snap {
-		key := r.Slug + "|" + r.Segment
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		if err := s.valRepo.UpsertValuation(ctx, r.Slug, r.Segment, r.CPP, r.Source); err != nil {
-			res.Failures = append(res.Failures, fmt.Sprintf("upsert %s/%s: %v", r.Slug, r.Segment, err))
-			continue
-		}
-		if err := s.valRepo.InsertHistory(ctx, r.Slug, r.Segment, r.CPP, r.Source); err != nil {
-			res.Failures = append(res.Failures, fmt.Sprintf("history %s/%s: %v", r.Slug, r.Segment, err))
-		} else {
-			res.HistoryRows++
-		}
-		if s.cache != nil {
-			_ = s.cache.InvalidateValuation(ctx, r.Slug, r.Segment)
-		}
-		res.Rescanned++
-	}
-	res.Elapsed = time.Since(start)
-	return res, nil
+	_ = ctx
+	return &ValuationRefreshResult{}, nil
 }
 
 // RunSweep is the worker entry point. Logs the rollup. Errors logged but

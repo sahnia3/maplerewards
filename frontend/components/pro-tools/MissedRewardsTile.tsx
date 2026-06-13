@@ -6,7 +6,7 @@ import { getMissedRewards } from "@/lib/api";
 import type { MissedRewardsReport } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { Stat, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
+import { ExportButton, Stat, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -99,6 +99,15 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
               <Stat label="Total spend" value={fmtCAD(report.total_spend)} />
               <Stat label="Earned" value={fmtCAD(report.total_actual_value)} />
               <Stat label="Optimal" value={fmtCAD(report.total_optimal_value)} last />
+            </div>
+
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <ExportButton
+                sessionId={sessionId}
+                report="missed-rewards"
+                params={{ since_days: String(sinceDays) }}
+                label="Export forensics"
+              />
             </div>
 
             {report.by_category && report.by_category.filter((c) => c.gap > 0.5).length > 0 && (

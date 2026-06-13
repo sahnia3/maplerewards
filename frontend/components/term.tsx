@@ -33,6 +33,9 @@ export type GlossaryKey =
   | "amex-mr"
   | "transfer-ratio"
   | "transfer-partner"
+  | "transfer-partners"
+  | "earn-rate"
+  | "net-annual-value"
   | "multiplier"
   | "stack"
   | "leakage"
@@ -89,6 +92,24 @@ export const GLOSSARY: Record<GlossaryKey, Definition> = {
     full: "Transfer partner",
     detail:
       "A loyalty program that accepts incoming points from a bank's program. Amex MR's transfer partners include Aeroplan, BA Avios, and Flying Blue.",
+  },
+  "transfer-partners": {
+    display: "transfer partners",
+    full: "Transfer partners",
+    detail:
+      "Loyalty programs that accept incoming points from a bank's program. Amex MR's transfer partners include Aeroplan, BA Avios, and Flying Blue — transferring often beats redeeming through the card's own travel portal.",
+  },
+  "earn-rate": {
+    display: "earn rate",
+    full: "Earn rate",
+    detail:
+      "How many points (or what cash-back percentage) you get per dollar spent in a category. \"5× groceries\" means five points per $1 at grocery stores; higher multipliers mean more rewards.",
+  },
+  "net-annual-value": {
+    display: "net annual value",
+    full: "Net annual value",
+    detail:
+      "Your estimated yearly rewards and credits from a card minus its annual fee. A card returning $800 in rewards with a $120 fee has a net value of about $680/yr.",
   },
   multiplier: {
     display: "multiplier",
@@ -200,6 +221,8 @@ export function Term({ k, children }: TermProps) {
       <button
         ref={trigger}
         type="button"
+        aria-label={`${def.full} — tap for definition`}
+        aria-expanded={open}
         aria-describedby={open ? id : undefined}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
@@ -218,9 +241,38 @@ export function Term({ k, children }: TermProps) {
           textDecoration: "underline dotted",
           textDecorationColor: "var(--ink-3)",
           textUnderlineOffset: "3px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 2,
         }}
       >
         {children ?? def.display}
+        {/* Visible, tappable affordance — the dotted underline alone is
+         * invisible on touch devices where there's no hover. The (?) marker
+         * gives mobile-first beginners an obvious "I can tap this" cue. */}
+        <span
+          aria-hidden
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "1.05em",
+            height: "1.05em",
+            marginLeft: 1,
+            borderRadius: 999,
+            border: "1px solid var(--ink-3)",
+            color: open ? "var(--accent)" : "var(--ink-3)",
+            borderColor: open ? "var(--accent)" : "var(--ink-3)",
+            fontSize: "0.62em",
+            fontWeight: 700,
+            lineHeight: 1,
+            verticalAlign: "middle",
+            textDecoration: "none",
+            transition: "color 150ms, border-color 150ms",
+          }}
+        >
+          ?
+        </span>
       </button>
 
       {open && coords && typeof document !== "undefined"

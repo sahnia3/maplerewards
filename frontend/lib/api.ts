@@ -628,6 +628,44 @@ export async function getPortfolioAnalysis(sessionId: string): Promise<Portfolio
   return request<PortfolioAnalysis>(`/wallet/${sessionId}/portfolio/analysis`);
 }
 
+// ── Per-user CPP overrides (AU-5) ────────────────────────────────────────────
+// The signed-in user supplies their own cents-per-point for a program/segment;
+// the optimizer, sweet-spot, simulator, and portfolio engines prefer it over the
+// seeded base. The user supplies every value — the client invents nothing.
+
+export interface UserCPPOverride {
+  program_slug: string;
+  program_name?: string;
+  segment: string;
+  cpp_cad: number;
+}
+
+export async function listCPPOverrides(sessionId: string): Promise<UserCPPOverride[]> {
+  const res = await request<{ overrides: UserCPPOverride[] }>(`/wallet/${sessionId}/cpp-overrides`);
+  return res.overrides ?? [];
+}
+
+export async function setCPPOverride(
+  sessionId: string,
+  body: { program_slug: string; segment?: string; cpp_cad: number },
+): Promise<UserCPPOverride> {
+  return request<UserCPPOverride>(`/wallet/${sessionId}/cpp-overrides`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteCPPOverride(
+  sessionId: string,
+  programSlug: string,
+  segment: string,
+): Promise<void> {
+  await request<void>(
+    `/wallet/${sessionId}/cpp-overrides/${encodeURIComponent(programSlug)}/${encodeURIComponent(segment)}`,
+    { method: "DELETE" },
+  );
+}
+
 // ── Bonus Tracking (Milestones) ──────────────────────────────────────────────
 
 export async function getUserBonuses(sessionId: string): Promise<WelcomeBonus[]> {
@@ -1233,6 +1271,61 @@ export async function exportSpendCSV(sessionId: string): Promise<Blob> {
     throw await errorFromResponse(res);
   }
   return res.blob();
+}
+
+// ProExportReport names the computed-analysis reports the Pro export endpoint
+// (GET /pro/export/{sessionID}/{report}) can stream as CSV. Mirrors the server
+// switch in internal/handler/export.go.
+export type ProExportReport =
+  | "optimizer"
+  | "churn"
+  | "household"
+  | "sweet-spots"
+  | "missed-rewards";
+
+// exportProReportCSV fetches one Pro computed-analysis report as a CSV Blob,
+// reusing the same auth plumbing as exportSpendCSV. `params` carries the
+// per-report query string (e.g. category+amount for the optimizer, repeatable
+// partner ids for household).
+export async function exportProReportCSV(
+  sessionId: string,
+  report: ProExportReport,
+  params?: Record<string, string | string[]>,
+): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = _getAccessToken?.();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const qs = new URLSearchParams();
+  qs.set("format", "csv");
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (Array.isArray(v)) v.forEach((item) => qs.append(k, item));
+      else if (v) qs.set(k, v);
+    }
+  }
+  const res = await fetch(`${BASE_URL}/pro/export/${sessionId}/${report}?${qs.toString()}`, {
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw await errorFromResponse(res);
+  }
+  return res.blob();
+}
+
+// triggerCSVDownload turns a fetched Blob into a browser file download. Shared
+// by the Pro-tools export buttons so each tile doesn't re-implement the anchor
+// dance.
+export function triggerCSVDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ── Admin (gated server-side by RequireAdmin; 403 for non-admins) ─────────────

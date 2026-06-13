@@ -91,7 +91,7 @@ export default function WalletPage() {
             className="wallet-stat-strip m-grid-2"
           >
             <Stat label="Total points" value={totalPoints.toLocaleString()} />
-            <Stat label="Est. value (base CPP)" value={`$${Math.round(totalValue).toLocaleString()}`} accent />
+            <Stat label="Est. value (base CPP)" value={`$${Math.round(totalValue).toLocaleString()}`} accent tourId="wallet-stat-cad-value" />
             <Stat label="Cards" value={String(wallet.length)} />
             <Stat label="Programs" value={String(programs.size)} last />
           </div>
@@ -496,9 +496,9 @@ function WalletRow({
 
 /* ── Subcomponents ────────────────────────────────────────────────────── */
 
-function Stat({ label, value, accent, last }: { label: string; value: string; accent?: boolean; last?: boolean }) {
+function Stat({ label, value, accent, last, tourId }: { label: string; value: string; accent?: boolean; last?: boolean; tourId?: string }) {
   return (
-    <div style={{ padding: "0 22px 0 0", borderRight: last ? "none" : "1px solid var(--rule)" }}>
+    <div data-tour-id={tourId} style={{ padding: "0 22px 0 0", borderRight: last ? "none" : "1px solid var(--rule)" }}>
       <div className="eyebrow" style={{ marginBottom: 8 }}>{label}</div>
       <div
         className="display"

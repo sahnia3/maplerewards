@@ -6,7 +6,7 @@ import { ChevronLeft, ArrowLeftRight, AlertTriangle } from "lucide-react";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { getCardDetail } from "@/lib/api";
 import type { CardDetail, MultiplierRow, TransferPartner } from "@/lib/types";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { Term } from "@/components/term";
 import { WelcomeOfferBadge } from "@/components/welcome-offer-badge";
 import { ApplyButton } from "@/components/cards/ApplyButton";
 import { EligibilityChip } from "@/components/cards/EligibilityChip";
@@ -616,7 +616,9 @@ export default function CardDetailPage() {
                   <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                     {multipliers.length} categories
                   </span>
-                  <InfoTooltip term="earn-rate" />
+                  <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    <Term k="earn-rate" />
+                  </span>
                 </div>
 
                 <div
@@ -687,7 +689,7 @@ export default function CardDetailPage() {
                   }}
                 >
                   {transfer_partners.length} transfer partner{transfer_partners.length !== 1 ? "s" : ""} available
-                  <InfoTooltip term="transfer-partners" />
+                  <Term k="transfer-partners" />
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
                   {transfer_partners.map((partner) => (

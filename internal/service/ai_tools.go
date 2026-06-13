@@ -36,7 +36,23 @@ import (
 
 	"maplerewards/internal/model"
 	"maplerewards/internal/quota"
+	"maplerewards/internal/repo"
 )
+
+// aiTransferBonusRepo reads the live transfer-bonus log so
+// simulate_transfer_with_bonus can auto-fill a bonus the caller omitted —
+// reflecting promos promo_sentinel already scraped, inventing nothing.
+type aiTransferBonusRepo interface {
+	ActiveBonusForRoute(ctx context.Context, fromSlug, toSlug string) (*repo.TransferBonusEvent, error)
+}
+
+// WithTransferBonus wires the live transfer-bonus read path. Optional and
+// additive — left unset, simulate_transfer_with_bonus uses only the caller's
+// supplied bonus_percent. Returns the receiver for chaining at construction.
+func (s *AIService) WithTransferBonus(r aiTransferBonusRepo) *AIService {
+	s.transferBonusRepo = r
+	return s
+}
 
 // ── Anthropic API types — block-based content ────────────────────────────────
 
@@ -1218,6 +1234,27 @@ func (s *AIService) registerTools() {
 					fmt.Sprintf("No active transfer route from %s to %s. Suggest alternatives.", fromSlug, toSlug)), nil
 			}
 
+			// Auto-populate the bonus from the live transfer_bonus_events log
+			// when the caller didn't supply one. This is the AU-2 wiring: a
+			// running "+30% MR → Aeroplan" promo two pages over should flow into
+			// the simulation automatically. We only fill on an omitted bonus
+			// (== 0), only reflect scraped rows (never invent), and degrade
+			// silently on a lookup error so the base-ratio sim still answers.
+			bonusSource := "user"
+			var bonusExpires string
+			if args.BonusPercent == 0 && s.transferBonusRepo != nil {
+				if ev, berr := s.transferBonusRepo.ActiveBonusForRoute(ctx, fromSlug, toSlug); berr == nil && ev != nil && ev.BonusPercent > 0 {
+					args.BonusPercent = ev.BonusPercent
+					if args.BonusPercent > 200 {
+						args.BonusPercent = 200
+					}
+					bonusSource = "live"
+					if ev.ExpiresAt != nil {
+						bonusExpires = ev.ExpiresAt.Format("2006-01-02")
+					}
+				}
+			}
+
 			bonusMultiplier := 1.0 + (args.BonusPercent / 100.0)
 			transferredFloat := float64(args.Amount) * ratio * bonusMultiplier
 			transferred := int(transferredFloat)
@@ -1235,12 +1272,13 @@ func (s *AIService) registerTools() {
 				effectiveSourceCPP = cadValue / float64(args.Amount) * 100.0
 			}
 
-			return json.Marshal(map[string]any{
+			out := map[string]any{
 				"from_program":         fromSlug,
 				"to_program":           toSlug,
 				"input_points":         args.Amount,
 				"base_ratio":           ratio,
 				"bonus_percent":        args.BonusPercent,
+				"bonus_source":         bonusSource, // "live" when auto-filled from transfer_bonus_events, else "user"
 				"effective_ratio":      ratio * bonusMultiplier,
 				"transferred_points":   transferred,
 				"destination_segment":  args.Segment,
@@ -1248,7 +1286,11 @@ func (s *AIService) registerTools() {
 				"cad_value":            cadValue,
 				"effective_source_cpp": effectiveSourceCPP,
 				"route_notes":          routeNotes,
-			})
+			}
+			if bonusExpires != "" {
+				out["bonus_expires_at"] = bonusExpires
+			}
+			return json.Marshal(out)
 		},
 	})
 

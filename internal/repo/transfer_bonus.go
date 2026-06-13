@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -98,6 +100,38 @@ func (r *TransferBonusRepo) ListActive(ctx context.Context, limit int) ([]Transf
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ActiveBonusForRoute returns the single best currently-running promo for a
+// specific (from_program, to_program) route — highest bonus_percent first,
+// newest detection as the tie-break — or nil when no live bonus covers the
+// route. Same liveness filter as ListActive (expires_at >= today, citation not
+// dead) so value engines never surface a stale or expired bonus. Read-only;
+// invents nothing — it only reflects promos the sentinel already scraped.
+func (r *TransferBonusRepo) ActiveBonusForRoute(ctx context.Context, fromSlug, toSlug string) (*TransferBonusEvent, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, from_program, to_program, bonus_percent, starts_at, expires_at,
+		       source_url, COALESCE(source_title,''), COALESCE(summary,''),
+		       ai_confidence, detected_at
+		FROM transfer_bonus_events
+		WHERE from_program = $1
+		  AND to_program   = $2
+		  AND expires_at >= CURRENT_DATE
+		  AND source_dead_at IS NULL
+		ORDER BY bonus_percent DESC, detected_at DESC
+		LIMIT 1
+	`, fromSlug, toSlug)
+	var e TransferBonusEvent
+	err := row.Scan(&e.ID, &e.FromProgram, &e.ToProgram, &e.BonusPercent,
+		&e.StartsAt, &e.ExpiresAt, &e.SourceURL, &e.SourceTitle, &e.Summary,
+		&e.AIConfidence, &e.DetectedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("active bonus for route %s→%s: %w", fromSlug, toSlug, err)
+	}
+	return &e, nil
 }
 
 // SourceRef is the minimal pair the source-health re-check needs.

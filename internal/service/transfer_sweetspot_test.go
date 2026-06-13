@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 type mockSSWallet struct {
@@ -229,5 +231,96 @@ func TestTransferSweetSpot_AggregatesCardsAndLoyaltyAccounts(t *testing.T) {
 	}
 	if got := rep.Sources[0].Points; got != 100_000 { // 60k card + 40k account
 		t.Errorf("aggregated points: got %d want 100000", got)
+	}
+}
+
+// mockSSBonus returns an active bonus keyed by "from→to" slug pair, matching the
+// ActiveBonusForRoute read on transfer_bonus_events.
+type mockSSBonus struct {
+	byRoute map[string]*repo.TransferBonusEvent
+	err     error
+}
+
+func (m *mockSSBonus) ActiveBonusForRoute(_ context.Context, fromSlug, toSlug string) (*repo.TransferBonusEvent, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.byRoute[fromSlug+"→"+toSlug], nil
+}
+
+// A live +30% bonus on MR→Aeroplan must fold into the effective ratio: 100k MR
+// at 1:1 base becomes 130k Aeroplan, and the option must carry the BONUS LIVE
+// label + expiry so the UI can flip the keep/transfer call.
+func TestTransferSweetSpot_LiveBonusBoostsRatioAndLabels(t *testing.T) {
+	wallet := &mockSSWallet{
+		user:  &model.User{ID: "u1"},
+		cards: []model.UserCard{ssUCard("bank", "amex-mr-canada", "Amex MR", 1.0, 100_000)},
+	}
+	transfer := &mockSSTransfer{routes: map[string][]model.TransferPartner{
+		"bank": {ssRoute("bank", "air", "aeroplan", "Aeroplan", 2.0, 1.0, 1000)},
+	}}
+	exp := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	bonus := &mockSSBonus{byRoute: map[string]*repo.TransferBonusEvent{
+		"amex-mr-canada→aeroplan": {BonusPercent: 30, ExpiresAt: &exp},
+	}}
+	svc := NewTransferSweetSpotService(wallet, &mockSSLoyalty{}, &mockSSProgram{}, transfer).WithBonusRepo(bonus)
+
+	rep, err := svc.Find(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if len(rep.Sources) != 1 || rep.Sources[0].BestTransfer == nil {
+		t.Fatalf("expected one source with a best transfer, got %+v", rep.Sources)
+	}
+	best := rep.Sources[0].BestTransfer
+	if best.BonusPercent != 30 {
+		t.Errorf("bonus percent: got %g want 30", best.BonusPercent)
+	}
+	if best.EffectiveRatio != 1.3 { // 1.0 * (1 + 0.30)
+		t.Errorf("effective ratio: got %g want 1.3", best.EffectiveRatio)
+	}
+	if best.TransferredPoints != 130_000 { // floor(100k * 1.3)
+		t.Errorf("transferred points: got %d want 130000", best.TransferredPoints)
+	}
+	if best.TransferValueCAD != 2600 { // 130k * 2.0 / 100
+		t.Errorf("transfer value: got %.2f want 2600", best.TransferValueCAD)
+	}
+	if best.UpliftCAD != 1600 { // 2600 - 1000 keep
+		t.Errorf("uplift: got %.2f want 1600", best.UpliftCAD)
+	}
+	if best.BonusLabel != "BONUS LIVE: +30% through 2026-07-15" {
+		t.Errorf("bonus label: got %q", best.BonusLabel)
+	}
+	if best.BonusExpiresAt != "2026-07-15" {
+		t.Errorf("bonus expiry: got %q want 2026-07-15", best.BonusExpiresAt)
+	}
+}
+
+// No live bonus on the route ⇒ effective ratio stays at base and no bonus
+// fields are populated (identical to the pre-wiring behavior).
+func TestTransferSweetSpot_NoBonusLeavesBaseRatio(t *testing.T) {
+	wallet := &mockSSWallet{
+		user:  &model.User{ID: "u1"},
+		cards: []model.UserCard{ssUCard("bank", "amex-mr-canada", "Amex MR", 1.0, 100_000)},
+	}
+	transfer := &mockSSTransfer{routes: map[string][]model.TransferPartner{
+		"bank": {ssRoute("bank", "air", "aeroplan", "Aeroplan", 2.0, 1.0, 1000)},
+	}}
+	bonus := &mockSSBonus{byRoute: map[string]*repo.TransferBonusEvent{}} // route absent
+	svc := NewTransferSweetSpotService(wallet, &mockSSLoyalty{}, &mockSSProgram{}, transfer).WithBonusRepo(bonus)
+
+	rep, err := svc.Find(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	best := rep.Sources[0].BestTransfer
+	if best == nil {
+		t.Fatalf("expected a best transfer")
+	}
+	if best.BonusPercent != 0 || best.BonusLabel != "" || best.EffectiveRatio != 0 {
+		t.Errorf("expected no bonus fields, got %+v", *best)
+	}
+	if best.TransferredPoints != 100_000 || best.TransferValueCAD != 2000 {
+		t.Errorf("base-ratio math changed: got %d pts, $%.2f", best.TransferredPoints, best.TransferValueCAD)
 	}
 }

@@ -173,10 +173,12 @@ func main() {
 	// days of deletion request. Runs daily at the same cadence as digests.
 	accountCleanupSvc := service.NewAccountCleanupService(pool, 30)
 
-	// Weekly valuation refresh — re-anchors point_valuations.recorded_at so
-	// the UI's freshness chip stops claiming every program is months-stale.
-	// Mirrors cmd/refresh-valuations/main.go but on a schedule.
-	valuationRefreshSvc := service.NewValuationRefreshService(pool, valuationRepo, redisCache)
+	// Valuation refresh removed from the worker (AU-3). The old weekly sweep
+	// re-UPSERTed every point_valuations row with its unchanged CPP and bumped
+	// recorded_at = now(), manufacturing a "reconfirmed today" freshness signal
+	// on stale hand-entered values. The freshness signal must reflect each
+	// valuation's true effective_date, so no scheduled no-op refresh runs. A
+	// genuine CPP update remains a deliberate admin / CLI action.
 
 	awardWatchEnabled := apify.IsAvailable() || seatsAero.IsAvailable()
 	if !awardWatchEnabled {
@@ -252,11 +254,7 @@ func main() {
 			safely(log, "missed-rewards-digest", func() { missedRewardsDigestSvc.RunSweep(ctx, log, time.Now()) })
 			safely(log, "offer-expiry", func() { offerExpirySvc.RunSweep(ctx, log, time.Now()) })
 			safely(log, "account-cleanup", func() { accountCleanupSvc.RunSweep(ctx, log) })
-			// Valuation refresh runs in the same daily slot. The 7-day staleness
-			// threshold is honored by checking the freshness chip in the UI
-			// rather than gating here — running daily costs ~0 since the
-			// rescan is a bounded ~27-row sweep.
-			safely(log, "valuation-refresh", func() { valuationRefreshSvc.RunSweep(ctx, log) })
+			// Valuation refresh intentionally removed here (AU-3) — see note above.
 		case <-promoTicker.C:
 			safely(log, "promo-sentinel", func() { promoSvc.RunSweep(ctx, log) })
 			safely(log, "promo-source-recheck", func() { promoSvc.RecheckSources(ctx, log) })

@@ -546,6 +546,11 @@ export interface TransferOption {
   uplift_cad: number;
   min_transfer: number;
   eligible: boolean;
+  // Live transfer-bonus (AU-2), present only when an active bonus applies to
+  // this route. effective_ratio already folds the bonus into transfer_ratio.
+  bonus_percent?: number;
+  bonus_label?: string;
+  effective_ratio?: number;
 }
 
 export interface TransferSweetSpotSource {

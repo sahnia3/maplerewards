@@ -195,6 +195,7 @@ type TransferPartner struct {
 	ProcessingDays    int             `json:"processing_days"`
 	IsActive          bool            `json:"is_active"`
 	Notes             string          `json:"notes,omitempty"`
+	SourceURL         string          `json:"source_url,omitempty"` // structured sourcing; NULL until real source attached (AU-4)
 }
 
 // ── Spend Tracking ──────────────────────────────────────────────────────────
