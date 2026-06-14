@@ -1,86 +1,125 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
+import {
+  motion,
+  useAnimationFrame,
+  useMotionTemplate,
+  useMotionValue,
+  useTransform,
+  type Variants,
+} from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useTour } from "@/contexts/tour-context";
 import { TOUR_STEPS } from "@/lib/tour/tour-steps";
 import { prefersReducedMotion } from "@/lib/tour/tour-config";
 import { GhostCursor } from "./ghost-cursor";
 
-interface Rect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
 const CARD_W = 360;
+const CARD_H = 230;
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-function cardStyle(rect: Rect | null): React.CSSProperties {
-  if (typeof window === "undefined" || !rect) {
+function cardStyle(c: { cx: number; cy: number; hw: number; hh: number } | null): React.CSSProperties {
+  if (typeof window === "undefined" || !c || c.hw <= 0) {
     return { left: "50%", top: "50%", transform: "translate(-50%, -50%)" };
   }
-  const left = Math.max(16, Math.min(rect.left, window.innerWidth - CARD_W - 16));
-  const roomBelow = window.innerHeight - (rect.top + rect.height);
-  if (roomBelow > 230) {
-    return { left, top: rect.top + rect.height + 14 };
-  }
-  return { left, bottom: window.innerHeight - rect.top + 14 };
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const left = Math.max(16, Math.min(c.cx - c.hw, vw - CARD_W - 16));
+  const bottomEdge = c.cy + c.hh;
+  const topEdge = c.cy - c.hh;
+  if (vh - bottomEdge > CARD_H + 24) return { left, top: bottomEdge + 18 };
+  if (topEdge > CARD_H + 24) return { left, top: Math.max(16, topEdge - CARD_H - 18) };
+  return { left: "50%", bottom: 28, transform: "translateX(-50%)" };
 }
 
 export function TourOverlay() {
   const tour = useTour();
   const pathname = usePathname();
   const step = TOUR_STEPS[tour.stepIndex];
-  const [rect, setRect] = useState<Rect | null>(null);
+  const [reduce] = useState(() => prefersReducedMotion());
   const [ready, setReady] = useState(false);
-  const reduceRef = useRef(false);
+  const [hasSpot, setHasSpot] = useState(false);
+  const [cardRect, setCardRect] = useState<{ cx: number; cy: number; hw: number; hh: number } | null>(null);
+  // The element the spotlight tracks. Starts as the step's target; the ghost
+  // cursor moves it as it works so the spotlight follows the action.
+  const [focusSel, setFocusSel] = useState<string | null>(null);
 
-  useEffect(() => {
-    reduceRef.current = prefersReducedMotion();
-  }, [tour.active, tour.stepIndex]);
+  const cx = useMotionValue(0);
+  const cy = useMotionValue(0);
+  const hw = useMotionValue(0);
+  const hh = useMotionValue(0);
+  const R = useTransform([hw, hh], ([w, h]) => Math.hypot(w as number, h as number) + 26);
+  const Rinner = useTransform(R, (v) => Math.max(0, (v as number) - 38));
+  const mask = useMotionTemplate`radial-gradient(circle ${R}px at ${cx}px ${cy}px, transparent ${Rinner}px, rgba(0,0,0,0.9) ${R}px)`;
+  const glowLeft = useTransform([cx, hw], ([c, w]) => (c as number) - (w as number));
+  const glowTop = useTransform([cy, hh], ([c, h]) => (c as number) - (h as number));
+  const glowW = useTransform(hw, (v) => (v as number) * 2);
+  const glowH = useTransform(hh, (v) => (v as number) * 2);
 
-  const measure = useCallback((el: Element) => {
+  // Track the focused element every frame — this is what makes the spotlight
+  // glide and follow the page as the cursor scrolls.
+  useAnimationFrame((_, delta) => {
+    if (!tour.active || !focusSel) return;
+    const el = document.querySelector(focusSel);
+    if (!el) return;
     const r = el.getBoundingClientRect();
-    const pad = 8;
-    setRect({ top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
-  }, []);
+    const pad = 10;
+    const k = 1 - Math.exp((-delta / 1000) * 11);
+    cx.set(lerp(cx.get(), r.left + r.width / 2, k));
+    cy.set(lerp(cy.get(), r.top + r.height / 2, k));
+    hw.set(lerp(hw.get(), r.width / 2 + pad, k));
+    hh.set(lerp(hh.get(), r.height / 2 + pad, k));
+  });
 
-  // Find + measure the target after each step / navigation. We keep the old
-  // rect until the new one resolves so the spotlight MORPHS across the route
-  // change instead of blinking.
+  // Per step: find the target, spotlight it, place the card. No page transforms.
   useEffect(() => {
     if (!tour.active) return;
     setReady(false);
-    if (!step.target) {
-      setRect(null);
-      setReady(true);
-      return;
+    const sel = step.target ? `[data-tour-id="${step.target}"]` : null;
+    setFocusSel(sel);
+
+    if (!sel) {
+      setHasSpot(false);
+      setCardRect(null);
+      const t = setTimeout(() => setReady(true), 180);
+      return () => clearTimeout(t);
     }
+
     let cancelled = false;
     let tries = 0;
-    const reduce = reduceRef.current;
     const tryFind = () => {
       if (cancelled) return;
-      const el = document.querySelector(`[data-tour-id="${step.target}"]`);
+      const el = document.querySelector(sel);
       if (el) {
         el.scrollIntoView({ block: "center", inline: "center", behavior: reduce ? "auto" : "smooth" });
         setTimeout(
           () => {
-            if (!cancelled) {
-              measure(el);
-              setReady(true);
+            if (cancelled) return;
+            const r = el.getBoundingClientRect();
+            if (!hasSpot) {
+              cx.set(r.left + r.width / 2);
+              cy.set(r.top + r.height / 2);
+              hw.set(r.width / 2 + 10);
+              hh.set(r.height / 2 + 10);
             }
+            setHasSpot(true);
+            setCardRect({
+              cx: r.left + r.width / 2,
+              cy: r.top + r.height / 2,
+              hw: r.width / 2 + 10,
+              hh: r.height / 2 + 10,
+            });
+            setReady(true);
           },
-          reduce ? 0 : 260,
+          reduce ? 0 : 360,
         );
         return;
       }
       if (++tries > 40) {
-        // Target never mounted — fall back to a centered card.
-        setRect(null);
+        setHasSpot(false);
+        setCardRect(null);
         setReady(true);
         return;
       }
@@ -91,24 +130,15 @@ export function TourOverlay() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [tour.active, tour.stepIndex, step.target, pathname, measure]);
+  }, [tour.active, tour.stepIndex, step.target, pathname, reduce, cx, cy, hw, hh]);
 
-  // Re-measure on scroll/resize so the spotlight tracks the live element.
   useEffect(() => {
-    if (!tour.active || !step.target) return;
-    const onChange = () => {
-      const el = document.querySelector(`[data-tour-id="${step.target}"]`);
-      if (el) measure(el);
-    };
-    window.addEventListener("resize", onChange);
-    window.addEventListener("scroll", onChange, true);
-    return () => {
-      window.removeEventListener("resize", onChange);
-      window.removeEventListener("scroll", onChange, true);
-    };
-  }, [tour.active, step.target, measure]);
+    if (!tour.active) {
+      setHasSpot(false);
+      if (typeof document !== "undefined") document.body.style.cursor = "";
+    }
+  }, [tour.active]);
 
-  // Keyboard: arrows advance/retreat, Esc skips.
   useEffect(() => {
     if (!tour.active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -122,45 +152,62 @@ export function TourOverlay() {
 
   if (!tour.active || typeof document === "undefined") return null;
 
-  const reduce = reduceRef.current;
   const last = tour.stepIndex === TOUR_STEPS.length - 1;
-  const spotTransition = reduce
-    ? { duration: 0 }
-    : { type: "spring" as const, stiffness: 320, damping: 32 };
+  const container: Variants = {
+    hidden: {},
+    show: { transition: { staggerChildren: reduce ? 0 : 0.06, delayChildren: reduce ? 0 : 0.05 } },
+  };
+  const item: Variants = reduce
+    ? { hidden: {}, show: {} }
+    : {
+        hidden: { opacity: 0, y: 10, filter: "blur(4px)" },
+        show: {
+          opacity: 1,
+          y: 0,
+          filter: "blur(0px)",
+          transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] },
+        },
+      };
 
   return createPortal(
     <div className="tour-root">
-      {/* Dim + spotlight. With a target, the box-shadow on the morphing rect IS
-          the dim; without one, a flat dim panel. */}
-      {rect ? (
+      {hasSpot ? (
         <motion.div
-          className="tour-spot"
-          initial={false}
-          animate={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
-          transition={spotTransition}
+          className="tour-dim"
+          style={{ WebkitMaskImage: mask, maskImage: mask, pointerEvents: step.interactive ? "none" : "auto" }}
         />
       ) : (
         <div className="tour-fulldim" />
       )}
 
-      {/* Block clicks to the dimmed app on view-only steps. Interactive steps
-          leave the real controls clickable. */}
-      {!step.interactive && rect && <div className="tour-block" />}
+      {hasSpot && (
+        <motion.div className="tour-glow" style={{ left: glowLeft, top: glowTop, width: glowW, height: glowH }} />
+      )}
 
       <motion.div
         key={step.id}
         className="tour-card"
-        style={cardStyle(rect)}
-        initial={reduce ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={reduce ? { duration: 0 } : { duration: 0.35, ease: [0.2, 0.7, 0.2, 1] }}
+        style={cardStyle(cardRect)}
+        variants={container}
+        initial="hidden"
+        animate="show"
       >
-        <span className="tour-eyebrow">{step.eyebrow.toUpperCase()}</span>
-        <h3 className="tour-title">{step.title}</h3>
-        <p className="tour-body">{step.body}</p>
-        {step.interactive && <p className="tour-hint">Try it yourself, or hit Next.</p>}
+        <motion.span className="tour-eyebrow" variants={item}>
+          {step.eyebrow.toUpperCase()}
+        </motion.span>
+        <motion.h3 className="tour-title" variants={item}>
+          {step.title}
+        </motion.h3>
+        <motion.p className="tour-body" variants={item}>
+          {step.body}
+        </motion.p>
+        {step.interactive && (
+          <motion.p className="tour-hint" variants={item}>
+            Watch it run, or try it yourself.
+          </motion.p>
+        )}
 
-        <div className="tour-controls">
+        <motion.div className="tour-controls" variants={item}>
           <button type="button" className="tour-skip" onClick={tour.skip}>
             Skip
           </button>
@@ -186,67 +233,75 @@ export function TourOverlay() {
               {last ? "Done" : "Next"}
             </button>
           </div>
-        </div>
+        </motion.div>
       </motion.div>
 
-      {step.ghostDemo && ready && rect && <GhostCursor onDone={() => undefined} />}
+      {step.ghostDemo && ready && hasSpot && (
+        <GhostCursor reduce={reduce} onFocus={(s) => setFocusSel(s)} onDone={() => tour.next()} />
+      )}
 
-      <style jsx>{`
+      <style jsx global>{`
         .tour-root {
           position: fixed;
           inset: 0;
           z-index: 1000;
           pointer-events: none;
         }
-        .tour-spot {
+        .tour-dim {
           position: fixed;
-          border-radius: 14px;
-          box-shadow:
-            0 0 0 100vmax rgba(10, 12, 16, 0.62),
-            0 0 0 1.5px var(--accent),
-            0 0 36px rgba(165, 31, 45, 0.32);
-          pointer-events: none;
+          inset: 0;
+          background: rgba(8, 10, 14, 0.55);
+          backdrop-filter: blur(3px) saturate(0.92);
+          -webkit-backdrop-filter: blur(3px) saturate(0.92);
+          will-change: mask-image;
         }
         .tour-fulldim {
           position: fixed;
           inset: 0;
-          background: rgba(10, 12, 16, 0.62);
+          background: rgba(8, 10, 14, 0.6);
+          backdrop-filter: blur(3px);
+          -webkit-backdrop-filter: blur(3px);
           pointer-events: auto;
         }
-        .tour-block {
+        .tour-glow {
           position: fixed;
-          inset: 0;
-          pointer-events: auto;
+          border-radius: 16px;
+          pointer-events: none;
+          box-shadow:
+            0 0 0 1px rgba(165, 31, 45, 0.55),
+            0 0 50px 6px rgba(165, 31, 45, 0.2),
+            inset 0 0 24px rgba(165, 31, 45, 0.07);
         }
         .tour-card {
           position: fixed;
-          width: ${CARD_W}px;
+          width: 360px;
           max-width: calc(100vw - 32px);
           pointer-events: auto;
           background: var(--surface);
           border: 1px solid var(--rule);
-          border-radius: 16px;
-          box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.45);
-          padding: 20px 20px 16px;
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
+          border-radius: 18px;
+          box-shadow: 0 30px 70px -22px rgba(0, 0, 0, 0.55);
+          padding: 22px 22px 16px;
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
         }
         .tour-eyebrow {
           display: block;
           font-family: var(--font-mono);
           font-size: 11px;
           font-weight: 600;
-          letter-spacing: 0.18em;
+          letter-spacing: 0.2em;
           color: var(--accent);
-          margin-bottom: 8px;
+          margin-bottom: 9px;
         }
         .tour-title {
           font-family: var(--font-display);
           font-style: italic;
-          font-size: 22px;
-          line-height: 1.15;
+          font-size: 23px;
+          line-height: 1.14;
+          letter-spacing: -0.01em;
           color: var(--ink);
-          margin: 0 0 8px;
+          margin: 0 0 9px;
         }
         .tour-body {
           font-family: var(--font-display);
@@ -261,14 +316,14 @@ export function TourOverlay() {
           font-size: 11px;
           letter-spacing: 0.04em;
           color: var(--ink-3);
-          margin: 10px 0 0;
+          margin: 11px 0 0;
         }
         .tour-controls {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          margin-top: 18px;
+          margin-top: 20px;
         }
         .tour-skip {
           background: transparent;
@@ -288,18 +343,19 @@ export function TourOverlay() {
           justify-content: center;
         }
         .tour-pip {
-          width: 7px;
-          height: 7px;
+          width: 6px;
+          height: 6px;
           border-radius: 999px;
           border: none;
           padding: 0;
           background: var(--rule-strong);
           cursor: pointer;
-          transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1), background 200ms;
+          transition: width 360ms cubic-bezier(0.16, 1, 0.3, 1), background 360ms;
         }
         .tour-pip.on {
-          width: 20px;
+          width: 22px;
           background: var(--accent);
+          box-shadow: 0 0 10px rgba(165, 31, 45, 0.5);
         }
         .tour-nav {
           display: flex;
@@ -311,7 +367,7 @@ export function TourOverlay() {
           font-weight: 600;
           letter-spacing: 0.08em;
           text-transform: uppercase;
-          border-radius: 8px;
+          border-radius: 9px;
           padding: 9px 16px;
           cursor: pointer;
         }
@@ -324,6 +380,14 @@ export function TourOverlay() {
           background: var(--accent);
           border: none;
           color: #fff;
+          box-shadow: 0 6px 20px -6px rgba(165, 31, 45, 0.6);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .tour-dim,
+          .tour-fulldim {
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+          }
         }
       `}</style>
     </div>,

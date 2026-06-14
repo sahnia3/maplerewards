@@ -107,6 +107,7 @@ export function ProToolsUpsell({ signedIn }: { signedIn: boolean }) {
           {FEATURES.map((h) => (
             <li
               key={h.title}
+              data-tour-id={`pro-feature-${h.tag.toLowerCase()}`}
               style={{
                 position: "relative",
                 border: `1px solid ${h.headline ? "var(--accent)" : "var(--rule-strong)"}`,

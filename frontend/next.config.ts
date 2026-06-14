@@ -40,6 +40,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Dev-only: proxy API calls through the dev origin so a dev frontend on any
+  // port reaches the local API without a CORS origin mismatch. Production uses
+  // an absolute NEXT_PUBLIC_API_URL and never hits this.
+  async rewrites() {
+    if (process.env.NODE_ENV !== "development") return [];
+    return [{ source: "/api/v1/:path*", destination: "http://localhost:8080/api/v1/:path*" }];
+  },
 };
 
 export default nextConfig;

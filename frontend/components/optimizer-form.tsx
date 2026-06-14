@@ -808,6 +808,7 @@ export function OptimizerForm() {
                   return (
                     <button
                       type="button"
+                      data-tour-id="log-purchase"
                       onClick={() => handleLog(best)}
                       disabled={isLogged}
                       className="mono"

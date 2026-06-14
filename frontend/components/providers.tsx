@@ -8,6 +8,7 @@ import { WalletProvider } from "@/contexts/wallet-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { TourProvider } from "@/contexts/tour-context";
 import { TourOverlay } from "@/components/tour/tour-overlay";
+import { TourInvite } from "@/components/tour/tour-invite";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -19,6 +20,7 @@ export function Providers({ children }: { children: ReactNode }) {
               <TourProvider>
                 {children}
                 <TourOverlay />
+                <TourInvite />
               </TourProvider>
             </SidebarProvider>
           </WalletProvider>

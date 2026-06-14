@@ -31,9 +31,9 @@ const VIDEO_DURATION_SEC = 8;
 /* Shared framed-window styling for the video in both modes. */
 const FRAME_STYLE: React.CSSProperties = {
   position: "relative",
-  width: "min(82vw, 1200px)",
+  width: "min(94vw, 1680px)",
   aspectRatio: "16 / 9",
-  maxHeight: "80vh",
+  maxHeight: "88vh",
   borderRadius: 18,
   overflow: "hidden",
   boxShadow:
@@ -176,7 +176,7 @@ export function LandingKineticProof() {
           flexDirection: "column",
           alignItems: "center",
           gap: 20,
-          padding: "clamp(48px, 12vh, 96px) clamp(16px, 5vw, 40px)",
+          padding: "clamp(40px, 10vh, 80px) clamp(8px, 2.5vw, 16px)",
         }}
       >
         <span
