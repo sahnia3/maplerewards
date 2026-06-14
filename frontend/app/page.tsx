@@ -125,7 +125,12 @@ export default function HomePage() {
   const reduceMotion = useReducedMotion();
 
   const totalPoints = walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0;
-  const totalValue = walletSummary?.value_range_high ?? 0;
+  // Headline uses base CPP so it reconciles exactly with /wallet's "Est. value
+  // (base CPP)" — the two surfaces previously showed different wallet totals
+  // (base vs sweet-spot) and read as the engine disagreeing with itself. The
+  // sweet-spot ceiling is shown as an "up to" upside, not a second total.
+  const totalValue = walletSummary?.value_range_low ?? 0;
+  const totalValueHigh = walletSummary?.value_range_high ?? 0;
   const cardsCount = wallet.length;
   // Distinct loyalty programs, not card count — four Aeroplan cards are one
   // program, not four. Empty program_name (pure-cashback cards) doesn't count.
@@ -481,7 +486,10 @@ export default function HomePage() {
                 <div className="display home-stat-num">
                   $<Counter value={Math.round(totalValue)} />
                 </div>
-                <div className="mono home-stat-sub">CAD · est. high (sweet-spot CPP)</div>
+                <div className="mono home-stat-sub">
+                  {`CAD · base CPP`}
+                  {totalValueHigh > totalValue && ` · up to $${Math.round(totalValueHigh).toLocaleString()} at sweet-spot`}
+                </div>
               </div>
               <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Points</div>

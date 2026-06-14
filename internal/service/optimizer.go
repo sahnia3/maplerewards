@@ -292,15 +292,19 @@ func (s *OptimizerService) scoreCard(
 		// Errs LOW (under-promise) and discloses the estimate only when the
 		// bound actually changed the value (genuine accelerated earn).
 		accelerated := multiplier.EarnRate > multiplier.FallbackEarnRate
-		effectiveRate, isCapHit, note = calculateBlendedRate(
+		effectiveRate, isCapHit, _ = calculateBlendedRate(
 			spendAmount, 0, defaultUnverifiedAnnualCap, "annual",
 			multiplier.EarnRate, multiplier.FallbackEarnRate,
 		)
 		if isCapHit && accelerated {
-			note = "Estimated cap, unverified — pending verified terms. " + note
-		} else if !accelerated {
-			// Flat/unlimited or mis-modelled: value is unchanged by the bound,
-			// so don't show a misleading "cap hit" note or flag.
+			// Spend exceeded our conservative default bound and the accelerated
+			// rate tapered. Disclose the estimate WITHOUT printing the $20000
+			// default as if it were a sourced card term (AU-7): the blended note
+			// from calculateBlendedRate embeds that literal, so it is discarded.
+			note = "Estimated cap (unverified) — accelerated rate may taper at high spend, pending verified card terms."
+		} else {
+			// Within the bound, or flat/unlimited/mis-modelled: the bound did not
+			// change value, so assert nothing about a cap we cannot source.
 			isCapHit = false
 			note = ""
 		}

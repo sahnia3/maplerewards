@@ -533,6 +533,10 @@ export interface RenewalReport {
   total_annual_fees: number;
   total_net_value: number;
   potential_savings: number;
+  // Data-window signals (AU-8): how many distinct months of spend back the
+  // verdicts, and whether that window is too thin to assert a hard "cancel".
+  spend_months_observed?: number;
+  thin_spend_history?: boolean;
 }
 
 // ── Transfer sweet-spot finder ───────────────────────────────────────────────

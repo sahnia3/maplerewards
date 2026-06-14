@@ -18,6 +18,7 @@ const VERDICT_META: Record<string, { label: string; color: string }> = {
   keep_no_fee: { label: "Keep · no fee", color: "var(--ink-2)" },
   use_credits: { label: "Use credits", color: "#b8860b" },
   downgrade_or_cancel: { label: "Downgrade / cancel", color: "var(--loss)" },
+  insufficient_history: { label: "Not enough history yet", color: "var(--ink-3)" },
 };
 
 export function RenewalTile({ sessionId, isReady }: Props) {

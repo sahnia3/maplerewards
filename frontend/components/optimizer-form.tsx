@@ -923,6 +923,18 @@ export function OptimizerForm() {
                         {rec.program_name}
                         {rec.transfer_partner && <> · transfers via <span style={{ color: "var(--ink-2)" }}>{rec.transfer_partner}</span></>}
                       </div>
+                      {/* Cap signal: the engine computes is_cap_hit + a note per
+                          card, but runner rows previously showed only the bare CAD
+                          figure — so a clipped card looked the same as an uncapped
+                          one. Surface the note (gold caveat) when a cap clipped it. */}
+                      {rec.is_cap_hit && rec.note && (
+                        <div
+                          className="mono"
+                          style={{ fontSize: 11, color: "#b8860b", marginTop: 3, letterSpacing: "0.02em", lineHeight: 1.35 }}
+                        >
+                          {rec.note}
+                        </div>
+                      )}
                     </div>
                     <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.04em", textAlign: "right" }}>
                       {rec.earn_rate.toFixed(1)}×
