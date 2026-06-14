@@ -49,13 +49,23 @@ const simulatorNote = "Estimate based on your logged spend, valued at each card'
 // nets the change in annual fees. Read-only over the wallet, spend history, and
 // the card catalog.
 type SimulatorService struct {
-	wallet simulatorWalletRepo
-	spend  simulatorSpendRepo
-	card   simulatorCardRepo
+	wallet  simulatorWalletRepo
+	spend   simulatorSpendRepo
+	card    simulatorCardRepo
+	userCPP UserCPPLookup // optional — nil disables per-user CPP overrides (AU-5)
 }
 
 func NewSimulatorService(wallet simulatorWalletRepo, spend simulatorSpendRepo, card simulatorCardRepo) *SimulatorService {
 	return &SimulatorService{wallet: wallet, spend: spend, card: card}
+}
+
+// WithUserCPP enables per-user CPP overrides (AU-5): the points → dollars
+// conversion uses the wallet owner's own cents-per-point where they have set
+// one, and the seeded program base otherwise. Optional and additive — left
+// unset, pricing is unchanged. Returns the receiver for chaining.
+func (s *SimulatorService) WithUserCPP(lookup UserCPPLookup) *SimulatorService {
+	s.userCPP = lookup
+	return s
 }
 
 // scoredCategory is the best card + dollar value for one spend category under a
@@ -110,11 +120,17 @@ func (s *SimulatorService) Simulate(ctx context.Context, sessionID string, addID
 		return nil, fmt.Errorf("simulator: load categories: %w", err)
 	}
 
-	// program_id → base_cpp (cents per point). Source of truth for the points →
-	// dollars conversion, mirroring portfolio/churn.
+	// program_id → cpp (cents per point). Source of truth for the points →
+	// dollars conversion, mirroring portfolio/churn. AU-5: prefer the user's own
+	// CPP for a program (keyed by slug) over the seeded base where they've set
+	// one, so the simulation values logged spend on the number they believe.
 	cppByProgram := make(map[string]float64, len(programs))
 	for _, p := range programs {
-		cppByProgram[p.ID] = p.BaseCPP
+		cpp := p.BaseCPP
+		if uc, ok := UserCPP(ctx, s.userCPP, user.ID, p.Slug, "base"); ok {
+			cpp = uc
+		}
+		cppByProgram[p.ID] = cpp
 	}
 	// category_name → category (we need the ID to look up multipliers; spend
 	// stats only carry the name). Mirrors how portfolio.computeDollarGap maps

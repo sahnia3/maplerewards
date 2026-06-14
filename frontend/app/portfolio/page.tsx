@@ -11,7 +11,7 @@ import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import type { WalletSummary, CardScore, Card, PortfolioAnalysis, CardCreditStatus, SQCProjection, CardValueSummary } from "@/lib/types";
 import { Check, Plus, TrendingUp, Zap, ChevronRight, Loader2, AlertTriangle, Target, DollarSign, Gift, CalendarClock, Plane, Award } from "lucide-react";
 import { PageMasthead } from "@/components/editorial/page-masthead";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { Term } from "@/components/term";
 import { AnimatedCounter } from "@/components/motion/counter";
 import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
 import { SkeletonCard } from "@/components/ui/skeleton";
@@ -244,7 +244,9 @@ export default function PortfolioPage() {
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
               <span className="eyebrow" style={{ color: "var(--accent)" }}>Estimated annual value</span>
               <span className="mr-kicker-line" style={{ maxWidth: 80 }} />
-              <InfoTooltip term="net-annual-value" />
+              <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                <Term k="net-annual-value" />
+              </span>
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
               {haveCardValues ? (

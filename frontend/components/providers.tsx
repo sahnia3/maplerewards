@@ -6,6 +6,8 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { SessionProvider } from "@/contexts/session-context";
 import { WalletProvider } from "@/contexts/wallet-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
+import { TourProvider } from "@/contexts/tour-context";
+import { TourOverlay } from "@/components/tour/tour-overlay";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -13,7 +15,12 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthProvider>
         <SessionProvider>
           <WalletProvider>
-            <SidebarProvider>{children}</SidebarProvider>
+            <SidebarProvider>
+              <TourProvider>
+                {children}
+                <TourOverlay />
+              </TourProvider>
+            </SidebarProvider>
           </WalletProvider>
         </SessionProvider>
       </AuthProvider>

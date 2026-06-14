@@ -91,12 +91,14 @@ export default function MilestonesPage() {
   return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
-        <PageMasthead
-          eyebrow="Bonus tracking"
-          eyebrowEnd={`${activeBonuses.length} active · ${completedBonuses.length} completed`}
-          title={<>The <span style={{ fontStyle: "italic" }}>welcome-bonus</span> ledger.</>}
-          lede="Spend deadlines, dollar runway, and the points you'll bank when each bonus clears — quietly tracked against the cards you carry."
-        />
+        <div data-tour-id="milestones-panel">
+          <PageMasthead
+            eyebrow="Bonus tracking"
+            eyebrowEnd={`${activeBonuses.length} active · ${completedBonuses.length} completed`}
+            title={<>The <span style={{ fontStyle: "italic" }}>welcome-bonus</span> ledger.</>}
+            lede="Spend deadlines, dollar runway, and the points you'll bank when each bonus clears — quietly tracked against the cards you carry."
+          />
+        </div>
 
         {limitError && (
           <div

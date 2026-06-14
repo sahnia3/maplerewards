@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"maplerewards/internal/model"
+	"maplerewards/internal/repo"
 )
 
 // transferSweetSpotNote is the honesty disclaimer surfaced with every report:
@@ -33,6 +34,14 @@ type sweetSpotTransferRepo interface {
 	GetTransferRoutes(ctx context.Context, fromProgramID string) ([]model.TransferPartner, error)
 }
 
+// sweetSpotBonusRepo reads the live transfer-bonus log (scraped by
+// promo_sentinel into transfer_bonus_events). The sweet-spot engine consults it
+// per route so a running "+30% MR → Aeroplan" promo flips the keep/transfer
+// call instead of being stranded on a read-only list page.
+type sweetSpotBonusRepo interface {
+	ActiveBonusForRoute(ctx context.Context, fromSlug, toSlug string) (*repo.TransferBonusEvent, error)
+}
+
 // TransferSweetSpotService finds, for each program the user holds points in, the
 // transfer-partner move that most increases value over keeping the points where
 // they are — using each program's base CPP as the value yardstick.
@@ -41,6 +50,8 @@ type TransferSweetSpotService struct {
 	loyalty  sweetSpotLoyaltyRepo
 	program  sweetSpotProgramRepo
 	transfer sweetSpotTransferRepo
+	bonus    sweetSpotBonusRepo // optional — nil disables live-bonus surfacing
+	userCPP  UserCPPLookup      // optional — nil disables per-user CPP overrides (AU-5)
 }
 
 func NewTransferSweetSpotService(
@@ -50,6 +61,24 @@ func NewTransferSweetSpotService(
 	transfer sweetSpotTransferRepo,
 ) *TransferSweetSpotService {
 	return &TransferSweetSpotService{wallet: wallet, loyalty: loyalty, program: program, transfer: transfer}
+}
+
+// WithBonusRepo enables live transfer-bonus surfacing by wiring the
+// transfer_bonus_events read path (scraped by promo_sentinel). Optional and
+// additive — left unset, the engine prices on base ratios exactly as before.
+// Returns the receiver so it can be chained at construction.
+func (s *TransferSweetSpotService) WithBonusRepo(bonus sweetSpotBonusRepo) *TransferSweetSpotService {
+	s.bonus = bonus
+	return s
+}
+
+// WithUserCPP enables per-user CPP overrides (AU-5): keep/transfer value is
+// priced on the wallet owner's own cents-per-point where they have set one, and
+// the seeded program base otherwise. Optional and additive — left unset, the
+// engine prices on base CPP exactly as before. Returns the receiver for chaining.
+func (s *TransferSweetSpotService) WithUserCPP(lookup UserCPPLookup) *TransferSweetSpotService {
+	s.userCPP = lookup
+	return s
 }
 
 // progPoints accumulates a user's total points in one source program along with
@@ -139,7 +168,13 @@ func (s *TransferSweetSpotService) Find(ctx context.Context, sessionID string) (
 			continue // only include programs that HAVE at least one transfer partner
 		}
 
-		keepValue := sweetSpotRound(float64(agg.points) * agg.baseCPP / 100)
+		// Prefer the user's own CPP for the SOURCE program (AU-5); fall back to
+		// the seeded base. Sweet-spot prices on the "base" segment yardstick.
+		sourceCPP := agg.baseCPP
+		if uc, ok := UserCPP(ctx, s.userCPP, user.ID, agg.slug, "base"); ok {
+			sourceCPP = uc
+		}
+		keepValue := sweetSpotRound(float64(agg.points) * sourceCPP / 100)
 
 		options := make([]model.TransferOption, 0, len(routes))
 		for _, tp := range routes {
@@ -147,11 +182,39 @@ func (s *TransferSweetSpotService) Find(ctx context.Context, sessionID string) (
 				continue
 			}
 			dest := tp.ToProgram
-			transferred := int64(math.Floor(float64(agg.points) * tp.TransferRatio))
-			transferValue := sweetSpotRound(float64(transferred) * dest.BaseCPP / 100)
+
+			// Fold any live transfer bonus on THIS route into the effective
+			// ratio. We read it from transfer_bonus_events (scraped, not
+			// invented); when none is live the effective ratio equals the base
+			// ratio and no bonus fields are set. A bonus-lookup failure is
+			// non-fatal — the base-ratio sweet spot is still useful, so we
+			// degrade gracefully rather than fail the whole report.
+			effectiveRatio := tp.TransferRatio
+			var bonusPercent float64
+			var bonusLabel, bonusExpires string
+			if s.bonus != nil {
+				if ev, berr := s.bonus.ActiveBonusForRoute(ctx, agg.slug, dest.Slug); berr == nil && ev != nil && ev.BonusPercent > 0 {
+					bonusPercent = ev.BonusPercent
+					effectiveRatio = tp.TransferRatio * (1 + bonusPercent/100)
+					if ev.ExpiresAt != nil {
+						bonusExpires = ev.ExpiresAt.Format("2006-01-02")
+						bonusLabel = fmt.Sprintf("BONUS LIVE: +%g%% through %s", bonusPercent, bonusExpires)
+					} else {
+						bonusLabel = fmt.Sprintf("BONUS LIVE: +%g%%", bonusPercent)
+					}
+				}
+			}
+
+			// Prefer the user's own CPP for the DESTINATION program (AU-5).
+			destCPP := dest.BaseCPP
+			if uc, ok := UserCPP(ctx, s.userCPP, user.ID, dest.Slug, "base"); ok {
+				destCPP = uc
+			}
+			transferred := int64(math.Floor(float64(agg.points) * effectiveRatio))
+			transferValue := sweetSpotRound(float64(transferred) * destCPP / 100)
 			uplift := sweetSpotRound(transferValue - keepValue)
 			eligible := agg.points >= int64(tp.MinimumTransfer)
-			options = append(options, model.TransferOption{
+			opt := model.TransferOption{
 				ToProgramSlug:     dest.Slug,
 				ToProgramName:     dest.Name,
 				TransferRatio:     tp.TransferRatio,
@@ -160,7 +223,14 @@ func (s *TransferSweetSpotService) Find(ctx context.Context, sessionID string) (
 				UpliftCAD:         uplift,
 				MinTransfer:       tp.MinimumTransfer,
 				Eligible:          eligible,
-			})
+			}
+			if bonusPercent > 0 {
+				opt.BonusPercent = bonusPercent
+				opt.BonusLabel = bonusLabel
+				opt.BonusExpiresAt = bonusExpires
+				opt.EffectiveRatio = effectiveRatio
+			}
+			options = append(options, opt)
 		}
 		if len(options) == 0 {
 			continue
@@ -189,7 +259,9 @@ func (s *TransferSweetSpotService) Find(ctx context.Context, sessionID string) (
 			ProgramName:  agg.name,
 			Points:       agg.points,
 			KeepValueCAD: keepValue,
-			BaseCPP:      agg.baseCPP,
+			// Surface the CPP actually used to price keepValue, so a user-derived
+			// override is reflected rather than a base value we didn't apply.
+			BaseCPP:      sourceCPP,
 			BestTransfer: best,
 			AllTransfers: options,
 		})

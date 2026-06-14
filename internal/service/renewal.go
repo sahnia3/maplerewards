@@ -17,7 +17,19 @@ type renewalWalletRepo interface {
 
 type renewalSpendRepo interface {
 	GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error)
+	// SpendMonthsObserved is the data-window signal: how many distinct calendar
+	// months the user has logged spend in. The same signal the churn planner
+	// uses to avoid extrapolating one short window into an annual figure.
+	SpendMonthsObserved(ctx context.Context, userID string) (int, error)
 }
+
+// minMonthsForCancelVerdict is the data-window floor below which a "cancel"
+// verdict is softened to insufficient_history. With fewer than this many
+// distinct logged months the annual value math is extrapolated from too short
+// a window to recommend cancelling a card (a churner who logs one day of
+// spend should not be told to cancel everything three tiles above a scorecard
+// that says the cards earn their fee — QA P1-9/P2-11).
+const minMonthsForCancelVerdict = 3
 
 type renewalCreditRepo interface {
 	ListUserCardCredits(ctx context.Context, userID string) ([]model.CardCreditStatus, error)
@@ -65,6 +77,13 @@ func (s *RenewalService) Assess(ctx context.Context, sessionID string) (*model.R
 	if err != nil {
 		return nil, fmt.Errorf("renewal: load credits: %w", err)
 	}
+	monthsObserved, err := s.spend.SpendMonthsObserved(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("renewal: load spend window: %w", err)
+	}
+	thinHistory := monthsObserved < minMonthsForCancelVerdict
+	report.SpendMonthsObserved = monthsObserved
+	report.ThinSpendHistory = thinHistory
 
 	spendByCard := make(map[string]float64)
 	if stats != nil {
@@ -115,6 +134,17 @@ func (s *RenewalService) Assess(ctx context.Context, sessionID string) (*model.R
 		realizedNet := spendVal + creditsUsed - fee
 		potentialNet := spendVal + creditsVal - fee
 		verdict, rationale := classifyRenewal(fee, spendVal, creditsVal, creditsUsed, realizedNet, potentialNet)
+
+		// Data-window guard: a hard "cancel" verdict on a thin spend history is
+		// extrapolating an annual picture from too short a window. Soften it to
+		// insufficient_history with a caveat instead of telling the user to
+		// cancel a card the value math hasn't actually had a chance to justify.
+		if verdict == "downgrade_or_cancel" && thinHistory {
+			verdict = "insufficient_history"
+			rationale = fmt.Sprintf(
+				"Not enough logged spend yet (%s) to judge this $%.0f fee — the numbers extrapolate from a short window. Log a few more months before deciding to cancel.",
+				monthsLabel(monthsObserved), fee)
+		}
 
 		var downs []model.RenewalDowngradeOption
 		if verdict == "downgrade_or_cancel" && fee > 0 {
@@ -202,3 +232,16 @@ func classifyRenewal(fee, spendVal, creditsVal, creditsUsed, realizedNet, potent
 }
 
 func renewalRound(v float64) float64 { return math.Round(v*100) / 100 }
+
+// monthsLabel renders the observed data window in plain language for the
+// insufficient_history caveat.
+func monthsLabel(months int) string {
+	switch {
+	case months <= 0:
+		return "no spend logged"
+	case months == 1:
+		return "1 month logged"
+	default:
+		return fmt.Sprintf("%d months logged", months)
+	}
+}

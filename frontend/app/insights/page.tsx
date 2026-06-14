@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "@/contexts/session-context";
-import { ApiError, getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
-import type { SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
+import { ApiError, getSpendHistory, getSpendStats, getMissedRewards, request } from "@/lib/api";
+import type { SpendEntry, SpendStats, MissedRewardsReport, MissedRewardEntry } from "@/lib/types";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { Sparkline } from "@/components/editorial/sparkline";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
@@ -25,12 +25,34 @@ const DATE_RANGES: { value: DateRange; label: string }[] = [
 // and spam the console with 402s.
 const missedRewardsGate = { locked: false };
 
+// Free-tier teaching slice of the missed-rewards report. The server's
+// /missed-rewards/preview endpoint returns AT MOST ONE computed line from the
+// user's own logged spend + a has-more flag — never the full Pro forensics
+// (totals, per-category, multi-row list stay behind the Pro gate).
+type MissedRewardsPreview = {
+  since: string;
+  example: MissedRewardEntry | null;
+  has_more: boolean;
+};
+
+function getMissedRewardsPreview(
+  sessionId: string,
+  opts?: { sinceDays?: number }
+): Promise<MissedRewardsPreview> {
+  const tail = opts?.sinceDays != null ? `?since=${opts.sinceDays}` : "";
+  return request<MissedRewardsPreview>(`/wallet/${sessionId}/missed-rewards/preview${tail}`);
+}
+
 export default function InsightsPage() {
   const { sessionId, isReady } = useSession();
   const [allEntries, setAllEntries] = useState<SpendEntry[]>([]);
   const [stats, setStats] = useState<SpendStats | null>(null);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const [missedLocked, setMissedLocked] = useState(missedRewardsGate.locked);
+  // Free-tier single computed example, fetched when missedLocked (the user is
+  // authed-but-free). Teaches with one real line from their own spend instead
+  // of a misleading "$0.00 recoverable".
+  const [missedPreview, setMissedPreview] = useState<MissedRewardsPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>("all");
@@ -60,10 +82,22 @@ export default function InsightsPage() {
       setAllEntries(history ?? []);
       setStats(ss);
       setMissed(mr);
+
+      // Free user (full report gated → 402): pull the single computed example
+      // from their own spend so we can teach with one real line instead of a
+      // fabricated "$0.00 recoverable". Non-fatal — a failure just leaves the
+      // honest "Unlock with Pro" tile without an example.
+      if (missedRewardsGate.locked) {
+        const preview = await getMissedRewardsPreview(sessionId, { sinceDays }).catch(() => null);
+        setMissedPreview(preview);
+      } else {
+        setMissedPreview(null);
+      }
     } catch (e) {
       setAllEntries([]);
       setStats(null);
       setMissed(null);
+      setMissedPreview(null);
       setLoadError(
         e instanceof Error
           ? e.message
@@ -244,7 +278,7 @@ export default function InsightsPage() {
               <KPI label="Earned value" value={`$${totalValue.toFixed(2)}`} sub={`${avgReturn.toFixed(2)}% avg return`} subColor="var(--gain)" />
               <KPI label="Points earned" value={Math.round(totalPoints).toLocaleString()} sub="across cards" />
               {missedLocked ? (
-                <LockedRecoverableKPI />
+                <LockedRecoverableKPI preview={missedPreview} />
               ) : (
                 <KPI
                   label="Recoverable"
@@ -363,9 +397,16 @@ export default function InsightsPage() {
 
 /* ── Subcomponents ─────────────────────────────────────────────────────── */
 
-/* Free tier: missed-rewards is Pro-gated server-side (402 UPGRADE_REQUIRED).
- * Render an honest locked tile instead of a fabricated "$0.00 recoverable". */
-function LockedRecoverableKPI() {
+/* Free tier: full missed-rewards forensics is Pro-gated server-side (402
+ * UPGRADE_REQUIRED). Instead of a fabricated "$0.00 recoverable", show ONE real
+ * computed missed-rewards line from the user's own logged spend (fetched from
+ * the free /missed-rewards/preview endpoint, which exposes at most a single
+ * example — never the full Pro forensics) plus an honest Pro upsell. When the
+ * user is already optimal (no example), say so honestly rather than printing a
+ * misleading dollar value. */
+function LockedRecoverableKPI({ preview }: { preview: MissedRewardsPreview | null }) {
+  const example = preview?.example ?? null;
+
   return (
     <div
       style={{
@@ -376,18 +417,57 @@ function LockedRecoverableKPI() {
       }}
     >
       <div className="eyebrow" style={{ marginBottom: 10 }}>Recoverable</div>
-      <div
-        className="display"
-        style={{ fontSize: 36, lineHeight: 1, color: "var(--ink-3)", letterSpacing: "-0.01em", fontStyle: "italic" }}
-      >
-        Pro
-      </div>
+
+      {example ? (
+        <>
+          {/* One real computed line from the user's own spend. */}
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <div
+              className="display"
+              style={{ fontSize: 40, lineHeight: 1, color: "var(--accent)", letterSpacing: "-0.01em", fontStyle: "italic" }}
+            >
+              +${example.gap.toFixed(2)}
+            </div>
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                left: 0,
+                right: "-4px",
+                bottom: -4,
+                height: 4,
+                background:
+                  "linear-gradient(90deg, var(--accent) 0%, var(--accent-glow) 70%, transparent 100%)",
+                borderRadius: 2,
+              }}
+            />
+          </div>
+          <div className="mono" style={{ marginTop: 14, fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em", lineHeight: 1.5 }}>
+            on ${example.amount.toFixed(0)} {example.category_name.toLowerCase()} — you used{" "}
+            <span style={{ color: "var(--ink-2)" }}>{example.actual_card_name}</span>; {example.optimal_card_name} earns more
+          </div>
+        </>
+      ) : (
+        <>
+          {/* No scorable gap found — be honest, don't print $0.00 as a "value". */}
+          <div
+            className="display"
+            style={{ fontSize: 28, lineHeight: 1.05, color: "var(--ink-2)", letterSpacing: "-0.01em", fontStyle: "italic" }}
+          >
+            One example, free
+          </div>
+          <div className="mono" style={{ marginTop: 12, fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em", lineHeight: 1.5 }}>
+            No mis-routed spend in this window — log more to spot a leak.
+          </div>
+        </>
+      )}
+
       <Link
         href="/pricing"
         className="mono"
         style={{
           display: "inline-block",
-          marginTop: 8,
+          marginTop: 10,
           fontSize: 11,
           color: "var(--accent)",
           letterSpacing: "0.10em",
@@ -395,7 +475,7 @@ function LockedRecoverableKPI() {
           textDecoration: "none",
         }}
       >
-        Unlock with Pro →
+        Unlock full forensics with Pro →
       </Link>
     </div>
   );

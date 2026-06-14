@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -27,6 +26,7 @@ type OptimizerService struct {
 	transferRepo  TransferRepository
 	spendRepo     SpendRepository
 	cache         ValuationCache
+	userCPP       UserCPPLookup // optional — nil disables per-user CPP overrides (AU-5)
 }
 
 func NewOptimizerService(
@@ -45,6 +45,15 @@ func NewOptimizerService(
 		spendRepo:     spendRepo,
 		cache:         c,
 	}
+}
+
+// WithUserCPP enables per-user CPP overrides (AU-5): when the wallet owner has
+// set their own cents-per-point for a program/segment, scoreCard prefers it over
+// the seeded base value. Optional and additive — left unset, scoring is
+// unchanged. Returns the receiver for chaining at construction.
+func (s *OptimizerService) WithUserCPP(lookup UserCPPLookup) *OptimizerService {
+	s.userCPP = lookup
+	return s
 }
 
 // GetBestCard scores all cards in the user's wallet for a given spend and returns
@@ -133,7 +142,7 @@ func (s *OptimizerService) GetBestCard(
 					results[idx] = result{err: fmt.Errorf("card-score panic: %v", r)}
 				}
 			}()
-			rec, err := s.scoreCard(ctx, userCard, category.ID, req.SpendAmount, segment, req.PerPurchase)
+			rec, err := s.scoreCard(ctx, user.ID, userCard, category.ID, req.SpendAmount, segment, req.PerPurchase)
 			results[idx] = result{rec: rec, err: err}
 		}(i, uc)
 	}
@@ -155,6 +164,7 @@ func (s *OptimizerService) GetBestCard(
 // scoreCard calculates the CAD value and effective return for one card+spend pair.
 func (s *OptimizerService) scoreCard(
 	ctx context.Context,
+	userID string,
 	uc model.UserCard,
 	categoryID string,
 	spendAmount float64,
@@ -174,11 +184,11 @@ func (s *OptimizerService) scoreCard(
 		}
 	}
 
-	// CPP: Redis first, then DB, then base_cpp from card data
-	cpp, err := s.getCPP(ctx, uc.Card.LoyaltyProgram.Slug, segment)
+	// CPP: per-user override first (AU-5), then Redis, then DB, then base_cpp.
+	cpp, err := s.getCPP(ctx, userID, uc.Card.LoyaltyProgram.Slug, segment)
 	if err != nil {
 		// Fall back to base segment if requested segment not found
-		cpp, err = s.getCPP(ctx, uc.Card.LoyaltyProgram.Slug, "base")
+		cpp, err = s.getCPP(ctx, userID, uc.Card.LoyaltyProgram.Slug, "base")
 		if err != nil {
 			cpp = uc.Card.LoyaltyProgram.BaseCPP
 		}
@@ -282,17 +292,19 @@ func (s *OptimizerService) scoreCard(
 		// Errs LOW (under-promise) and discloses the estimate only when the
 		// bound actually changed the value (genuine accelerated earn).
 		accelerated := multiplier.EarnRate > multiplier.FallbackEarnRate
-		effectiveRate, isCapHit, note = calculateBlendedRate(
+		effectiveRate, isCapHit, _ = calculateBlendedRate(
 			spendAmount, 0, defaultUnverifiedAnnualCap, "annual",
 			multiplier.EarnRate, multiplier.FallbackEarnRate,
 		)
 		if isCapHit && accelerated {
-			note = "Estimate — accelerated earn assumed capped at $" +
-				strconv.Itoa(int(defaultUnverifiedAnnualCap)) +
-				"/yr pending verified card terms. " + note
-		} else if !accelerated {
-			// Flat/unlimited or mis-modelled: value is unchanged by the bound,
-			// so don't show a misleading "cap hit" note or flag.
+			// Spend exceeded our conservative default bound and the accelerated
+			// rate tapered. Disclose the estimate WITHOUT printing the $20000
+			// default as if it were a sourced card term (AU-7): the blended note
+			// from calculateBlendedRate embeds that literal, so it is discarded.
+			note = "Estimated cap (unverified) — accelerated rate may taper at high spend, pending verified card terms."
+		} else {
+			// Within the bound, or flat/unlimited/mis-modelled: the bound did not
+			// change value, so assert nothing about a cap we cannot source.
 			isCapHit = false
 			note = ""
 		}
@@ -341,10 +353,10 @@ func (s *OptimizerService) scoreCard(
 	if transferErr == nil {
 		baseNote := note // the cap/blended note, before any transfer suffix
 		for _, tp := range transfers {
-			destCPP, destErr := s.getCPP(ctx, tp.ToProgram.Slug, segment)
+			destCPP, destErr := s.getCPP(ctx, userID, tp.ToProgram.Slug, segment)
 			if destErr != nil {
 				// Try base segment as fallback
-				destCPP, destErr = s.getCPP(ctx, tp.ToProgram.Slug, "base")
+				destCPP, destErr = s.getCPP(ctx, userID, tp.ToProgram.Slug, "base")
 				if destErr != nil {
 					continue
 				}
@@ -406,8 +418,20 @@ func calculateBlendedRate(
 	return blended, true, note
 }
 
-// getCPP fetches from Redis; on miss, hits the DB and re-warms the cache.
-func (s *OptimizerService) getCPP(ctx context.Context, programSlug, segment string) (float64, error) {
+// getCPP resolves a program's cents-per-point for the scoring user. Order:
+// per-user override (AU-5) → Redis → DB. The override is the user's own value
+// (same ¢/pt unit), so it is NOT cached — it is user-scoped, not program-global.
+func (s *OptimizerService) getCPP(ctx context.Context, userID, programSlug, segment string) (float64, error) {
+	if cpp, ok := UserCPP(ctx, s.userCPP, userID, programSlug, segment); ok {
+		return cpp, nil
+	}
+	return s.baseCPP(ctx, programSlug, segment)
+}
+
+// baseCPP fetches the seeded program-level value from Redis; on miss, hits the
+// DB and re-warms the cache. This is the program-global value, with no per-user
+// override applied — getCPP layers the override on top.
+func (s *OptimizerService) baseCPP(ctx context.Context, programSlug, segment string) (float64, error) {
 	cpp, err := s.cache.GetValuation(ctx, programSlug, segment)
 	if err == nil {
 		return cpp, nil

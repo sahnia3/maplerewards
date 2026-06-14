@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { AlertTriangle, ArrowLeftRight, ChevronLeft } from "lucide-react";
-import { getProgramDetail } from "@/lib/api";
+import { getProgramDetail, listCPPOverrides } from "@/lib/api";
 import type { ProgramDetailResponse, TransferPartner } from "@/lib/types";
+import { Term } from "@/components/term";
+import { useAuth } from "@/contexts/auth-context";
+import { useSession } from "@/contexts/session-context";
 
 /* Per-type tone uses semantic tokens that work in both registers.
  * Same mapping as the loyalty index for consistency: airline=info-teal,
@@ -218,9 +222,14 @@ export default function ProgramDetailPage() {
   const router = useRouter();
   const slug = params?.slug as string;
 
+  const { isAuthenticated } = useAuth();
+  const { sessionId } = useSession();
+
   const [detail, setDetail] = useState<ProgramDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // AU-5: the user's own base-segment CPP for THIS program, if they've set one.
+  const [userCpp, setUserCpp] = useState<number | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -231,6 +240,23 @@ export default function ProgramDetailPage() {
       .catch(() => setError("Program not found or failed to load."))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  const refreshUserCpp = useCallback(() => {
+    if (!isAuthenticated || !sessionId || !slug) {
+      setUserCpp(null);
+      return;
+    }
+    listCPPOverrides(sessionId)
+      .then((list) => {
+        const match = list.find((o) => o.program_slug === slug && o.segment === "base");
+        setUserCpp(match ? match.cpp_cad : null);
+      })
+      .catch(() => setUserCpp(null));
+  }, [isAuthenticated, sessionId, slug]);
+
+  useEffect(() => {
+    refreshUserCpp();
+  }, [refreshUserCpp]);
 
   if (loading) {
     return (
@@ -319,8 +345,11 @@ export default function ProgramDetailPage() {
   const { program, transfer_out, transfer_in } = detail;
   const colors = typeColor(program.program_type);
 
-  // Redemption value tiers based on CPP
-  const baseCpp = program.base_cpp;
+  // Redemption value tiers based on CPP. AU-5: when the signed-in user has set
+  // their own valuation for this program, every tier re-bases on it so the page
+  // shows the numbers THEY believe, not our defaults.
+  const isUserValued = userCpp != null;
+  const baseCpp = isUserValued ? userCpp : program.base_cpp;
   const businessCpp = baseCpp * 2.2;
   const firstCpp = baseCpp * 3.5;
 
@@ -487,9 +516,60 @@ export default function ProgramDetailPage() {
           </div>
         </div>
 
+        {/* Your-valuation banner (AU-5) — present only when the user has set a
+            custom CPP for this program. Honest about which number is in play and
+            links to settings to change it. */}
+        {isUserValued ? (
+          <div
+            className="fade-up-1"
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 16,
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "var(--accent-wash)",
+              border: "1px solid var(--accent-soft)",
+            }}
+          >
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                color: "var(--accent)",
+              }}
+            >
+              Your valuation
+            </span>
+            <span className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)" }}>
+              Tiers are computed from your custom {(userCpp as number).toFixed(2)}¢/pt, not our default of{" "}
+              {program.base_cpp.toFixed(2)}¢/pt.
+            </span>
+            <Link href="/settings" style={{ marginLeft: "auto", color: "var(--accent)", textDecoration: "underline", fontSize: 13 }}>
+              Change
+            </Link>
+          </div>
+        ) : (
+          isAuthenticated &&
+          sessionId && (
+            <p className="serif fade-up-1" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", marginBottom: 16 }}>
+              Disagree with our {program.base_cpp.toFixed(2)}¢/pt? Set your own in{" "}
+              <Link href="/settings" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                settings
+              </Link>{" "}
+              and every tool re-prices on it.
+            </p>
+          )
+        )}
+
         {/* Value tiles — display-typography, no emoji */}
         <div className="grid grid-cols-2 min-[520px]:grid-cols-3 gap-3 mb-8 fade-up-1">
-          {valueTiles.map(({ label, cpp }) => (
+          {valueTiles.map(({ label, cpp }, i) => (
             <div
               key={label}
               style={{
@@ -515,7 +595,7 @@ export default function ProgramDetailPage() {
                   fontWeight: 500,
                 }}
               >
-                per point
+                {i === 0 ? <Term k="cpp">per point</Term> : "per point"}
               </div>
               <div
                 className="serif"
@@ -533,7 +613,7 @@ export default function ProgramDetailPage() {
             className="eyebrow"
             style={{ color: "var(--ink-3)", marginBottom: 14, letterSpacing: "0.18em" }}
           >
-            Redemption sweet spots
+            Redemption <Term k="sweet-spot">sweet spots</Term>
           </h2>
           <div
             style={{

@@ -533,6 +533,10 @@ export interface RenewalReport {
   total_annual_fees: number;
   total_net_value: number;
   potential_savings: number;
+  // Data-window signals (AU-8): how many distinct months of spend back the
+  // verdicts, and whether that window is too thin to assert a hard "cancel".
+  spend_months_observed?: number;
+  thin_spend_history?: boolean;
 }
 
 // ── Transfer sweet-spot finder ───────────────────────────────────────────────
@@ -546,6 +550,11 @@ export interface TransferOption {
   uplift_cad: number;
   min_transfer: number;
   eligible: boolean;
+  // Live transfer-bonus (AU-2), present only when an active bonus applies to
+  // this route. effective_ratio already folds the bonus into transfer_ratio.
+  bonus_percent?: number;
+  bonus_label?: string;
+  effective_ratio?: number;
 }
 
 export interface TransferSweetSpotSource {

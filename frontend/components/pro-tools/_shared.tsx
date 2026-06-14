@@ -1,6 +1,7 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import { exportProReportCSV, triggerCSVDownload, type ProExportReport } from "@/lib/api";
 
 /* Shared primitives for pro-tools tiles. Internal — not exported from the
  * pro-tools barrel. */
@@ -93,6 +94,76 @@ export function VerdictPill({ verdict }: { verdict: string }) {
       }}
     >
       {v}
+    </span>
+  );
+}
+
+// ExportButton downloads a Pro computed-analysis report as CSV (AU-6). It is
+// disabled until the tile is ready (sessionId present + data loaded) so the
+// user can't request an export of an empty wallet. Errors render inline rather
+// than throwing — a failed export shouldn't break the tile.
+export function ExportButton({
+  sessionId,
+  report,
+  params,
+  disabled = false,
+  label = "Export CSV",
+}: {
+  sessionId: string | null;
+  report: ProExportReport;
+  params?: Record<string, string | string[]>;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    if (!sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await exportProReportCSV(sessionId, report, params);
+      const stamp = new Date().toISOString().slice(0, 10);
+      triggerCSVDownload(blob, `maplerewards_${report}_${stamp}.csv`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const isDisabled = disabled || loading || !sessionId;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <button
+        type="button"
+        onClick={run}
+        disabled={isDisabled}
+        className="mono"
+        style={{
+          height: 34,
+          padding: "0 14px",
+          borderRadius: 8,
+          background: "transparent",
+          color: "var(--ink-2)",
+          border: "1px solid var(--rule)",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          cursor: isDisabled ? "default" : "pointer",
+          opacity: isDisabled ? 0.5 : 1,
+          transition: "border-color 160ms, color 160ms",
+        }}
+      >
+        {loading ? "Exporting…" : `${label} ↓`}
+      </button>
+      {error && (
+        <span className="mono" style={{ fontSize: 11, color: "var(--loss, #c0392b)" }}>
+          {error}
+        </span>
+      )}
     </span>
   );
 }

@@ -15,6 +15,11 @@ import {
 import type { UserCard, UpdateCardDetailsRequest, WalletSummary } from "@/lib/types";
 import { stashPendingCard, readPendingCards, clearPendingCards } from "@/lib/pending-cards";
 
+// One-line "why" shown inline before an anonymous visitor is sent to /signup,
+// so the gate reads as an explanation rather than an ambush.
+export const SIGNUP_GATE_PROMPT =
+  "Create a free account to save this and track your rewards — takes 20 seconds.";
+
 interface WalletContextValue {
   wallet: UserCard[];
   isLoading: boolean;
@@ -22,6 +27,9 @@ interface WalletContextValue {
   totalPoints: number;
   summary: WalletSummary | null;
   summaryLoading: boolean;
+  // Set to SIGNUP_GATE_PROMPT just before an anonymous add-card redirect fires;
+  // consumers can surface it inline. Null when no gate prompt is pending.
+  signupPrompt: string | null;
   getCardValueRange: (cardId: string) => { low: number; high: number } | null;
   refreshWallet: () => Promise<void>;
   addCard: (cardId: string) => Promise<void>;
@@ -42,6 +50,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<WalletSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [signupPrompt, setSignupPrompt] = useState<string | null>(null);
 
   const loadWallet = useCallback(async () => {
     if (!sessionId) return;
@@ -141,6 +150,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // first; the post-auth drain effect below replays it once they're back.
       if (!isAuthenticated) {
         stashPendingCard(cardId);
+        // Surface a one-line "why" inline so the gate reads as an explanation,
+        // not an ambush, before we hand off to /signup.
+        setSignupPrompt(SIGNUP_GATE_PROMPT);
         const back = pathname && pathname.startsWith("/") && !pathname.startsWith("//") ? pathname : "/cards";
         router.push(`/signup?redirect=${encodeURIComponent(back)}`);
         return;
@@ -216,6 +228,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         totalPoints,
         summary,
         summaryLoading,
+        signupPrompt,
         getCardValueRange,
         refreshWallet,
         addCard,

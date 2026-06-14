@@ -20,12 +20,19 @@ type optimizerForPortfolio interface {
 	GetBestCard(ctx context.Context, req model.OptimizeRequest) ([]model.CardRecommendation, error)
 }
 
+// portfolioUserCPP is the optional per-user CPP lookup (AU-5). nil disables
+// overrides, so utilization scoring prices on the seeded base exactly as before.
+type portfolioUserCPP interface {
+	LookupCPP(ctx context.Context, userID, programSlug, segment string) (float64, bool, error)
+}
+
 type PortfolioHandler struct {
 	walletRepo   *repo.WalletRepo
 	cardRepo     *repo.CardRepo
 	spendRepo    *repo.SpendRepo
 	transferRepo *repo.TransferRepo
 	optimizer    optimizerForPortfolio
+	userCPP      portfolioUserCPP
 }
 
 func NewPortfolioHandler(
@@ -42,6 +49,28 @@ func NewPortfolioHandler(
 		transferRepo: transferRepo,
 		optimizer:    optimizer,
 	}
+}
+
+// WithUserCPP enables per-user CPP overrides (AU-5) in the utilization score:
+// the inline points-card return uses the wallet owner's own cents-per-point
+// where set, and the seeded base otherwise. The dollar-gap path already routes
+// through the optimizer, which applies overrides on its own. Optional and
+// additive. Returns the receiver for chaining.
+func (h *PortfolioHandler) WithUserCPP(lookup portfolioUserCPP) *PortfolioHandler {
+	h.userCPP = lookup
+	return h
+}
+
+// resolveCPP returns the user's override for a program (base segment) where set,
+// else the supplied base. A nil lookup / empty user / any error degrades to base.
+func (h *PortfolioHandler) resolveCPP(ctx context.Context, userID, programSlug string, base float64) float64 {
+	if h.userCPP == nil || userID == "" || programSlug == "" {
+		return base
+	}
+	if cpp, ok, err := h.userCPP.LookupCPP(ctx, userID, programSlug, "base"); err == nil && ok {
+		return cpp
+	}
+	return base
 }
 
 // GetAnalysis computes fee ROI, dollar gap (opportunity cost), and utilization score.
@@ -80,7 +109,7 @@ func (h *PortfolioHandler) GetAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	feeROI := h.computeFeeROI(ctx, userCards, stats)
 	dollarGap := h.computeDollarGap(ctx, sessionID, entries)
-	utilization := h.computeUtilization(ctx, userCards)
+	utilization := h.computeUtilization(ctx, user.ID, userCards)
 
 	jsonOK(w, model.PortfolioAnalysis{
 		FeeROI:      feeROI,
@@ -284,7 +313,7 @@ func (h *PortfolioHandler) computeDollarGap(ctx context.Context, sessionID strin
 
 // ── Utilization Score ────────────────────────────────────────────────────────
 
-func (h *PortfolioHandler) computeUtilization(ctx context.Context, userCards []model.UserCard) model.UtilizationScore {
+func (h *PortfolioHandler) computeUtilization(ctx context.Context, userID string, userCards []model.UserCard) model.UtilizationScore {
 	categories, err := h.cardRepo.ListCategories(ctx)
 	if err != nil || len(categories) == 0 {
 		return model.UtilizationScore{Gaps: []model.CategoryGap{}}
@@ -325,11 +354,14 @@ func (h *PortfolioHandler) computeUtilization(ctx context.Context, userCards []m
 			if mult.EarnType == "cashback_pct" {
 				effectiveReturn = mult.EarnRate
 			} else {
-				cpp := uc.Card.LoyaltyProgram.BaseCPP
+				// AU-5: prefer the user's own CPP for the source program, and for
+				// each transfer destination, over the seeded base.
+				cpp := h.resolveCPP(ctx, userID, uc.Card.LoyaltyProgram.Slug, uc.Card.LoyaltyProgram.BaseCPP)
 				routes, _ := h.transferRepo.GetTransferRoutes(ctx, uc.Card.LoyaltyProgramID)
 				for _, route := range routes {
 					if route.ToProgram != nil {
-						effectiveCPP := route.ToProgram.BaseCPP * route.TransferRatio
+						destCPP := h.resolveCPP(ctx, userID, route.ToProgram.Slug, route.ToProgram.BaseCPP)
+						effectiveCPP := destCPP * route.TransferRatio
 						if effectiveCPP > cpp {
 							cpp = effectiveCPP
 						}

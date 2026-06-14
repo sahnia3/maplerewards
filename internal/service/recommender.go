@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"sort"
-	"strconv"
 
 	"maplerewards/internal/model"
 )
@@ -184,14 +183,14 @@ func (s *RecommenderService) scoreCard(
 			// get no misleading note.
 			accelerated := mult.EarnRate > fallbackRate
 			var capHit bool
-			effRate, capHit, capNote = calculateBlendedRate(
+			effRate, capHit, _ = calculateBlendedRate(
 				monthly*12, 0, defaultUnverifiedAnnualCap, "annual",
 				mult.EarnRate, fallbackRate,
 			)
 			if capHit && accelerated {
-				capNote = "Estimate — accelerated earn assumed capped at $" +
-					strconv.Itoa(int(defaultUnverifiedAnnualCap)) +
-					"/yr pending verified card terms. " + capNote
+				// Disclose the estimate without printing the $20000 default as a
+				// sourced figure (AU-7); the blended note embeds that literal.
+				capNote = "Estimate — accelerated earn may taper at an unverified cap, pending verified card terms."
 			} else {
 				capNote = ""
 			}

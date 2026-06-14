@@ -6,7 +6,7 @@ import { getChurnPlan } from "@/lib/api";
 import type { ChurnPlan, ChurnCandidate } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { Stat, fmtCAD, sectionStyle } from "./_shared";
+import { ExportButton, Stat, fmtCAD, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -139,6 +139,10 @@ export function ChurnPlannerTile({ sessionId, isReady }: Props) {
                 ))}
               </div>
             )}
+
+            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+              <ExportButton sessionId={sessionId} report="churn" label="Export plan" />
+            </div>
           </>
         )}
       </PaperTile>

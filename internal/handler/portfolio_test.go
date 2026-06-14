@@ -61,7 +61,7 @@ func TestUtilization_PointsVsCashbackParity(t *testing.T) {
 	}
 
 	h := NewPortfolioHandler(nil, repo.NewCardRepo(pool), nil, repo.NewTransferRepo(pool), nil)
-	utilization := h.computeUtilization(context.Background(), userCards)
+	utilization := h.computeUtilization(context.Background(), "", userCards)
 
 	var groceries *model.CategoryGap
 	for i := range utilization.Gaps {

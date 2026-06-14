@@ -49,6 +49,11 @@ type AIService struct {
 	awardSearchSvc *AwardSearchService
 	pro            ProServices
 	tools          *toolRegistry
+	// transferBonusRepo reads live transfer-bonus promos (scraped into
+	// transfer_bonus_events by promo_sentinel). Optional — wired via
+	// WithTransferBonus; nil leaves simulate_transfer_with_bonus on its
+	// user-supplied bonus_percent only.
+	transferBonusRepo aiTransferBonusRepo
 }
 
 func NewAIService(

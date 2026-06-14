@@ -20,7 +20,7 @@ export function ChatFab() {
   if (pathname === "/chat") return null;
 
   return (
-    <Link href="/chat" aria-label="Ask Maple — your rewards advisor" className="maple-orb-fab">
+    <Link href="/chat" aria-label="Ask Maple — your rewards advisor" className="maple-orb-fab" data-tour-id="ask-maple-orb">
       <span className="maple-orb-halo" aria-hidden />
       <span className="maple-orb-sphere" aria-hidden>
         <span className="maple-orb-iris" />

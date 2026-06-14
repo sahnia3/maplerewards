@@ -257,3 +257,59 @@ func round2(v float64) float64 {
 	// Gap can be negative when program CPP dropped since the entry was logged.
 	return roundMoney(v)
 }
+
+// MissedRewardsPreview is the FREE-TIER teaching slice of the missed-rewards
+// report. It is deliberately NOT the full forensics DTO: it carries at most a
+// single computed missed-rewards line drawn from the user's own logged spend,
+// plus a boolean flag indicating whether more gaps exist (so the UI can show an
+// honest "Unlock full forensics with Pro" upsell). It MUST NOT expose the
+// aggregate totals (total_gap / total_optimal), the per-category breakdown, or
+// the full top-missed list — those are Pro-only forensics. The point is to
+// teach the free user with one real example, not to leak the paid analysis.
+type MissedRewardsPreview struct {
+	Since string `json:"since"` // ISO date floor of the scan window
+	// Example is the single highest-gap missed-rewards line from the user's own
+	// logged spend, or nil when the user is already optimal (or has no scorable
+	// in-window spend). nil means "show the optimized state", never a fake $0.00.
+	Example *model.MissedRewardEntry `json:"example"`
+	// HasMore reports whether at least one ADDITIONAL missed line exists beyond
+	// the single example. It powers the Pro upsell without disclosing how many
+	// gaps there are or their dollar value (which would be leaking forensics).
+	HasMore bool `json:"has_more"`
+}
+
+// ComputeMissedRewardsPreview is the free-tier counterpart to
+// ComputeMissedRewards. It runs the SAME computation against the user's own
+// wallet + logged spend, then returns AT MOST ONE missed-rewards line (the
+// single largest gap) plus a has-more flag. No aggregate totals, no
+// per-category breakdown, no multi-row top list — that full forensics output
+// stays behind the Pro gate on ComputeMissedRewards.
+//
+// This exists so the Insights page can teach a free user with one real example
+// from their own spend instead of rendering a misleading "$0.00 recoverable".
+func (s *MissedRewardsService) ComputeMissedRewardsPreview(
+	ctx context.Context,
+	sessionID string,
+	sinceDays int,
+) (*MissedRewardsPreview, error) {
+	// Reuse the full computation. topN=2 so we can detect "has more" (≥2 missed
+	// lines) while still only ever returning the single top line below. The
+	// full report is computed in-process and never serialized to the free user.
+	report, err := s.ComputeMissedRewards(ctx, sessionID, sinceDays, 2)
+	if err != nil {
+		return nil, err
+	}
+	if report == nil {
+		// Unknown/scrubbed session — mirror ComputeMissedRewards's (nil,nil).
+		return nil, nil
+	}
+
+	preview := &MissedRewardsPreview{Since: report.Since}
+	if len(report.TopMissed) > 0 {
+		// Copy the single top line; never hand back the underlying slice.
+		top := report.TopMissed[0]
+		preview.Example = &top
+		preview.HasMore = report.MissedCount > 1
+	}
+	return preview, nil
+}

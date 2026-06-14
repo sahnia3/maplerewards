@@ -4,6 +4,7 @@ import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
+import { MarketingFooter } from "@/components/marketing/footer";
 import { ChatFab } from "@/components/chat/chat-fab";
 import { SWRegister } from "@/components/sw-register";
 import { InstallPWAPrompt } from "@/components/install-pwa-prompt";
@@ -83,6 +84,7 @@ export default function RootLayout({
         <Providers>
           <ErrorReporterInit />
           <AppShell>{children}</AppShell>
+          <MarketingFooter />
           <ChatFab />
           <SWRegister />
           <InstallPWAPrompt />

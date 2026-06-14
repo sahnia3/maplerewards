@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Sun, Moon, Download, Loader2 } from "lucide-react";
+import { Sun, Moon, Download, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { useAuth } from "@/contexts/auth-context";
 import { useSession } from "@/contexts/session-context";
-import { changePassword, exportSpendCSV } from "@/lib/api";
+import {
+  changePassword,
+  exportSpendCSV,
+  listPrograms,
+  listCPPOverrides,
+  setCPPOverride,
+  deleteCPPOverride,
+  type UserCPPOverride,
+} from "@/lib/api";
+import type { LoyaltyProgram } from "@/lib/types";
+import { useTour } from "@/contexts/tour-context";
 
 /* Editorial settings page — only what actually works.
  *
@@ -33,6 +43,7 @@ export default function SettingsPage() {
   const currentTheme = (resolvedTheme as "light" | "dark") ?? "light";
   const { user, isAuthenticated } = useAuth();
   const { sessionId } = useSession();
+  const tour = useTour();
 
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -45,9 +56,68 @@ export default function SettingsPage() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // ── Custom CPP overrides (AU-5) ──────────────────────────────────────────
+  const [programs, setPrograms] = useState<LoyaltyProgram[]>([]);
+  const [overrides, setOverrides] = useState<UserCPPOverride[]>([]);
+  const [cppProgram, setCppProgram] = useState("");
+  const [cppSegment, setCppSegment] = useState("base");
+  const [cppValue, setCppValue] = useState("");
+  const [cppSaving, setCppSaving] = useState(false);
+  const [cppMessage, setCppMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const refreshOverrides = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const list = await listCPPOverrides(sessionId);
+      setOverrides(list);
+    } catch {
+      // A missing/empty list is normal — leave the table empty, no error noise.
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     setReduceMotion(loadBool("mr.motion.reduce", false));
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !sessionId) return;
+    listPrograms()
+      .then((p) => setPrograms(p))
+      .catch(() => setPrograms([]));
+    refreshOverrides();
+  }, [isAuthenticated, sessionId, refreshOverrides]);
+
+  async function handleSaveCPP(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sessionId || !cppProgram) return;
+    const parsed = Number(cppValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setCppMessage({ kind: "err", text: "Enter a cents-per-point value of 0 or more." });
+      return;
+    }
+    setCppSaving(true);
+    setCppMessage(null);
+    try {
+      await setCPPOverride(sessionId, { program_slug: cppProgram, segment: cppSegment, cpp_cad: parsed });
+      setCppValue("");
+      setCppMessage({ kind: "ok", text: "Valuation saved. Your tools now use this number." });
+      await refreshOverrides();
+    } catch (err) {
+      setCppMessage({ kind: "err", text: err instanceof Error ? err.message : "Could not save valuation" });
+    } finally {
+      setCppSaving(false);
+    }
+  }
+
+  async function handleDeleteCPP(programSlug: string, segment: string) {
+    if (!sessionId) return;
+    try {
+      await deleteCPPOverride(sessionId, programSlug, segment);
+      await refreshOverrides();
+    } catch (err) {
+      setCppMessage({ kind: "err", text: err instanceof Error ? err.message : "Could not remove valuation" });
+    }
+  }
 
   function applyMotion(reduce: boolean) {
     setReduceMotion(reduce);
@@ -123,6 +193,27 @@ export default function SettingsPage() {
           </Row>
           <Row label="Reduce motion" hint="Disable hover lifts, transitions, and reveal animations.">
             <Switch on={reduceMotion} onChange={applyMotion} />
+          </Row>
+          <Row label="Product walkthrough" hint="Replay the guided tour of every page.">
+            <button
+              type="button"
+              onClick={() => tour.start()}
+              className="mono"
+              style={{
+                padding: "8px 16px",
+                border: "1px solid var(--rule-strong)",
+                background: "transparent",
+                borderRadius: 8,
+                color: "var(--ink-2)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              Take the tour
+            </button>
           </Row>
         </Section>
 
@@ -263,6 +354,151 @@ export default function SettingsPage() {
                 {exportLoading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                 {exportLoading ? "Preparing…" : "Download CSV"}
               </button>
+            </div>
+          </Section>
+        )}
+
+        {/* Custom CPP overrides — the advanced lever (AU-5). Disagree with our
+            cents-per-point for a program? Enter your own; every tool re-prices
+            on it. Authenticated users only — overrides are stored per account. */}
+        {isAuthenticated && sessionId && (
+          <Section eyebrow="Your valuations" title="Price points your way.">
+            <div style={{ padding: "16px 4px" }}>
+              <p
+                className="serif"
+                style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginBottom: 16, lineHeight: 1.5 }}
+              >
+                We value each program at a default cents-per-point. If you redeem differently, set your own
+                number — the optimizer, sweet-spot, simulator, and portfolio tools will use yours instead.
+              </p>
+
+              <form
+                onSubmit={handleSaveCPP}
+                style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 0.8fr) auto", gap: 10, alignItems: "end" }}
+              >
+                <label className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)" }}>
+                  Program
+                  <select
+                    value={cppProgram}
+                    onChange={(e) => setCppProgram(e.target.value)}
+                    style={inputStyle}
+                    required
+                  >
+                    <option value="">Choose…</option>
+                    {programs.map((p) => (
+                      <option key={p.slug} value={p.slug}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)" }}>
+                  Segment
+                  <select value={cppSegment} onChange={(e) => setCppSegment(e.target.value)} style={inputStyle}>
+                    <option value="base">Base</option>
+                    <option value="business">Business</option>
+                  </select>
+                </label>
+                <label className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)" }}>
+                  ¢ / point
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    value={cppValue}
+                    onChange={(e) => setCppValue(e.target.value)}
+                    placeholder="e.g. 1.5"
+                    style={inputStyle}
+                    required
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={cppSaving || !cppProgram || cppValue === ""}
+                  className="mono"
+                  style={{
+                    height: 40,
+                    padding: "0 18px",
+                    background: cppSaving || !cppProgram || cppValue === "" ? "var(--rule-strong)" : "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    cursor: cppSaving || !cppProgram || cppValue === "" ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {cppSaving ? "Saving…" : "Save"}
+                </button>
+              </form>
+
+              {cppMessage && (
+                <div
+                  role={cppMessage.kind === "err" ? "alert" : "status"}
+                  className="serif"
+                  style={{
+                    marginTop: 12,
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    color: cppMessage.kind === "err" ? "var(--loss)" : "var(--gain)",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    background: "var(--surface)",
+                    border: `1px solid ${cppMessage.kind === "err" ? "var(--loss)" : "var(--gain)"}`,
+                  }}
+                >
+                  {cppMessage.text}
+                </div>
+              )}
+
+              {overrides.length > 0 && (
+                <div style={{ marginTop: 20, borderTop: "1px solid var(--rule)" }}>
+                  {overrides.map((o) => (
+                    <div
+                      key={`${o.program_slug}:${o.segment}`}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+                        gap: 12,
+                        alignItems: "center",
+                        padding: "12px 4px",
+                        borderBottom: "1px solid var(--rule)",
+                      }}
+                    >
+                      <span className="display" style={{ fontSize: 15, color: "var(--ink)" }}>
+                        {o.program_name || o.program_slug}
+                      </span>
+                      <span
+                        className="mono"
+                        style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}
+                      >
+                        {o.segment}
+                      </span>
+                      <span className="mono" style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>
+                        {o.cpp_cad.toFixed(2)}¢
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${o.program_name || o.program_slug} valuation`}
+                        onClick={() => handleDeleteCPP(o.program_slug, o.segment)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--ink-3)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </Section>
         )}

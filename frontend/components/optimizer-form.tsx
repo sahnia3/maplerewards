@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ApiError, listCategories, optimize, logSpend } from "@/lib/api";
+import { ApiError, listCategories, optimize, logSpend, addCardToWallet, request } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
@@ -51,6 +51,20 @@ function inferIssuer(name: string): string {
 
 const QUICK_AMOUNTS = [25, 50, 100, 250, 500, 1000];
 
+/* Demo wallet — a small set of popular, real Canadian cards (IDs already in
+ * the DB) used to show the optimizer working *before* a visitor has added any
+ * cards of their own. The headline feature shouldn't refuse to demo itself on
+ * an empty wallet. These run through the existing optimize engine against an
+ * ephemeral throwaway session, so nothing is written to the user's wallet and
+ * no values are fabricated — the engine prices them exactly as it would a real
+ * wallet. Spread across issuers/currencies so the ranking is illustrative. */
+const DEMO_CARD_IDS = [
+  "20000000-0000-0000-0000-000000000001", // Amex Cobalt
+  "20000000-0000-0000-0000-000000000019", // Scotia Momentum Visa Infinite
+  "20000000-0000-0000-0000-000000000004", // TD Aeroplan Visa Infinite
+  "20000000-0000-0000-0000-000000000034", // Simplii Cash Back Visa
+];
+
 // Soft category tints (light editorial palette). Hue + tint carry the visual
 // identity; per-category emoji markers were removed to stay consistent with
 // the editorial system (which is emoji-free everywhere else).
@@ -88,6 +102,34 @@ export function OptimizerForm() {
   const [catLoading, setCatLoading] = useState(true);
   const [loggedIds, setLoggedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  // True when the current results came from the seeded demo wallet (empty real
+  // wallet). Drives the "Sample wallet" banner and the signup-on-log nudge.
+  const [isDemo, setIsDemo] = useState(false);
+  // NU-11: shows a one-line "why" prompt before the signup redirect.
+  const [signupPrompt, setSignupPrompt] = useState(false);
+  // Cached ephemeral demo session so repeated ranks don't reseed the cards.
+  const [demoSessionId, setDemoSessionId] = useState<string | null>(null);
+
+  // Lazily create + seed a throwaway demo session with the popular demo cards.
+  // Never persisted as the user's session, so the real (empty) wallet is left
+  // untouched. Returns the demo session id to optimize against.
+  async function ensureDemoSession(): Promise<string> {
+    if (demoSessionId) return demoSessionId;
+    const { session_id } = await request<{ session_id: string }>("/wallet", {
+      method: "POST",
+    });
+    // Seed sequentially; ignore individual failures so a single retired/missing
+    // card doesn't sink the whole demo.
+    for (const cardId of DEMO_CARD_IDS) {
+      try {
+        await addCardToWallet(session_id, cardId);
+      } catch {
+        /* skip — best-effort demo seeding */
+      }
+    }
+    setDemoSessionId(session_id);
+    return session_id;
+  }
 
   useEffect(() => {
     listCategories()
@@ -111,16 +153,14 @@ export function OptimizerForm() {
       setError("Enter a valid amount");
       return;
     }
-    // Known-empty wallet: the optimize call would 400 with WALLET_EMPTY —
-    // show the add-card empty state without the doomed request.
-    if (!walletLoading && wallet.length === 0) {
-      setResults([]);
-      return;
-    }
+    // Empty wallet: rather than refuse to demo the headline feature, rank a
+    // small sample wallet of popular cards so the visitor sees real output. A
+    // banner makes clear these aren't their cards.
+    const demo = !walletLoading && wallet.length === 0;
     setLoading(true);
     setLoggedIds(new Set());
     try {
-      const sid = await ensureSession();
+      const sid = demo ? await ensureDemoSession() : await ensureSession();
       const recs = await optimize({
         session_id: sid,
         category_slug: categorySlug,
@@ -128,11 +168,13 @@ export function OptimizerForm() {
         redemption_segment: segment,
         ...(merchant ? { merchant } : {}),
       });
+      setIsDemo(demo);
       setResults(recs);
     } catch (err: unknown) {
-      // Empty wallet is a first-visit state, not an error — show the add-card
-      // empty state instead of a bare warning with no path forward.
+      // A truly empty result (e.g. merchant filter excludes every demo card)
+      // falls through to the add-card empty state.
       if (err instanceof ApiError && err.code === "WALLET_EMPTY") {
+        setIsDemo(false);
         setResults([]);
       } else {
         setError(err instanceof Error ? err.message : "Something went wrong");
@@ -144,10 +186,14 @@ export function OptimizerForm() {
 
   async function handleLog(rec: CardRecommendation) {
     if (loggedIds.has(rec.card_id)) return;
-    // Logging a spend writes to a wallet — anonymous visitors must create an
-    // account first. Send them to signup (which merges their anon session).
-    if (!isAuthenticated) {
-      router.push("/signup?redirect=/optimizer");
+    // Logging a spend writes to a wallet — anonymous visitors (and anyone on
+    // the sample wallet) must create an account first. Surface a one-line
+    // inline "why" prompt before the redirect so it doesn't read as an ambush,
+    // then send them to signup (which merges their anon session).
+    if (!isAuthenticated || isDemo) {
+      setSignupPrompt(true);
+      // Brief beat so the inline prompt is visible before navigation.
+      setTimeout(() => router.push("/signup?redirect=/optimizer"), 900);
       return;
     }
     try {
@@ -216,6 +262,7 @@ export function OptimizerForm() {
                 step="0.01"
                 placeholder="0.00"
                 aria-label="Spend amount in Canadian dollars"
+                data-tour-id="amount-input"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && rank()}
@@ -243,6 +290,7 @@ export function OptimizerForm() {
           </label>
           <button
             type="button"
+            data-tour-id="rank-button"
             onClick={rank}
             disabled={loading || !categorySlug || !amount}
             className="mono focus-ring"
@@ -347,7 +395,7 @@ export function OptimizerForm() {
           }}
         >
           {/* Redemption segment */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="eyebrow">Value:</span>
             <div style={{ display: "flex", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden" }}>
               {(["base", "business"] as const).map((s, i) => (
@@ -373,6 +421,21 @@ export function OptimizerForm() {
                 </button>
               ))}
             </div>
+            {/* One-line helper — mirrors the Merchant selector's italic caption.
+             * "Value: Base/Sweet-spot" had no explanation while the adjacent
+             * Merchant control did. */}
+            <span
+              className="serif"
+              style={{
+                fontSize: 12,
+                fontStyle: "italic",
+                color: "var(--ink-2)",
+                lineHeight: 1.4,
+                maxWidth: 320,
+              }}
+            >
+              Base = typical cash-out value; <Term k="sweet-spot">Sweet-spot</Term> = best-case award redemption.
+            </span>
           </div>
 
           {/* Merchant network constraint */}
@@ -421,7 +484,7 @@ export function OptimizerForm() {
       </div>
 
       {/* ── Category pills ─────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 22, marginBottom: 26 }}>
+      <div data-tour-id="optimizer-panel" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 22, marginBottom: 26 }}>
         {catLoading
           ? Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ width: 110, height: 36, borderRadius: 999 }} className="shimmer" />
@@ -433,6 +496,7 @@ export function OptimizerForm() {
                 <button
                   key={c.slug}
                   type="button"
+                  data-tour-id={`category-pill-${c.slug}`}
                   onClick={() => setCategorySlug(c.slug)}
                   style={{
                     padding: "10px 18px",
@@ -472,6 +536,53 @@ export function OptimizerForm() {
           }}
         >
           ⚠ {error}
+        </div>
+      )}
+
+      {/* Sample-wallet banner — shown when ranking the demo set so the visitor
+       * understands these aren't their own cards and how to personalize. */}
+      {isDemo && best && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            flexWrap: "wrap",
+            padding: "14px 18px",
+            border: "1px solid var(--rule-strong)",
+            background: "var(--card-fill)",
+            borderRadius: 12,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
+              Sample wallet
+            </div>
+            <div className="serif" style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.45 }}>
+              We ranked a few popular Canadian cards so you can see how this works. Add your own to personalize the results.
+            </div>
+          </div>
+          <Link
+            href={isAuthenticated ? "/wallet" : "/signup?redirect=/optimizer"}
+            className="mono"
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "10px 16px",
+              borderRadius: 10,
+              background: "var(--ink)",
+              color: "var(--paper)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            Add your own →
+          </Link>
         </div>
       )}
 
@@ -551,6 +662,7 @@ export function OptimizerForm() {
         <>
           {/* Winner card */}
           <div
+            data-tour-id="winner-card"
             style={{
               border: `1px solid ${t.hue}`,
               borderRadius: 16,
@@ -669,6 +781,27 @@ export function OptimizerForm() {
                 <Stat label={<>Effective <Term k="redemption">return</Term></>} value={`${best.effective_return.toFixed(2)}%`} />
                 <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} last />
               </div>
+              {/* NU-11: explain *why* we're sending them to signup before the
+               * redirect, so the hard gate doesn't read as an ambush. */}
+              {signupPrompt && (
+                <div
+                  role="status"
+                  className="serif"
+                  style={{
+                    marginBottom: 12,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--accent-soft)",
+                    background: "var(--accent-wash)",
+                    color: "var(--ink-2)",
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Create a free account to save this and track your rewards — takes 20 seconds.
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {(() => {
                   const isLogged = loggedIds.has(best.card_id);
@@ -738,6 +871,21 @@ export function OptimizerForm() {
                   {runners.length} more in wallet
                 </span>
               </div>
+              {/* Column legend — names the three numeric columns and wraps the
+               * jargon in <Term> so a beginner can decode the ledger. */}
+              <div
+                className="serif"
+                style={{
+                  fontSize: 12,
+                  fontStyle: "italic",
+                  color: "var(--ink-3)",
+                  padding: "0 4px 12px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Each row shows the card&rsquo;s <Term k="multiplier">multiplier</Term> (×), its{" "}
+                <Term k="redemption">effective return</Term> (%), and the cash value of this purchase.
+              </div>
               {runners.map((rec, i) => {
                 const isLogged = loggedIds.has(rec.card_id);
                 return (
@@ -775,6 +923,18 @@ export function OptimizerForm() {
                         {rec.program_name}
                         {rec.transfer_partner && <> · transfers via <span style={{ color: "var(--ink-2)" }}>{rec.transfer_partner}</span></>}
                       </div>
+                      {/* Cap signal: the engine computes is_cap_hit + a note per
+                          card, but runner rows previously showed only the bare CAD
+                          figure — so a clipped card looked the same as an uncapped
+                          one. Surface the note (gold caveat) when a cap clipped it. */}
+                      {rec.is_cap_hit && rec.note && (
+                        <div
+                          className="mono"
+                          style={{ fontSize: 11, color: "#b8860b", marginTop: 3, letterSpacing: "0.02em", lineHeight: 1.35 }}
+                        >
+                          {rec.note}
+                        </div>
+                      )}
                     </div>
                     <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)", letterSpacing: "0.04em", textAlign: "right" }}>
                       {rec.earn_rate.toFixed(1)}×

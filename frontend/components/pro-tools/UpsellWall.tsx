@@ -45,6 +45,7 @@ export function ProToolsUpsell({ signedIn }: { signedIn: boolean }) {
   return (
     <div
       className="reveal"
+      data-tour-id="pro-tools-upsell-wall"
       style={{
         minHeight: "70vh",
         display: "flex",

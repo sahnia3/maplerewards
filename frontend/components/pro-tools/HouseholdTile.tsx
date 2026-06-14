@@ -6,7 +6,7 @@ import { getHouseholdReport, getWallet, listCards } from "@/lib/api";
 import type { Card, HouseholdReport, UserCard } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
-import { FieldLabel, Stat, ctaStyle, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
+import { ExportButton, FieldLabel, Stat, ctaStyle, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
   sessionId: string | null;
@@ -241,6 +241,15 @@ export function HouseholdTile({ sessionId, isReady }: Props) {
                 <p className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", margin: "14px 0 0", lineHeight: 1.5 }}>
                   {report.note}
                 </p>
+
+                <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+                  <ExportButton
+                    sessionId={sessionId}
+                    report="household"
+                    params={{ partner: partnerIds }}
+                    label="Export household"
+                  />
+                </div>
               </div>
             )}
           </>
