@@ -89,7 +89,7 @@ function tintFor(slug: string) {
 export function OptimizerForm() {
   const { ensureSession } = useSession();
   const { isAuthenticated } = useAuth();
-  const { wallet, isLoading: walletLoading } = useWallet();
+  const { wallet, isLoading: walletLoading, refreshWallet } = useWallet();
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categorySlug, setCategorySlug] = useState("");
@@ -204,6 +204,10 @@ export function OptimizerForm() {
         amount: parseFloat(amount),
       });
       setLoggedIds(prev => new Set(prev).add(rec.card_id));
+      // Pull the fresh wallet so the credited points/value appear immediately in
+      // the navbar, home, and portfolio (point_balance was just incremented
+      // server-side) instead of waiting for a full page reload.
+      void refreshWallet();
       setToast(`Logged: ${rec.card_name}`);
       setTimeout(() => setToast(null), 3500);
     } catch {
