@@ -67,16 +67,22 @@ export function ChatFab() {
           .maple-orb-core,
           .maple-orb-gloss,
           .maple-orb-rim { display: none !important; }
+          /* Self-illuminated iridescent sphere — no mix-blend-mode (iOS-safe).
+             Bright colour lobes cover the body over a luminous blue/violet base,
+             with a white specular highlight so it still reads as glass. */
           .maple-orb-sphere {
             background:
-              radial-gradient(120% 120% at 30% 24%, rgba(110, 200, 255, 0.55) 0%, rgba(70, 130, 235, 0.26) 24%, rgba(10, 14, 34, 0) 48%),
-              radial-gradient(120% 120% at 72% 82%, rgba(205, 95, 180, 0.42) 0%, rgba(140, 75, 205, 0.22) 28%, rgba(10, 14, 34, 0) 54%),
-              radial-gradient(circle at 50% 40%, #1a2044 0%, #0c1230 55%, #05081c 100%);
+              radial-gradient(closest-side at 32% 26%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 30%),
+              radial-gradient(135% 135% at 24% 22%, rgba(56, 224, 200, 0.95) 0%, rgba(56, 224, 200, 0) 48%),
+              radial-gradient(140% 140% at 80% 30%, rgba(60, 140, 255, 0.95) 0%, rgba(60, 140, 255, 0) 54%),
+              radial-gradient(150% 150% at 78% 82%, rgba(236, 86, 172, 0.92) 0%, rgba(236, 86, 172, 0) 56%),
+              radial-gradient(150% 150% at 22% 84%, rgba(154, 94, 255, 0.9) 0%, rgba(154, 94, 255, 0) 56%),
+              radial-gradient(circle at 50% 46%, #62acff 0%, #4170e2 60%, #5b3fb0 100%);
             box-shadow:
-              inset 0 2px 2px rgba(255, 255, 255, 0.5),
-              inset 0 -10px 22px rgba(0, 0, 0, 0.6),
-              inset -6px -8px 18px rgba(0, 0, 0, 0.45),
-              0 8px 22px rgba(4, 8, 30, 0.5);
+              inset 0 2px 3px rgba(255, 255, 255, 0.65),
+              inset 0 -8px 18px rgba(40, 20, 90, 0.32),
+              0 8px 22px rgba(40, 60, 160, 0.45),
+              0 0 16px rgba(90, 150, 235, 0.4);
           }
         }
 

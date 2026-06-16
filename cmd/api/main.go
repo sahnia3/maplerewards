@@ -691,6 +691,16 @@ func main() {
 			// free users with a real example. Deliberately mounted in this non-Pro
 			// session-owner group; the full forensics stay Pro-gated below.
 			r.Get("/wallet/{sessionID}/missed-rewards/preview", missedH.GetPreview)
+
+			// Portfolio insight widgets — formerly Pro, now free for everyone.
+			// The SQC projection, the annual card-value scorecard, and the card
+			// credits + renewal tracker all power the /portfolio dashboard and are
+			// no longer paywalled. Same session-owner ownership + CSRF rules apply.
+			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)
+			r.Get("/wallet/{sessionID}/card-value", cardValueH.Summary)
+			r.Get("/wallet/{sessionID}/credits", creditsH.ListCredits)
+			r.Post("/wallet/{sessionID}/credits", creditsH.AddCredit)
+			r.Post("/wallet/{sessionID}/credits/{creditDefID}/redeem", creditsH.RecordRedemption)
 		})
 
 		// ── Pro-tier routes (JWT + Pro required + session ownership) ────
@@ -709,11 +719,6 @@ func main() {
 			// household | sweet-spots | missed-rewards. Lets the user take the
 			// analysis out of the app instead of rebuilding it in a spreadsheet.
 			r.Get("/pro/export/{sessionID}/{report}", exportH.Export)
-
-			// Card credits + renewal countdown
-			r.Get("/wallet/{sessionID}/credits", creditsH.ListCredits)
-			r.Post("/wallet/{sessionID}/credits", creditsH.AddCredit)
-			r.Post("/wallet/{sessionID}/credits/{creditDefID}/redeem", creditsH.RecordRedemption)
 
 			// Pro: renewal optimizer — keep / use-credits / downgrade-or-cancel per card
 			r.Get("/wallet/{sessionID}/renewal-optimizer", renewalH.GetRenewal)
@@ -735,9 +740,6 @@ func main() {
 			// plus redundant fee-carrying cards you could cancel
 			r.Post("/wallet/{sessionID}/household", householdH.Analyze)
 
-			// 2026 Aeroplan SQC projector
-			r.Get("/wallet/{sessionID}/sqc-projection", sqcH.GetProjection)
-
 			// June 1 2026 Aeroplan long-haul-business chart hike — per-user
 			// dollar exposure projection. Drives the urgency banner.
 			r.Get("/wallet/{sessionID}/devaluation/aeroplan-june-2026", devalH.ProjectAeroplan)
@@ -751,9 +753,6 @@ func main() {
 			r.Get("/wallet/{sessionID}/award-watches", awardWatchH.List)
 			r.Post("/wallet/{sessionID}/award-watches", awardWatchH.Create)
 			r.Delete("/wallet/{sessionID}/award-watches/{watchID}", awardWatchH.Delete)
-
-			// Annual card-value scorecard
-			r.Get("/wallet/{sessionID}/card-value", cardValueH.Summary)
 
 			// Loyalty-account aggregation (track programs without a co-branded card)
 			r.Get("/wallet/{sessionID}/loyalty-accounts", loyaltyAccountH.List)

@@ -11,6 +11,7 @@ export default function OptimizerPage() {
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
         {/* ── Editorial masthead ──────────────────────────────────── */}
         <header
+          className="m-grid-1"
           style={{
             borderBottom: "1px solid var(--rule)",
             paddingBottom: 28,

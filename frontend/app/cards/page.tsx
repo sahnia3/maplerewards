@@ -204,7 +204,7 @@ export default function CardsPage() {
             >
               <span className="eyebrow">Empty wallet</span>
               <h3 className="display" style={{ fontSize: 28, margin: "8px 0 6px" }}>
-                Nothing tracked yet.
+                Nothing in your wallet yet.
               </h3>
               <p
                 className="serif"

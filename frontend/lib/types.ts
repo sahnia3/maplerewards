@@ -316,6 +316,12 @@ export interface CardScore {
 
 export interface RecommendRequest {
   monthly_spend: Record<string, number>;
+  // Hard ceiling on annual fee. 0 = "no annual fee" (excludes every fee card);
+  // omit / null for no fee preference.
+  max_annual_fee?: number | null;
+  // Desired number of cards to recommend — honours the wallet-size preference
+  // (e.g. 1 when the user only wants a single card).
+  card_count?: number | null;
 }
 
 // ── Portfolio Analysis ──────────────────────────────────────────────────────

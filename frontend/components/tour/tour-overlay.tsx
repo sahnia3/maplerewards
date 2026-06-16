@@ -26,12 +26,34 @@ function cardStyle(c: { cx: number; cy: number; hw: number; hh: number } | null)
   }
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const left = Math.max(16, Math.min(c.cx - c.hw, vw - CARD_W - 16));
+  const cardW = Math.min(CARD_W, vw - 32);
+  const left = Math.max(16, Math.min(c.cx - c.hw, vw - cardW - 16));
   const bottomEdge = c.cy + c.hh;
   const topEdge = c.cy - c.hh;
   if (vh - bottomEdge > CARD_H + 24) return { left, top: bottomEdge + 18 };
   if (topEdge > CARD_H + 24) return { left, top: Math.max(16, topEdge - CARD_H - 18) };
   return { left: "50%", bottom: 28, transform: "translateX(-50%)" };
+}
+
+// Spotlight focus box derived from a target's rect. Intersect with the viewport
+// so a target taller/wider than the screen (most full-width mobile blocks) can't
+// inflate the spotlight to cover everything, then cap the half-extents so the lit
+// area stays a focused band with visible dim around it. Small targets (e.g. the
+// optimizer pill row) are unaffected — the caps never bind.
+function focusFromRect(r: DOMRect): { cx: number; cy: number; hw: number; hh: number } {
+  const vw = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const vh = typeof window === "undefined" ? 800 : window.innerHeight;
+  const pad = 10;
+  const left = Math.max(0, r.left - pad);
+  const top = Math.max(0, r.top - pad);
+  const right = Math.min(vw, r.right + pad);
+  const bottom = Math.min(vh, r.bottom + pad);
+  return {
+    cx: (left + right) / 2,
+    cy: (top + bottom) / 2,
+    hw: Math.min(Math.max(0, (right - left) / 2), vw * 0.45),
+    hh: Math.min(Math.max(0, (bottom - top) / 2), vh * 0.22),
+  };
 }
 
 export function TourOverlay() {
@@ -64,13 +86,12 @@ export function TourOverlay() {
     if (!tour.active || !focusSel) return;
     const el = document.querySelector(focusSel);
     if (!el) return;
-    const r = el.getBoundingClientRect();
-    const pad = 10;
+    const f = focusFromRect(el.getBoundingClientRect());
     const k = 1 - Math.exp((-delta / 1000) * 11);
-    cx.set(lerp(cx.get(), r.left + r.width / 2, k));
-    cy.set(lerp(cy.get(), r.top + r.height / 2, k));
-    hw.set(lerp(hw.get(), r.width / 2 + pad, k));
-    hh.set(lerp(hh.get(), r.height / 2 + pad, k));
+    cx.set(lerp(cx.get(), f.cx, k));
+    cy.set(lerp(cy.get(), f.cy, k));
+    hw.set(lerp(hw.get(), f.hw, k));
+    hh.set(lerp(hh.get(), f.hh, k));
   });
 
   // Per step: find the target, spotlight it, place the card. No page transforms.
@@ -97,20 +118,15 @@ export function TourOverlay() {
         setTimeout(
           () => {
             if (cancelled) return;
-            const r = el.getBoundingClientRect();
+            const f = focusFromRect(el.getBoundingClientRect());
             if (!hasSpot) {
-              cx.set(r.left + r.width / 2);
-              cy.set(r.top + r.height / 2);
-              hw.set(r.width / 2 + 10);
-              hh.set(r.height / 2 + 10);
+              cx.set(f.cx);
+              cy.set(f.cy);
+              hw.set(f.hw);
+              hh.set(f.hh);
             }
             setHasSpot(true);
-            setCardRect({
-              cx: r.left + r.width / 2,
-              cy: r.top + r.height / 2,
-              hw: r.width / 2 + 10,
-              hh: r.height / 2 + 10,
-            });
+            setCardRect({ cx: f.cx, cy: f.cy, hw: f.hw, hh: f.hh });
             setReady(true);
           },
           reduce ? 0 : 360,

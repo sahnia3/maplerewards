@@ -134,6 +134,13 @@ export default function OnboardingPage() {
   }, [step, selectedCardIds, monthlySpend, cardCount, feePreference, selectedPerks]);
 
   const totalMonthly = Object.values(monthlySpend).reduce((a, b) => a + b, 0);
+  // Step-3 wallet-size preference → concrete count. Honoured in the /recommend
+  // request (backend caps the list) and everywhere results are shown/added.
+  const desiredCount = cardCount === "1 card" ? 1 : cardCount === "4+ cards" ? 5 : 3;
+  // How many cards the terminal CTA actually adds: the cards the user said they
+  // carry, else the top recommendations capped to their desired wallet size.
+  const addCount =
+    selectedCardIds.length > 0 ? selectedCardIds.length : Math.min(desiredCount, results.length);
   const toggleCard = (id: string) =>
     setSelectedCardIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const togglePerk = (v: string) =>
@@ -143,7 +150,15 @@ export default function OnboardingPage() {
     setResultsLoading(true);
     setResultsError(null);
     try {
-      const data = await getRecommendations({ monthly_spend: monthlySpend });
+      // Honour the step-3 preferences as hard constraints: "No fees" excludes
+      // every fee-bearing card; the wallet-size choice caps how many come back.
+      const maxAnnualFee =
+        feePreference === "No fees" ? 0 : feePreference === "Up to $150" ? 150 : null;
+      const data = await getRecommendations({
+        monthly_spend: monthlySpend,
+        max_annual_fee: maxAnnualFee,
+        card_count: desiredCount,
+      });
       setResults(data);
       setStep(4);
     } catch (e) {
@@ -189,7 +204,7 @@ export default function OnboardingPage() {
     // back to the top-3 recs only if (somehow) nothing was selected.
     const toAdd = selectedCardIds.length > 0
       ? selectedCardIds
-      : results.slice(0, 3).map((s) => s.card_id);
+      : results.slice(0, desiredCount).map((s) => s.card_id);
 
     // Logged-out sessions can't write to a server wallet. addCard stashes
     // each pick and redirects to /signup?redirect= — let that flow run
@@ -309,9 +324,9 @@ export default function OnboardingPage() {
 
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 80px" }}>
         {/* Step strip */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-          <span className="eyebrow">About 90 seconds · 4 steps · Step {step}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 32 }}>
+          <span className="eyebrow" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>About 90 seconds · 4 steps · Step {step}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             {[1, 2, 3, 4].map((s) => (
               <span
                 key={s}
@@ -741,7 +756,7 @@ export default function OnboardingPage() {
             />
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
-              {results.slice(0, 5).map((score, idx) => {
+              {results.slice(0, desiredCount).map((score, idx) => {
                 // CardScore.network is typed as a loose string. Normalize it to
                 // the Card network union so an unexpected backend value (e.g.
                 // "discover", "") falls back to a known network instead of being
@@ -767,6 +782,7 @@ export default function OnboardingPage() {
                 return (
                   <div
                     key={score.card_id}
+                    className="m-grid-1"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "180px 1fr",
@@ -846,9 +862,10 @@ export default function OnboardingPage() {
                       )}
 
                       {/* Per-card actions (NU-1): a "View card →" link into the
-                          in-app card detail page, and a "Track this card"
-                          button wiring the existing addCard. No affiliate
-                          Apply button — that's deferred (REF-2). */}
+                          in-app card detail page, and an "Add to wallet" button
+                          wiring the existing addCard. Once added, the row turns
+                          into a link straight to /wallet so the saved card is
+                          discoverable. No affiliate Apply button — deferred (REF-2). */}
                       {(() => {
                         const alreadyTracked =
                           trackedCardIds.includes(score.card_id) ||
@@ -877,36 +894,58 @@ export default function OnboardingPage() {
                               >
                                 View card <ChevronRight size={12} />
                               </Link>
-                              <button
-                                type="button"
-                                onClick={() => handleTrackCard(score.card_id)}
-                                disabled={tracking || alreadyTracked}
-                                className="mono m-tap"
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  padding: "8px 14px",
-                                  borderRadius: 8,
-                                  border: `1px solid ${alreadyTracked ? "var(--rule)" : "var(--accent)"}`,
-                                  background: alreadyTracked ? "transparent" : "var(--accent)",
-                                  color: alreadyTracked ? "var(--ink-3)" : "#fff",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  letterSpacing: "0.10em",
-                                  textTransform: "uppercase",
-                                  cursor: tracking || alreadyTracked ? "default" : "pointer",
-                                  opacity: tracking ? 0.7 : 1,
-                                }}
-                              >
-                                {tracking ? (
-                                  <><Loader2 size={12} className="animate-spin" /> Tracking…</>
-                                ) : alreadyTracked ? (
-                                  <><Check size={12} strokeWidth={3} /> Tracked</>
-                                ) : (
-                                  "Track this card"
-                                )}
-                              </button>
+                              {alreadyTracked ? (
+                                <Link
+                                  href="/wallet"
+                                  className="mono m-tap"
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    padding: "8px 14px",
+                                    borderRadius: 8,
+                                    border: "1px solid var(--rule)",
+                                    background: "transparent",
+                                    color: "var(--ink-2)",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    letterSpacing: "0.10em",
+                                    textTransform: "uppercase",
+                                    textDecoration: "none",
+                                  }}
+                                >
+                                  <Check size={12} strokeWidth={3} /> In your wallet <ChevronRight size={12} />
+                                </Link>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTrackCard(score.card_id)}
+                                  disabled={tracking}
+                                  className="mono m-tap"
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    padding: "8px 14px",
+                                    borderRadius: 8,
+                                    border: "1px solid var(--accent)",
+                                    background: "var(--accent)",
+                                    color: "#fff",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    letterSpacing: "0.10em",
+                                    textTransform: "uppercase",
+                                    cursor: tracking ? "default" : "pointer",
+                                    opacity: tracking ? 0.7 : 1,
+                                  }}
+                                >
+                                  {tracking ? (
+                                    <><Loader2 size={12} className="animate-spin" /> Adding…</>
+                                  ) : (
+                                    "Add to wallet"
+                                  )}
+                                </button>
+                              )}
                             </div>
                             {trackError[score.card_id] && (
                               <p role="alert" className="serif" style={{ fontStyle: "italic", color: "var(--accent)", fontSize: 13, margin: "8px 0 0", lineHeight: 1.4 }}>
@@ -921,6 +960,24 @@ export default function OnboardingPage() {
                 );
               })}
             </div>
+
+            {results.length === 0 && (
+              <div
+                role="status"
+                style={{
+                  border: "1px solid var(--rule)",
+                  borderLeft: "3px solid var(--accent)",
+                  borderRadius: 12,
+                  padding: "14px 18px",
+                  background: "var(--card-fill)",
+                  marginBottom: 12,
+                }}
+              >
+                <p className="serif" style={{ fontStyle: "italic", color: "var(--ink-2)", fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+                  No cards fit those preferences. Go back and allow a small annual fee, or choose a larger wallet.
+                </p>
+              </div>
+            )}
 
             {addCardsError && (
               <div
@@ -942,13 +999,13 @@ export default function OnboardingPage() {
             <button
               type="button"
               onClick={handleAddTopCards}
-              disabled={addingCards}
-              style={{ ...ctaPrimary, width: "100%", marginBottom: 10, opacity: addingCards ? 0.7 : 1 }}
+              disabled={addingCards || addCount === 0}
+              style={{ ...ctaPrimary, width: "100%", marginBottom: 10, opacity: addingCards || addCount === 0 ? 0.7 : 1 }}
             >
               {addingCards ? (
                 <><Loader2 size={14} className="animate-spin" /> Adding…</>
               ) : (
-                <>Add my {selectedCardIds.length > 0 ? selectedCardIds.length : 3} card{(selectedCardIds.length > 0 ? selectedCardIds.length : 3) === 1 ? "" : "s"} to wallet <ChevronRight size={14} /></>
+                <>Add my {addCount} card{addCount === 1 ? "" : "s"} to wallet <ChevronRight size={14} /></>
               )}
             </button>
             <Link

@@ -7,8 +7,8 @@ import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
-import { getWalletSummary, getSpendHistory, getMissedRewards } from "@/lib/api";
-import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types";
+import { getWalletSummary, getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
+import type { WalletSummary, SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
 
 import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
@@ -70,6 +70,7 @@ export default function HomePage() {
   const tour = useTour();
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
   const [recentSpend, setRecentSpend] = useState<SpendEntry[]>([]);
+  const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const redirectedRef = useRef(false);
 
@@ -100,9 +101,14 @@ export default function HomePage() {
     // no auth, so these calls would just 401 in the console (P2-1).
     if (!isReady || !isAuthenticated || !sessionId) return;
     try {
-      const [summary, spend, missedReport] = await Promise.all([
+      const [summary, spend, stats, missedReport] = await Promise.all([
         getWalletSummary(sessionId),
         getSpendHistory(sessionId, 5, 0).catch(() => []),
+        // Total points come from logged spend (spend_entries.points_earned),
+        // NOT card.point_balance — the optimizer never writes the latter, so
+        // summing it kept the home "Points" stat stuck at 0 after logging a
+        // purchase. This is the same source /insights uses, so the two agree.
+        getSpendStats(sessionId).catch(() => null),
         // Missed-rewards is Pro-gated server-side; skip the guaranteed-402
         // request for free users and let the existing missed=null fallback run.
         isPro
@@ -111,6 +117,7 @@ export default function HomePage() {
       ]);
       setWalletSummary(summary);
       setRecentSpend(spend ?? []);
+      setSpendStats(stats);
       setMissed(missedReport);
     } catch {
       setWalletSummary(null);
@@ -124,7 +131,11 @@ export default function HomePage() {
   // globals.css attr selector also zeroes any residual transition).
   const reduceMotion = useReducedMotion();
 
-  const totalPoints = walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0;
+  // Points accumulated through logged purchases (matches /insights). Only falls
+  // back to summing manually-entered card balances when spend stats fail to load.
+  const totalPoints =
+    spendStats?.total_points ??
+    (walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0);
   // Headline uses base CPP so it reconciles exactly with /wallet's "Est. value
   // (base CPP)" — the two surfaces previously showed different wallet totals
   // (base vs sweet-spot) and read as the engine disagreeing with itself. The
@@ -634,6 +645,68 @@ export default function HomePage() {
             ))}
           </section>
         )}
+
+        {/* ── Explore: surface the tools that otherwise hide in the nav so a
+             logged-in user discovers them straight from home. minmax(240px,…)
+             stays narrower than a phone's content box, so it never overflows. ── */}
+        <section style={{ marginTop: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>Explore Maple</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {[
+              { href: "/portfolio", title: "Wallet coverage", desc: "Which categories your cards cover — and the gaps.", badge: "Free" },
+              { href: "/wallet", title: "Your wallet", desc: "Manage cards, balances and details." },
+              { href: "/cards", title: "Find a card", desc: "Browse 100+ Canadian cards." },
+              { href: "/chat", title: "Ask Maple", desc: "Your AI rewards advisor." },
+              { href: "/insights", title: "Insights", desc: "Where your rewards leak — and the fix." },
+              { href: "/tools", title: "More tools", desc: "Trip planner, award search, milestones." },
+            ].map((t) => (
+              <Link
+                key={t.href}
+                href={t.href}
+                style={{
+                  display: "block",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 12,
+                  background: "var(--card-fill)",
+                  padding: "16px 18px",
+                  textDecoration: "none",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <span className="display" style={{ fontSize: 16, color: "var(--ink)" }}>{t.title}</span>
+                  {t.badge ? (
+                    <span
+                      className="mono"
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: "var(--accent)",
+                        color: "#fff",
+                        fontSize: 9,
+                        fontWeight: 600,
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {t.badge}
+                    </span>
+                  ) : (
+                    <span className="mono" style={{ color: "var(--ink-3)", fontSize: 14 }}>→</span>
+                  )}
+                </div>
+                <p className="serif" style={{ fontStyle: "italic", fontSize: 13, color: "var(--ink-2)", margin: "6px 0 0", lineHeight: 1.4 }}>
+                  {t.desc}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );

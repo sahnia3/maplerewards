@@ -10,6 +10,13 @@ import (
 // RecommendRequest holds a monthly spending profile (category_slug → monthly CAD amount).
 type RecommendRequest struct {
 	MonthlySpend map[string]float64 `json:"monthly_spend"`
+	// MaxAnnualFee, when non-nil, hard-excludes any card whose annual fee
+	// exceeds it. A value of 0 means "no annual fee" — set when the user asks
+	// to pay no fees during onboarding, so fee-bearing cards are never returned.
+	MaxAnnualFee *float64 `json:"max_annual_fee,omitempty"`
+	// CardCount, when non-nil and > 0, caps how many recommendations come back —
+	// honours the user's desired wallet size (e.g. "I only want one card").
+	CardCount *int `json:"card_count,omitempty"`
 }
 
 // CategoryReturn holds per-category earn detail for a scored card.
@@ -88,6 +95,12 @@ func (s *RecommenderService) Recommend(ctx context.Context, req RecommendRequest
 		if !card.IsActive || card.LoyaltyProgram == nil {
 			continue
 		}
+		// Hard fee ceiling: when the user capped annual fees (e.g. "no fees" => 0)
+		// exclude any card above it BEFORE scoring, so fee-bearing cards (Amex
+		// Cobalt etc.) can never appear in the results.
+		if req.MaxAnnualFee != nil && card.AnnualFee > *req.MaxAnnualFee {
+			continue
+		}
 		score, err := s.scoreCard(ctx, card, spend, slugToName)
 		if err != nil {
 			return nil, err
@@ -98,6 +111,12 @@ func (s *RecommenderService) Recommend(ctx context.Context, req RecommendRequest
 	sort.Slice(scores, func(i, j int) bool {
 		return scores[i].NetAnnualValue > scores[j].NetAnnualValue
 	})
+
+	// Cap to the user's desired wallet size after ranking, so a "one card"
+	// preference returns exactly the single best card rather than the full list.
+	if req.CardCount != nil && *req.CardCount > 0 && len(scores) > *req.CardCount {
+		scores = scores[:*req.CardCount]
+	}
 	return scores, nil
 }
 

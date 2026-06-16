@@ -1107,9 +1107,36 @@ export default function PortfolioPage() {
       {/* ── Utilization Score ── */}
       {hasWallet && (
         <AnimatedSection delay={0.25} className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
+          {/* Highlighted: the most actionable widget on the page — accent-ruled
+              container + "Most useful" badge so it reads as the headline insight. */}
+          <div
+            style={{
+              border: "1px solid var(--accent-soft)",
+              borderLeft: "3px solid var(--accent)",
+              borderRadius: 16,
+              background: "var(--accent-wash)",
+              padding: "18px 18px 20px",
+            }}
+          >
+          <div className="flex items-center gap-2 mb-4" style={{ flexWrap: "wrap" }}>
             <Target size={16} style={{ color: "var(--accent)" }} />
             <h2 className="display" style={{ fontSize: 22 }}>Wallet Coverage</h2>
+            <span
+              className="mono"
+              style={{
+                marginLeft: "auto",
+                padding: "3px 10px",
+                borderRadius: 999,
+                background: "var(--accent)",
+                color: "#fff",
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+              }}
+            >
+              Most useful
+            </span>
           </div>
 
           {analysisLoading ? (
@@ -1168,7 +1195,7 @@ export default function PortfolioPage() {
               </div>
 
               {/* Category grid */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-2">
                 {analysis.utilization.gaps.map(gap => (
                   <div
                     key={gap.category_name}
@@ -1208,6 +1235,7 @@ export default function PortfolioPage() {
               </p>
             </div>
           )}
+          </div>
         </AnimatedSection>
       )}
 

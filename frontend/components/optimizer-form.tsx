@@ -230,6 +230,7 @@ export function OptimizerForm() {
       >
         {/* Amount stamp + ranked CTA */}
         <div
+          className="optimizer-amount-row"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr auto",

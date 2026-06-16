@@ -523,7 +523,10 @@ export default function ChatPage() {
           left: 0,
           right: 0,
           zIndex: 41,
-          background: "color-mix(in srgb, var(--paper) 90%, transparent)",
+          // Opaque fill: the previous 90%-translucent color-mix relied on
+          // backdrop-filter to stay legible, but that is a no-op on iOS Safari,
+          // so the page content and footer bled through the bar while scrolling.
+          background: "var(--paper)",
           borderTop: "1px solid var(--rule)",
           backdropFilter: "blur(20px) saturate(1.4)",
         }}

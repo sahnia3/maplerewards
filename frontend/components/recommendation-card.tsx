@@ -97,7 +97,7 @@ export function RecommendationCard({ rec, rank, onLog, logged, spendCategory, sp
           </div>
 
           {/* Stats */}
-          <div className="mt-4 grid grid-cols-3 gap-3 pt-3.5 rounded-xl px-3 pb-3"
+          <div className="mt-4 grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 pt-3.5 rounded-xl px-3 pb-3"
             style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
           >
             <div>
