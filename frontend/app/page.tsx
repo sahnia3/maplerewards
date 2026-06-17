@@ -7,8 +7,8 @@ import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
-import { getWalletSummary, getSpendHistory, getSpendStats, getMissedRewards } from "@/lib/api";
-import type { WalletSummary, SpendEntry, SpendStats, MissedRewardsReport } from "@/lib/types";
+import { getWalletSummary, getSpendHistory, getMissedRewards } from "@/lib/api";
+import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types";
 
 import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
@@ -70,7 +70,6 @@ export default function HomePage() {
   const tour = useTour();
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
   const [recentSpend, setRecentSpend] = useState<SpendEntry[]>([]);
-  const [spendStats, setSpendStats] = useState<SpendStats | null>(null);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
   const redirectedRef = useRef(false);
 
@@ -101,14 +100,9 @@ export default function HomePage() {
     // no auth, so these calls would just 401 in the console (P2-1).
     if (!isReady || !isAuthenticated || !sessionId) return;
     try {
-      const [summary, spend, stats, missedReport] = await Promise.all([
+      const [summary, spend, missedReport] = await Promise.all([
         getWalletSummary(sessionId),
         getSpendHistory(sessionId, 5, 0).catch(() => []),
-        // Total points come from logged spend (spend_entries.points_earned),
-        // NOT card.point_balance — the optimizer never writes the latter, so
-        // summing it kept the home "Points" stat stuck at 0 after logging a
-        // purchase. This is the same source /insights uses, so the two agree.
-        getSpendStats(sessionId).catch(() => null),
         // Missed-rewards is Pro-gated server-side; skip the guaranteed-402
         // request for free users and let the existing missed=null fallback run.
         isPro
@@ -117,7 +111,6 @@ export default function HomePage() {
       ]);
       setWalletSummary(summary);
       setRecentSpend(spend ?? []);
-      setSpendStats(stats);
       setMissed(missedReport);
     } catch {
       setWalletSummary(null);
@@ -131,11 +124,10 @@ export default function HomePage() {
   // globals.css attr selector also zeroes any residual transition).
   const reduceMotion = useReducedMotion();
 
-  // Points accumulated through logged purchases (matches /insights). Only falls
-  // back to summing manually-entered card balances when spend stats fail to load.
-  const totalPoints =
-    spendStats?.total_points ??
-    (walletSummary?.cards.reduce((s, c) => s + (c.point_balance ?? 0), 0) ?? 0);
+  // Effective points = manual balances + points earned from logged spend, as
+  // computed by the wallet summary (the same source the sidebar/portfolio read),
+  // so every surface shows the same number.
+  const totalPoints = walletSummary?.total_points ?? 0;
   // Headline uses base CPP so it reconciles exactly with /wallet's "Est. value
   // (base CPP)" — the two surfaces previously showed different wallet totals
   // (base vs sweet-spot) and read as the engine disagreeing with itself. The

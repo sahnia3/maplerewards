@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -41,6 +42,34 @@ func (r *WalletRepo) GetUserBySession(ctx context.Context, sessionID string) (*m
 		return nil, fmt.Errorf("get user by session: %w", err)
 	}
 	return u, nil
+}
+
+// GetEarnedPointsByCard returns the rounded sum of points earned from logged
+// spend, keyed by card_id, for a user. The wallet summary adds these to each
+// card's manual point_balance so value/points surfaces reflect points the user
+// accrued by logging purchases — not just a manually-entered balance.
+func (r *WalletRepo) GetEarnedPointsByCard(ctx context.Context, userID string) (map[string]int64, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT card_id, COALESCE(SUM(points_earned), 0)
+		FROM spend_entries
+		WHERE user_id = $1
+		GROUP BY card_id
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]int64)
+	for rows.Next() {
+		var cardID string
+		var earned float64
+		if err := rows.Scan(&cardID, &earned); err != nil {
+			return nil, err
+		}
+		out[cardID] = int64(math.Round(earned))
+	}
+	return out, rows.Err()
 }
 
 func (r *WalletRepo) GetUserCards(ctx context.Context, userID string) ([]model.UserCard, error) {

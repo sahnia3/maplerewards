@@ -146,23 +146,6 @@ func (r *SpendRepo) RecordSpend(
 		`, entry.UserID, entry.CardID, entry.CategoryID, month, entry.Amount); err != nil {
 			return &entry, err
 		}
-		// Credit the points earned to the card's running balance so logging a
-		// purchase actually grows the user's holdings — which is what the wallet
-		// value, the navbar points/value, and the portfolio all read. Without
-		// this, logged earnings only lived in spend_entries.points_earned and
-		// never surfaced on any balance display. Runs only on a genuine insert
-		// (same guard as the monthly aggregate) so a deduped re-log can't
-		// double-credit. point_balance is BIGINT; cashback cards earn 0 points
-		// (their value is in dollar_value), so this is a no-op for them.
-		if pts := int64(math.Round(entry.PointsEarned)); pts != 0 {
-			if _, err = tx.Exec(ctx, `
-				UPDATE user_cards
-				SET point_balance = point_balance + $3
-				WHERE user_id = $1 AND card_id = $2
-			`, entry.UserID, entry.CardID, pts); err != nil {
-				return &entry, err
-			}
-		}
 		if applyBonus {
 			if _, err = tx.Exec(ctx, `
 				UPDATE user_card_bonuses

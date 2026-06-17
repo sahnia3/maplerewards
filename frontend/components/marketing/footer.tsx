@@ -28,11 +28,9 @@ const LINKS: ReadonlyArray<readonly [string, string]> = [
 // Routes that render chrome-less (mirrors AppShell's AUTH_PATHS) — no footer there.
 const HIDE_PREFIXES = ["/login", "/signup", "/embed/"];
 // The landing page ("/") ships its own inline footer; don't double it up.
-// /chat is a focused app surface with its own fixed bottom composer — the
-// marketing footer is a later sibling of AppShell's <main> at the same z-10, so
-// it paints ON TOP of the fixed composer (which is trapped in main's stacking
-// context). Hide it there so it can't overlap the input bar.
-const HIDE_EXACT = ["/", "/chat"];
+// (/chat keeps the footer: its composer is now sticky, not fixed, so it releases
+// at the bottom and the footer sits below it instead of being overlapped.)
+const HIDE_EXACT = ["/"];
 
 export function MarketingFooter() {
   const pathname = usePathname();

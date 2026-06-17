@@ -210,7 +210,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [sessionId]
   );
 
-  const totalPoints = wallet.reduce((sum, c) => sum + c.point_balance, 0);
+  // Effective points = manual balances + points earned from logged spend (the
+  // summary computes both). Falls back to summing manual balances only if the
+  // summary hasn't loaded, so the sidebar never shows a phantom 0 with cards present.
+  const totalPoints = summary?.total_points ?? wallet.reduce((sum, c) => sum + c.point_balance, 0);
 
   const getCardValueRange = useCallback((cardId: string) => {
     if (!summary?.cards) return null;

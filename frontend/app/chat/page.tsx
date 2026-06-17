@@ -253,7 +253,7 @@ export default function ChatPage() {
     // which would anchor the fixed input bar to this div's (content-tall) bottom
     // instead of the viewport, pushing the textarea off-screen on mobile.
     <div style={{ paddingTop: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 200px" }}>
+      <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 24px" }}>
         <PageMasthead
           eyebrow="Maple"
           // No hardcoded model name: turns route between models server-side
@@ -511,21 +511,19 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* Input bar — fixed at bottom. On mobile it must sit ABOVE the bottom
-          tab nav (which is also fixed at bottom:0), otherwise the textarea is
-          hidden behind the nav and runs off-screen. --bottom-nav-height is 0 on
-          desktop and 64px on mobile (set in app-shell), so this anchors the bar
-          correctly in both. */}
+      {/* Input bar — STICKY (not fixed) so it lives in the page flow: it stays
+          pinned to the viewport bottom while scrolling, but (a) respects the
+          sidebar offset via <main>'s margin so its content centres under the chat
+          column instead of the whole viewport, and (b) releases at the very
+          bottom so the global footer below it is reachable. */}
       <div
         style={{
-          position: "fixed",
-          bottom: "var(--bottom-nav-height, 0px)",
-          left: 0,
-          right: 0,
+          position: "sticky",
+          bottom: 0,
           zIndex: 41,
           // Opaque fill: the previous 90%-translucent color-mix relied on
           // backdrop-filter to stay legible, but that is a no-op on iOS Safari,
-          // so the page content and footer bled through the bar while scrolling.
+          // so the page content bled through the bar while scrolling.
           background: "var(--paper)",
           borderTop: "1px solid var(--rule)",
           backdropFilter: "blur(20px) saturate(1.4)",

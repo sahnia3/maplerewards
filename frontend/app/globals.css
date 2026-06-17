@@ -566,19 +566,24 @@ input[type="number"]::-webkit-inner-spin-button {
  * substrate like a piece of editorial furniture, not a SaaS KPI card. */
 .home-stat-ribbon {
   display: grid;
+  /* Equal columns that fill the copy width. A reduced .home-stat-num font (below)
+     keeps even a wide value like 22,625 inside its own track instead of spilling
+     over the next divider — content-sized (max-content) tracks fixed the overlap
+     but then overflowed the hero art on narrower desktops, so this keeps the
+     ribbon bounded and shrinks the type instead. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 26px;
   border-top: 1px solid var(--ink);
   border-bottom: 1px solid var(--rule);
   max-width: 560px;
 }
-.home-stat { padding: 16px 22px 16px 0; min-width: 0; }
+.home-stat { padding: 16px 18px 16px 0; min-width: 0; }
 .home-stat + .home-stat {
   padding-left: 22px;
   border-left: 1px solid var(--rule);
 }
 .home-stat-num {
-  font-size: clamp(30px, 3.4vw, 40px);
+  font-size: clamp(17px, 1.5vw, 27px);
   color: var(--ink);
   line-height: 1;
   font-feature-settings: "ss01";

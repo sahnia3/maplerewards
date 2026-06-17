@@ -209,13 +209,6 @@ func (s *WalletService) LogSpend(ctx context.Context, sessionID string, req mode
 		return nil, fmt.Errorf("failed to record spend: %w", err)
 	}
 
-	// RecordSpend now credits the card's point_balance, so the cached wallet
-	// (and its derived value) is stale. Invalidate synchronously — same as the
-	// balance-edit path — so the client's refetch right after logging shows the
-	// updated points/value instead of re-serving the pre-log cache (the P0.2
-	// "shows 0 after refresh" symptom this helper exists to prevent).
-	s.invalidateWallet(ctx, sessionID)
-
 	return saved, nil
 }
 

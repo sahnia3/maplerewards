@@ -37,6 +37,13 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Points the user has earned by logging purchases, per card. Added to each
+	// card's manual point_balance so the wallet value + totals reflect accrued
+	// rewards — the home hero, the sidebar portfolio, and the portfolio page all
+	// read this. Non-fatal: a nil map (on error) indexes to 0, falling back to
+	// manual balances only.
+	earnedByCard, _ := h.walletRepo.GetEarnedPointsByCard(ctx, user.ID)
+
 	var totalPoints int64
 	var valueLow, valueHigh float64
 	var items []model.CardSummaryItem
@@ -45,7 +52,7 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 		card := uc.Card
 		prog := card.LoyaltyProgram
 		baseCPP := prog.BaseCPP
-		points := uc.PointBalance
+		points := uc.PointBalance + earnedByCard[card.ID]
 
 		low := float64(points) * baseCPP / 100.0
 
