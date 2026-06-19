@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"maplerewards/internal/model"
@@ -353,6 +354,26 @@ func (s *WalletService) GetSpendStats(ctx context.Context, sessionID string) (*m
 		return nil, fmt.Errorf("session not found")
 	}
 	return s.spendRepo.GetSpendStats(ctx, user.ID)
+}
+
+// GetPointsSeries returns the trailing-`months` per-month points/value series
+// plus a prior-period total, for the Home area chart's "vs prior" delta.
+func (s *WalletService) GetPointsSeries(ctx context.Context, sessionID string, months int) (*model.PointsSeries, error) {
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("session not found")
+	}
+	ps, err := s.spendRepo.GetPointsSeries(ctx, user.ID, months)
+	if err != nil {
+		return nil, err
+	}
+	if ps.PriorTotal > 0 {
+		ps.DeltaPct = math.Round((ps.WindowTotal-ps.PriorTotal)/ps.PriorTotal*100*100) / 100
+	}
+	return ps, nil
 }
 
 func generateSessionID() (string, error) {

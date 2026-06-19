@@ -248,6 +248,20 @@ type CardStat struct {
 	AvgReturn  float64 `json:"avg_return"`
 }
 
+type PointsMonth struct {
+	Month        string  `json:"month"` // YYYY-MM
+	PointsEarned float64 `json:"points_earned"`
+	DollarValue  float64 `json:"dollar_value"`
+	EntryCount   int     `json:"entry_count"`
+}
+
+type PointsSeries struct {
+	Months      []PointsMonth `json:"months"`
+	WindowTotal float64       `json:"window_total"`
+	PriorTotal  float64       `json:"prior_total"`
+	DeltaPct    float64       `json:"delta_pct"`
+}
+
 type CapGroup struct {
 	ID          string   `json:"id"`
 	CardID      string   `json:"card_id"`
@@ -269,6 +283,7 @@ type CardSummaryItem struct {
 	BaseCPP             float64 `json:"base_cpp"`
 	ValueLow            float64 `json:"value_low"`
 	ValueHigh           float64 `json:"value_high"`
+	ValueSweetSpot      float64 `json:"value_sweet_spot"`
 	BestTransferPartner string  `json:"best_transfer_partner,omitempty"`
 	BestTransferCPP     float64 `json:"best_transfer_cpp,omitempty"`
 }
@@ -277,6 +292,7 @@ type WalletSummary struct {
 	TotalPoints    int64             `json:"total_points"`
 	ValueRangeLow  float64           `json:"value_range_low"`
 	ValueRangeHigh float64           `json:"value_range_high"`
+	ValueSweetSpot float64           `json:"value_sweet_spot"`
 	Cards          []CardSummaryItem `json:"cards"`
 }
 
@@ -670,6 +686,17 @@ type SQCProjection struct {
 	// RevenueFloorGapCAD is the additional flight revenue needed to clear the
 	// next/target tier's floor. 0 when already met (or no floor).
 	RevenueFloorGapCAD float64 `json:"revenue_floor_gap_cad,omitempty"`
+
+	// ── Optional target-tier selector (additive; absent target_tier ⇒ all zero/
+	// omitted, identical to legacy). When the user picks a target tier the
+	// projector recomputes the gap toward THAT tier without altering the
+	// next_tier fields above. ───────────────────────────────────────────────
+	TargetTier           string  `json:"target_tier,omitempty"`             // echo of requested tier, normalized to the matched StatusLevel
+	TargetSQCRequired    int     `json:"target_sqc_required,omitempty"`     // sqc_required of the matched target tier
+	SQCToTargetTier      int     `json:"sqc_to_target_tier,omitempty"`      // max(0, target_required - total_sqc_earned)
+	SpendToTargetTier    float64 `json:"spend_to_target_tier,omitempty"`    // CAD at user's BEST card rate to close the target gap
+	BestCardForTarget    string  `json:"best_card_for_target,omitempty"`    // which card minimises spend-to-target
+	TargetTierAlreadyMet bool    `json:"target_tier_already_met,omitempty"` // true when TotalSQCEarned already clears the target tier
 }
 
 // ── Aeroplan availability watcher ────────────────────────────────────────────
@@ -689,6 +716,8 @@ type AwardWatch struct {
 	LastMinPoints    *int      `json:"last_min_points,omitempty"`
 	LastAlertAt      *string   `json:"last_alert_at,omitempty"`
 	LastAlertMessage *string   `json:"last_alert_message,omitempty"`
+	SeatsAvailable   *int      `json:"seats_available,omitempty"`  // cheapest available award's seat count from the latest probe; nil = unchecked or no availability
+	SeatsCheckedAt   *string   `json:"seats_checked_at,omitempty"` // RFC3339; when the seat count was last refreshed by the worker
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -750,6 +779,50 @@ type DevaluationEvent struct {
 	SourceURL     string `json:"source_url,omitempty"`
 	DaysUntil     int    `json:"days_until"`         // can be negative if past
 	UserHolds     bool   `json:"user_holds_balance"` // true if user has cards in this program
+}
+
+// DevaluationTrendPoint is one month of a synthetic, directional points-cost
+// projection (NOT historical award-chart data). The series interpolates from
+// today_points up to after_points so the UI can render a sloped "before → after"
+// line; it is labelled a projection in the headline.
+type DevaluationTrendPoint struct {
+	Month  string `json:"month"` // YYYY-MM
+	Points int64  `json:"points"`
+}
+
+// DevaluationProjection is a per-program "Today → After" award-cost projection
+// derived from a devaluation event's severity (there is no numeric magnitude
+// column on devaluation_events — hike_percent/burn_fraction are derived
+// assumptions, not booked quotes). today_points is a fixed UI anchor (75000)
+// and trend is synthetic/directional. When the user holds a balance in the
+// program, the CAD value_today/value_after/exposure are filled via the
+// buying-power formula; otherwise those stay 0.
+type DevaluationProjection struct {
+	ID            string                  `json:"id"`
+	ProgramSlug   string                  `json:"program_slug"`
+	Title         string                  `json:"title"`
+	Severity      string                  `json:"severity"`
+	EffectiveDate string                  `json:"effective_date"`
+	DaysUntil     int                     `json:"days_until"`
+	HikePercent   float64                 `json:"hike_percent"`
+	BurnFraction  float64                 `json:"burn_fraction"`
+	TodayPoints   int64                   `json:"today_points"`
+	AfterPoints   int64                   `json:"after_points"`
+	UserHolds     bool                    `json:"user_holds_balance"`
+	Balance       int64                   `json:"balance"`
+	CPP           float64                 `json:"cpp"`
+	ValueToday    float64                 `json:"value_today"`
+	ValueAfter    float64                 `json:"value_after"`
+	Exposure      float64                 `json:"exposure"`
+	Headline      string                  `json:"headline"`
+	AlertEnabled  bool                    `json:"alert_enabled"`
+	Trend         []DevaluationTrendPoint `json:"trend"`
+}
+
+// DevaluationAlert is the API-facing shape of one persisted alert subscription.
+type DevaluationAlert struct {
+	ProgramSlug string `json:"program_slug"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // ── Triple-stack calculator ──────────────────────────────────────────────────

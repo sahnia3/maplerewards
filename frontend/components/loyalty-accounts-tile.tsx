@@ -8,6 +8,7 @@ import {
   deleteLoyaltyAccount,
 } from "@/lib/api";
 import type { LoyaltyAccount } from "@/lib/types";
+import { ProgressBar } from "@/components/editorial/dataviz";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * LoyaltyAccountsTile — track program balances the user holds *outside* the
@@ -103,6 +104,9 @@ export function LoyaltyAccountsTile({
   const expiringSoon = sorted.filter(
     (a) => a.days_to_expiry != null && a.days_to_expiry >= 0 && a.days_to_expiry <= 90,
   );
+  // Proportional-bar scale: each program's balance relative to the largest held.
+  const maxBalance = Math.max(1, ...accounts.map((a) => a.balance));
+  const barColors = ["var(--accent)", "var(--gold)", "var(--primary)", "var(--lime)", "var(--info)"];
 
   return (
     <section style={{ marginBottom: 22 }}>
@@ -215,9 +219,10 @@ export function LoyaltyAccountsTile({
 
         {!loading && !err && sorted.length > 0 && (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, borderTop: "1px solid var(--rule)" }}>
-            {sorted.map((a) => {
+            {sorted.map((a, i) => {
               const urgent = a.days_to_expiry != null && a.days_to_expiry >= 0 && a.days_to_expiry <= 60;
               const expired = a.days_to_expiry != null && a.days_to_expiry < 0;
+              const barPct = (a.balance / maxBalance) * 100;
               return (
                 <li
                   key={a.id ?? a.program_slug}
@@ -246,6 +251,13 @@ export function LoyaltyAccountsTile({
                         {a.expiry_rule_note}
                       </div>
                     )}
+                    <ProgressBar
+                      pct={barPct}
+                      color={barColors[i % barColors.length]}
+                      height={8}
+                      animationDelay={`${i * 0.06}s`}
+                      style={{ marginTop: 8, maxWidth: 320 }}
+                    />
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div className="mono" style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>

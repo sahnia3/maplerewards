@@ -1,22 +1,39 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ensureSession, listLoyaltyAccounts, createLoyaltyAccount } from "@/lib/api";
+import { ProgressBar } from "@/components/editorial/dataviz";
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * PCOptimumModule — Loblaws-empire mini economy.
+ * PCOptimumModule — persisted PC Optimum balance + the Loblaws-empire economy.
  *
- * PC Optimum has a 0.10¢ CPP, which is why most rewards apps dismiss it. But
- * if you live in Canada you almost certainly shop at one of the Loblaws-owned
- * stores (Loblaws / No Frills / Superstore / Shoppers / T&T / Wholesale Club),
- * and Amex doesn't work there. PC Mastercard + PC Mobile + Shoppers
- * personalised offers stack into a parallel rewards economy that can match
- * 5-7% effective return on monthly necessities.
+ * PRIMARY (new): a real, persisted PC Optimum balance. The balance is stored as
+ * a loyalty_accounts row (program_slug 'pc-optimum', no account_label) via the
+ * existing upsert CRUD and read back via listLoyaltyAccounts. From it we derive
+ * CAD value (balance / 1000 — 1000 pts = $1) and a synthetic milestone-tier
+ * ladder [10k, 50k, 100k, 200k] for the "% to next tier" bar. Curated loaded
+ * offers are static (no offers table exists).
  *
- * This is a calculator, not a tracker — there's no per-user data behind it.
- * Inputs: monthly Loblaws-empire grocery + monthly PC Mobile spend + Shoppers
- * personalised-offer rate (0% / 5% / 10% per stacking guide). Output: monthly
- * PC Optimum points earned, redemption value, and effective return.
+ * SECONDARY: the original Loblaws-empire calculator — PC Mastercard + PC Mobile
+ * + Shoppers personalised offers — kept below the persisted tracker.
  * ───────────────────────────────────────────────────────────────────────── */
+
+// Synthetic milestone ladder — PC Optimum has no official tier program. Above
+// the top rung we step by 100k. Documented so the bar % is intentional.
+const TIER_LADDER = [10_000, 50_000, 100_000, 200_000];
+
+interface LoadedOffer {
+  title: string;
+  detail: string;
+  tag: string;
+  tone: string;
+}
+
+const LOADED_OFFERS: LoadedOffer[] = [
+  { title: "20× the points event", detail: "Shoppers Drug Mart weekend — spend $50+", tag: "Shoppers", tone: "var(--gain)" },
+  { title: "Get 15,000 points", detail: "Spend $250 at Loblaws-empire grocery this week", tag: "Grocery", tone: "var(--gold)" },
+  { title: "Stack with Cobalt 5×", detail: "Pay with Amex Cobalt at Shoppers for a double-dip", tag: "Stack", tone: "var(--accent)" },
+];
 
 type ShoppersTier = 0 | 5 | 10;
 
@@ -30,6 +47,70 @@ const STORES = [
 ];
 
 export function PCOptimumModule() {
+  // ── Persisted PC Optimum balance ───────────────────────────────────────────
+  const [balance, setBalance] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const sid = await ensureSession();
+        const accts = await listLoyaltyAccounts(sid);
+        const pc = accts.find((a) => a.program_slug === "pc-optimum");
+        if (alive) {
+          setBalance(pc ? Number(pc.balance) : 0);
+          setDraft(pc ? String(pc.balance) : "");
+          setLoaded(true);
+        }
+      } catch {
+        if (alive) {
+          setBalance(0);
+          setLoaded(true);
+        }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  async function saveBalance() {
+    const n = Math.max(0, Math.round(parseFloat(draft) || 0));
+    setSaving(true);
+    try {
+      const sid = await ensureSession();
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      // Upsert: same program_slug + no account_label always targets one row.
+      const acct = await createLoyaltyAccount(sid, {
+        program_slug: "pc-optimum",
+        balance: n,
+        last_activity: today,
+      });
+      setBalance(Number(acct.balance));
+    } catch {
+      // Keep the optimistic draft; the headline still reflects the last saved
+      // balance, so a failed save just leaves the input as-is.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const tier = useMemo(() => {
+    const bal = balance ?? 0;
+    const cadValue = bal / 1000; // 1000 pts = $1 CAD
+    let next = TIER_LADDER.find((m) => m > bal);
+    let prev = [...TIER_LADDER].reverse().find((m) => m <= bal) ?? 0;
+    if (next === undefined) {
+      next = Math.ceil((bal + 1) / 100_000) * 100_000;
+      prev = Math.floor(bal / 100_000) * 100_000;
+    }
+    const span = next - prev || 1;
+    const pct = Math.min(100, Math.max(0, ((bal - prev) / span) * 100));
+    return { cadValue, next, prev, pct };
+  }, [balance]);
+
+  // ── Loblaws-empire calculator (secondary) ──────────────────────────────────
   const [groceriesCAD, setGroceriesCAD] = useState("400");
   const [mobileCAD, setMobileCAD] = useState("35");
   const [shoppersTier, setShoppersTier] = useState<ShoppersTier>(5);
@@ -119,6 +200,82 @@ export function PCOptimumModule() {
           }}
         />
         <div style={{ position: "relative" }}>
+          {/* ── Persisted balance (primary) ─────────────────────────────── */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <span className="eyebrow">Your PC Optimum balance</span>
+                <div className="display" style={{ fontSize: 30, marginTop: 6, lineHeight: 1 }}>
+                  {loaded ? (balance ?? 0).toLocaleString() : "—"}
+                  <span style={{ fontSize: 14, color: "var(--ink-3)" }}> pts · ${tier.cadValue.toFixed(0)}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                <div>
+                  <div className="eyebrow" style={{ fontSize: 9, marginBottom: 6 }}>Update balance</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="142000"
+                    style={{ ...inputStyle, width: 140 }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={saveBalance}
+                  disabled={saving || !loaded}
+                  className="mono"
+                  style={{
+                    height: 42,
+                    padding: "0 18px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: saving ? "var(--surface-2)" : "var(--accent)",
+                    color: saving ? "var(--ink-3)" : "#fff",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    cursor: saving || !loaded ? "default" : "pointer",
+                    boxShadow: saving ? "none" : "var(--shadow-accent-glow)",
+                  }}
+                >
+                  {saving ? "Saving…" : "Save balance"}
+                </button>
+              </div>
+            </div>
+            <ProgressBar
+              pct={tier.pct}
+              color="var(--gold)"
+              height={9}
+              style={{ marginTop: 14 }}
+              label={`${Math.round(tier.pct)}% to the next ${tier.next.toLocaleString()}-pt milestone ($${(tier.next / 1000).toFixed(0)} redemption tier)`}
+            />
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--rule)" }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Loaded offers</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {LOADED_OFFERS.map((o) => (
+                  <div key={o.title} style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                    <span style={{ color: o.tone, lineHeight: 1.5 }}>●</span>
+                    <div style={{ minWidth: 0 }}>
+                      <span className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)" }}>
+                        <strong style={{ color: "var(--ink)", fontStyle: "normal" }}>{o.title}</strong> — {o.detail}
+                      </span>
+                      <span className="mono" style={{ fontSize: 9, padding: "1px 7px", borderRadius: 999, border: "1px solid var(--rule-strong)", color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginLeft: 8 }}>
+                        {o.tag}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="eyebrow" style={{ margin: "4px 0 12px", paddingTop: 16, borderTop: "1px solid var(--rule)" }}>
+            Estimate your monthly earn — Loblaws-empire calculator
+          </div>
           <div
             style={{
               display: "grid",

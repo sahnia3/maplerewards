@@ -6,6 +6,7 @@ import { getCardValueSummary } from "@/lib/api";
 import type { CardValueSummary } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { NetValueBar } from "@/components/editorial/dataviz";
 import { fmtCAD, sectionStyle } from "./_shared";
 
 interface Props {
@@ -68,6 +69,15 @@ export function CardValueTile({ sessionId, isReady }: Props) {
                 {rows.filter((r) => r.is_positive).length} of {rows.length} cards earn their fee
               </div>
             </div>
+
+            <NetValueBar
+              items={sorted.map((r) => ({
+                label: r.card_name,
+                value: r.net_ev_cad,
+                display: `${r.net_ev_cad >= 0 ? "+" : "−"}$${Math.abs(Math.round(r.net_ev_cad)).toLocaleString("en-CA")}`,
+              }))}
+              style={{ margin: "8px 0 6px" }}
+            />
 
             <div style={{ borderTop: "1px solid var(--rule)" }}>
               {sorted.map((r) => (

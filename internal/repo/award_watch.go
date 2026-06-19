@@ -30,7 +30,8 @@ func (r *AwardWatchRepo) Create(ctx context.Context, w model.AwardWatch) (*model
 func (r *AwardWatchRepo) ListByUser(ctx context.Context, userID string) ([]model.AwardWatch, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, origin, destination, depart_date, flex_days, cabin, max_points, program_slug,
-		       is_active, last_checked_at, last_min_points, last_alert_at, last_alert_message, created_at
+		       is_active, last_checked_at, last_min_points, last_alert_at, last_alert_message, created_at,
+		       seats_available, seats_checked_at
 		FROM award_watch WHERE user_id = $1 ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
@@ -41,10 +42,10 @@ func (r *AwardWatchRepo) ListByUser(ctx context.Context, userID string) ([]model
 	for rows.Next() {
 		var w model.AwardWatch
 		var depart time.Time
-		var lastChecked, lastAlertAt *time.Time
+		var lastChecked, lastAlertAt, seatsCheckedAt *time.Time
 		if err := rows.Scan(&w.ID, &w.UserID, &w.Origin, &w.Destination, &depart, &w.FlexDays,
 			&w.Cabin, &w.MaxPoints, &w.ProgramSlug, &w.IsActive, &lastChecked, &w.LastMinPoints,
-			&lastAlertAt, &w.LastAlertMessage, &w.CreatedAt); err != nil {
+			&lastAlertAt, &w.LastAlertMessage, &w.CreatedAt, &w.SeatsAvailable, &seatsCheckedAt); err != nil {
 			return nil, err
 		}
 		w.DepartDate = depart.Format("2006-01-02")
@@ -55,6 +56,10 @@ func (r *AwardWatchRepo) ListByUser(ctx context.Context, userID string) ([]model
 		if lastAlertAt != nil {
 			s := lastAlertAt.Format(time.RFC3339)
 			w.LastAlertAt = &s
+		}
+		if seatsCheckedAt != nil {
+			s := seatsCheckedAt.Format(time.RFC3339)
+			w.SeatsCheckedAt = &s
 		}
 		out = append(out, w)
 	}
@@ -76,7 +81,8 @@ func (r *AwardWatchRepo) ListActive(ctx context.Context, limit int) ([]model.Awa
 	}
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, origin, destination, depart_date, flex_days, cabin, max_points, program_slug,
-		       is_active, last_checked_at, last_min_points, last_alert_at, last_alert_message, created_at
+		       is_active, last_checked_at, last_min_points, last_alert_at, last_alert_message, created_at,
+		       seats_available, seats_checked_at
 		FROM award_watch
 		WHERE is_active = true AND depart_date >= CURRENT_DATE
 		ORDER BY last_checked_at NULLS FIRST
@@ -90,10 +96,10 @@ func (r *AwardWatchRepo) ListActive(ctx context.Context, limit int) ([]model.Awa
 	for rows.Next() {
 		var w model.AwardWatch
 		var depart time.Time
-		var lastChecked, lastAlertAt *time.Time
+		var lastChecked, lastAlertAt, seatsCheckedAt *time.Time
 		if err := rows.Scan(&w.ID, &w.UserID, &w.Origin, &w.Destination, &depart, &w.FlexDays,
 			&w.Cabin, &w.MaxPoints, &w.ProgramSlug, &w.IsActive, &lastChecked, &w.LastMinPoints,
-			&lastAlertAt, &w.LastAlertMessage, &w.CreatedAt); err != nil {
+			&lastAlertAt, &w.LastAlertMessage, &w.CreatedAt, &w.SeatsAvailable, &seatsCheckedAt); err != nil {
 			return nil, err
 		}
 		w.DepartDate = depart.Format("2006-01-02")
@@ -104,6 +110,10 @@ func (r *AwardWatchRepo) ListActive(ctx context.Context, limit int) ([]model.Awa
 		if lastAlertAt != nil {
 			s := lastAlertAt.Format(time.RFC3339)
 			w.LastAlertAt = &s
+		}
+		if seatsCheckedAt != nil {
+			s := seatsCheckedAt.Format(time.RFC3339)
+			w.SeatsCheckedAt = &s
 		}
 		out = append(out, w)
 	}
@@ -121,14 +131,16 @@ const maxConsecutiveCheckFailures = 10
 // by the cron worker after each Apify probe; nil minPoints means the probe
 // returned no availability. A successful probe also clears the consecutive-
 // failure counter so transient failures never accumulate toward auto-disable.
-func (r *AwardWatchRepo) RecordCheck(ctx context.Context, watchID string, minPoints *int) error {
+func (r *AwardWatchRepo) RecordCheck(ctx context.Context, watchID string, minPoints, seats *int) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE award_watch
-		SET last_checked_at = NOW(),
-		    last_min_points = $2,
-		    check_failures  = 0
+		SET last_checked_at  = NOW(),
+		    last_min_points  = $2,
+		    seats_available  = $3,
+		    seats_checked_at = NOW(),
+		    check_failures   = 0
 		WHERE id = $1
-	`, watchID, minPoints)
+	`, watchID, minPoints, seats)
 	return err
 }
 

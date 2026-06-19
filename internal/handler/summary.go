@@ -17,6 +17,13 @@ func NewSummaryHandler(walletRepo *repo.WalletRepo, transferRepo *repo.TransferR
 	return &SummaryHandler{walletRepo: walletRepo, transferRepo: transferRepo}
 }
 
+// sweetSpotFraction is the heuristic share of the spread between a card's base
+// redemption value and its best transfer-partner value that a typical user can
+// realistically capture. The wallet summary's middle "sweet-spot" tier is
+// baseCPP + sweetSpotFraction*(bestCPP-baseCPP). It is an achievable-redemption
+// estimate, NOT a guaranteed value; the high tier remains the theoretical max.
+const sweetSpotFraction = 0.60
+
 func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 	ctx := r.Context()
@@ -45,7 +52,7 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 	earnedByCard, _ := h.walletRepo.GetEarnedPointsByCard(ctx, user.ID)
 
 	var totalPoints int64
-	var valueLow, valueHigh float64
+	var valueLow, valueHigh, valueSweet float64
 	var items []model.CardSummaryItem
 
 	for _, uc := range userCards {
@@ -71,9 +78,18 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 		}
 
 		high := float64(points) * bestCPP / 100.0
+
+		// Sweet-spot: a realistically achievable redemption that sits between the
+		// base (low) and the theoretical best-transfer max (high). When no
+		// transfer partner beats base (bestCPP == baseCPP), sweetCPP == baseCPP so
+		// sweet == low. By construction low <= sweet <= high always holds.
+		sweetCPP := baseCPP + sweetSpotFraction*(bestCPP-baseCPP)
+		sweet := float64(points) * sweetCPP / 100.0
+
 		totalPoints += points
 		valueLow += low
 		valueHigh += high
+		valueSweet += sweet
 
 		items = append(items, model.CardSummaryItem{
 			CardID:              card.ID,
@@ -85,6 +101,7 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 			BaseCPP:             baseCPP,
 			ValueLow:            low,
 			ValueHigh:           high,
+			ValueSweetSpot:      sweet,
 			BestTransferPartner: bestPartner,
 			BestTransferCPP:     bestCPP,
 		})
@@ -98,6 +115,7 @@ func (h *SummaryHandler) GetWalletSummary(w http.ResponseWriter, r *http.Request
 		TotalPoints:    totalPoints,
 		ValueRangeLow:  valueLow,
 		ValueRangeHigh: valueHigh,
+		ValueSweetSpot: valueSweet,
 		Cards:          items,
 	})
 }

@@ -94,6 +94,7 @@ func (r *SpendRepo) UpsertMonthlySpend(ctx context.Context, userID, cardID, cate
 //   - a deduped re-import (ON CONFLICT) still ran the goroutines, DOUBLE
 //     counting monthly spend and bonus progress on every retry;
 //   - errors were swallowed, so corruption was undiagnosable.
+//
 // Here the monthly/bonus updates run iff the entry was genuinely inserted,
 // and any failure rolls the whole thing back.
 func (r *SpendRepo) RecordSpend(
@@ -333,7 +334,7 @@ func (r *SpendRepo) GetCapGroupForCard(ctx context.Context, cardID, categoryID s
 }
 
 // CreateSpendEntry inserts a new spend entry record. The ON CONFLICT clause
-// uses the dedup index on (user_id, card_id, spent_at, amount, COALESCE(note,''))
+// uses the dedup index on (user_id, card_id, spent_at, amount, COALESCE(note,”))
 // — re-importing the same statement is a no-op rather than a duplicate.
 // When a conflict skips the insert, RETURNING produces no row, so we fall
 // back to fetching the existing row by the same key so the caller still
@@ -497,4 +498,76 @@ func (r *SpendRepo) GetSpendStats(ctx context.Context, userID string) (*model.Sp
 	}
 
 	return stats, nil
+}
+
+// GetPointsSeries returns the trailing-`months` per-month points_earned series
+// (zero-filled via generate_series) plus the prior-period total over the
+// equal-length window immediately before it.
+func (r *SpendRepo) GetPointsSeries(ctx context.Context, userID string, months int) (*model.PointsSeries, error) {
+	if months <= 0 {
+		months = 12
+	}
+	ps := &model.PointsSeries{Months: []model.PointsMonth{}}
+
+	// Window months, zero-filled via generate_series. Buckets are first-of-month;
+	// the window starts (months-1) months before the current month so the current
+	// (partial) month is included.
+	rows, err := r.db.Query(ctx, `
+		WITH bounds AS (
+			SELECT date_trunc('month', CURRENT_DATE)::date - make_interval(months => $2 - 1) AS win_start,
+			       date_trunc('month', CURRENT_DATE)::date                                    AS cur_month
+		),
+		months AS (
+			SELECT generate_series(b.win_start, b.cur_month, interval '1 month')::date AS m
+			FROM bounds b
+		),
+		agg AS (
+			SELECT date_trunc('month', se.spent_at)::date AS m,
+			       COALESCE(SUM(se.points_earned), 0) AS pts,
+			       COALESCE(SUM(se.dollar_value), 0)  AS dv,
+			       COUNT(*)                            AS cnt
+			FROM spend_entries se, bounds b
+			WHERE se.user_id = $1 AND se.spent_at >= b.win_start
+			GROUP BY 1
+		)
+		SELECT to_char(months.m, 'YYYY-MM') AS month,
+		       COALESCE(agg.pts, 0),
+		       ROUND(COALESCE(agg.dv, 0), 2),
+		       COALESCE(agg.cnt, 0)
+		FROM months LEFT JOIN agg ON agg.m = months.m
+		ORDER BY months.m
+	`, userID, months)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pm model.PointsMonth
+		if err := rows.Scan(&pm.Month, &pm.PointsEarned, &pm.DollarValue, &pm.EntryCount); err != nil {
+			return nil, err
+		}
+		ps.Months = append(ps.Months, pm)
+		ps.WindowTotal += pm.PointsEarned
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Prior-period total: the `months` months immediately before win_start.
+	if err := r.db.QueryRow(ctx, `
+		WITH bounds AS (
+			SELECT date_trunc('month', CURRENT_DATE)::date - make_interval(months => $2 - 1) AS win_start,
+			       date_trunc('month', CURRENT_DATE)::date - make_interval(months => $2 - 1)
+			           - make_interval(months => $2)                                          AS prior_start
+		)
+		SELECT COALESCE(SUM(se.points_earned), 0)
+		FROM spend_entries se, bounds b
+		WHERE se.user_id = $1
+		  AND se.spent_at >= b.prior_start
+		  AND se.spent_at <  b.win_start
+	`, userID, months).Scan(&ps.PriorTotal); err != nil {
+		return nil, err
+	}
+
+	return ps, nil
 }

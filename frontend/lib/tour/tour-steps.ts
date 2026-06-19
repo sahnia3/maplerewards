@@ -1,8 +1,10 @@
-/* The guided tour: drives a logged-in user through the real pages. `target` is
- * the data-tour-id of the element to spotlight (null = centered card). On the
- * optimizer step the self-driving cursor runs the real flow and ends by pressing
- * Log Purchase, after which the tour advances to Insights. The Pro steps teach
- * the value of the price-gated tools. */
+/* The guided tour: a multi-page walkthrough shown once to a freshly-created
+ * account (gated in tour-config) and replayable from Profile/Settings. It moves
+ * the user across the real pages — Home, Pro Tools, the Optimizer and Maple AI —
+ * spotlighting an element that actually exists on each redesigned page. The tour
+ * context navigates to each step's `route` (in an effect, never during render),
+ * and the overlay retries finding the `target` after the page loads. `target` is
+ * the data-tour-id to spotlight (null = a centred card). */
 
 export interface TourStep {
   id: string;
@@ -21,89 +23,77 @@ export const TOUR_STEPS: TourStep[] = [
     route: "/",
     target: null,
     eyebrow: "Welcome",
-    title: "Take a tour",
-    body: "Understand MapleRewards and how to get the most out of it. About a minute. Next, Back, or Skip anytime.",
+    title: "A quick tour",
+    body: "I'll walk you through your dashboard, the Pro tools, the optimizer and Maple AI — about a minute. Next, Back, or Skip anytime.",
+  },
+  // ── Home ──────────────────────────────────────────────────────────────────
+  {
+    id: "home-cards",
+    route: "/",
+    target: "home-card-fan",
+    eyebrow: "Home",
+    title: "Your wallet, ranked",
+    body: "The cards you carry, fanned with the best everyday earner up front.",
   },
   {
-    id: "wallet",
-    route: "/wallet",
-    target: "wallet-stat-cad-value",
-    eyebrow: "Wallet",
-    title: "Your cards in one place",
-    body: "Points and real dollar value for every card you add.",
+    id: "home-wallet-value",
+    route: "/",
+    target: "home-wallet-gauge",
+    eyebrow: "Home · Value",
+    title: "What your points are worth",
+    body: "Base value at the centre, the sweet-spot ceiling in gold, and the upside you can still capture.",
   },
+  {
+    id: "home-coverage",
+    route: "/",
+    target: "home-coverage",
+    eyebrow: "Home · Coverage",
+    title: "Where your rewards come from",
+    body: "The best card in your wallet for each category, and the return it earns there.",
+  },
+  {
+    id: "home-best-move",
+    route: "/",
+    target: "home-best-move",
+    eyebrow: "Home · Today",
+    title: "Your best money move",
+    body: "The single change that recovers the most value today — it opens the optimizer.",
+  },
+  // ── Pro Tools ───────────────────────────────────────────────────────────────
+  {
+    id: "pro-tools",
+    route: "/pro-tools",
+    target: "pro-directory",
+    eyebrow: "Pro Tools",
+    title: "The Pro toolkit",
+    body: "Twenty Canadian-rewards tools, grouped into four workspaces — forensics, status, stacking and knowledge. Open one to dig in.",
+  },
+  // ── Optimizer ───────────────────────────────────────────────────────────────
   {
     id: "optimizer",
     route: "/optimizer",
     target: "optimizer-panel",
     eyebrow: "Optimizer",
     title: "Best card for any purchase",
-    body: "Enter what you're buying and how much. It ranks your cards by what each one earns, then you log the purchase.",
+    body: "Pick a category, enter an amount, and Maple ranks every card in your wallet by what it would actually earn — then you log the purchase. Watch it run.",
     interactive: true,
     ghostDemo: true,
   },
+  // ── Maple AI ────────────────────────────────────────────────────────────────
   {
-    id: "insights",
-    route: "/insights",
-    target: "insights-panel",
-    eyebrow: "Insights",
-    title: "Where it all adds up",
-    body: "Every purchase you log lands here: what you earned, what you left on the table, and which cards to re-route.",
-  },
-  {
-    id: "milestones",
-    route: "/milestones",
-    target: "milestones-panel",
-    eyebrow: "Milestones",
-    title: "Welcome bonus tracking",
-    body: "How much spend is left on each bonus, and the deadline to hit it.",
-  },
-  {
-    id: "loyalty",
-    route: "/loyalty",
-    target: "loyalty-programs-grid",
-    eyebrow: "Loyalty",
-    title: "Points, valued",
-    body: "Every program's balance and what it's worth, with alerts before a devaluation.",
-  },
-  {
-    id: "pro",
-    route: "/pro-tools",
-    target: "pro-tools-upsell-wall",
-    eyebrow: "Pro Tools",
-    title: "Where the real money is",
-    body: "Pro unlocks the tools that find the dollars you're missing. Here are the two that matter most.",
-  },
-  {
-    id: "pro-missed",
-    route: "/pro-tools",
-    target: "pro-feature-forensics",
-    eyebrow: "Pro · Forensics",
-    title: "Missed rewards report",
-    body: "Every transaction where a better card would have earned more, with the exact dollars you left behind.",
-  },
-  {
-    id: "pro-sqc",
-    route: "/pro-tools",
-    target: "pro-feature-status",
-    eyebrow: "Pro · Status",
-    title: "Aeroplan SQC projector",
-    body: "Your year-to-date status credits across cards, and the spend left to reach the next tier.",
-  },
-  {
-    id: "chat",
-    route: "/",
-    target: "ask-maple-orb",
-    eyebrow: "Ask Maple",
+    id: "maple-ai",
+    route: "/chat",
+    target: "maple-chat",
+    eyebrow: "Maple AI",
     title: "Your rewards assistant",
-    body: "Transfer math, award routing, or whether to open a card. Just ask.",
+    body: "Maple is wired to your wallet — these are the cards it can see. Ask which card to use, how to transfer points, or how to redeem for a trip.",
   },
   {
     id: "done",
     route: "/",
     target: null,
     eyebrow: "Done",
-    title: "You're set",
-    body: "Replay this tour anytime from Settings.",
+    title: "You're all set",
+    body: "That's the tour. You can replay it anytime from Settings or your profile.",
   },
 ];

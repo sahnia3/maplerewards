@@ -139,6 +139,7 @@ func main() {
 	awardWatchRepo := repo.NewAwardWatchRepo(pool)
 	buyPromoRepo := repo.NewBuyPromoRepo(pool)
 	devalRepo := repo.NewDevaluationRepo(pool)
+	devalAlertRepo := repo.NewDevaluationAlertRepo(pool)
 	stackRepo := repo.NewStackRepo(pool)
 	cardValueRepo := repo.NewCardValueRepo(pool)
 	tangerineRepo := repo.NewTangerineRepo(pool)
@@ -237,7 +238,7 @@ func main() {
 	sqcSvc := service.NewSQCService(walletRepo, sqcRepo)
 	awardWatchSvc := service.NewAwardWatchService(walletRepo, awardWatchRepo)
 	buyPointsSvc := service.NewBuyPointsService(buyPromoRepo)
-	devalSvc := service.NewDevaluationService(walletRepo, devalRepo)
+	devalSvc := service.NewDevaluationService(walletRepo, devalRepo, devalAlertRepo)
 	feedSvc := service.NewFeedAggregatorService(redisCache, log)
 	stackSvc := service.NewStackService(walletRepo, stackRepo, optimizerSvc)
 	cardValueSvc := service.NewCardValueService(walletRepo, cardValueRepo)
@@ -256,7 +257,7 @@ func main() {
 	// Flight data services: Apify (live awards), SerpAPI (cash prices), Seats.aero (awards, optional)
 	apifySvc := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), quotaClient)
 	serpSvc := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), quotaClient)
-	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
+	seatsAeroSvc := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""), quotaClient)
 
 	tripSvc := service.NewTripService(walletRepo, cardRepo, transferRepo, tavilySvc, serpSvc, apifySvc, redisCache, kb)
 	awardSearchSvc := service.NewAwardSearchService(apifySvc, seatsAeroSvc, serpSvc, walletRepo, kb, redisCache, transferRepo, cardRepo)
@@ -646,6 +647,7 @@ func main() {
 			r.Post("/wallet/{sessionID}/spend", spendH.RecordSpend)
 			r.Get("/wallet/{sessionID}/spend", spendH.ListSpendHistory)
 			r.Get("/wallet/{sessionID}/spend/stats", spendH.GetSpendStats)
+			r.Get("/wallet/{sessionID}/spend/points-series", spendH.GetPointsSeries) // Home 6/12-month area chart
 			// PIPEDA data-portability: CSV export of full spend history.
 			r.Get("/wallet/{sessionID}/spend/export", spendH.ExportSpend)
 
@@ -668,6 +670,13 @@ func main() {
 
 			// Devaluation list with personalized "your wallet" flag
 			r.Get("/wallet/{sessionID}/devaluations", devalH.List)
+			// Devaluation award-cost projections (Today→After points + trend) per
+			// upcoming event the user holds, with alert_enabled flag.
+			r.Get("/wallet/{sessionID}/devaluation-projections", devalH.ListProjections)
+			// Persisted "Set devaluation alert" toggle — upsert / list / clear.
+			r.Get("/wallet/{sessionID}/devaluation-alerts", devalH.ListAlertSubs)
+			r.Put("/wallet/{sessionID}/devaluation-alerts", devalH.SetAlert)
+			r.Delete("/wallet/{sessionID}/devaluation-alerts/{programSlug}", devalH.DeleteAlert)
 
 			// Card application tracker + per-card eligibility.
 			// Warns when applying again within an issuer's cooldown window

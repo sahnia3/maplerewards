@@ -7,8 +7,20 @@ import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
-import { getWalletSummary, getSpendHistory, getMissedRewards } from "@/lib/api";
-import type { WalletSummary, SpendEntry, MissedRewardsReport } from "@/lib/types";
+import {
+  getWalletSummary,
+  getSpendHistory,
+  getMissedRewards,
+  getPortfolioAnalysis,
+  getPointsSeries,
+} from "@/lib/api";
+import type {
+  WalletSummary,
+  SpendEntry,
+  MissedRewardsReport,
+  PortfolioAnalysis,
+  PointsSeries,
+} from "@/lib/types";
 
 import { CardFan } from "@/components/editorial/card-fan";
 import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
@@ -16,7 +28,10 @@ import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proo
 import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { Counter } from "@/components/editorial/counter";
 import { Term } from "@/components/term";
-import { useTour } from "@/contexts/tour-context";
+import { MiniFlowArrow } from "@/components/editorial/dataviz";
+import { WalletGaugeCard } from "@/components/home/wallet-gauge-card";
+import { CoverageCard } from "@/components/home/coverage-card";
+import { PointsChartCard } from "@/components/home/points-chart-card";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Authenticated home — a single, inviting first-login hero.
@@ -67,10 +82,11 @@ export default function HomePage() {
   const { sessionId, isReady } = useSession();
   const { wallet, isLoading: walletLoading } = useWallet();
   const { user, isAuthenticated, isPro } = useAuth();
-  const tour = useTour();
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
   const [recentSpend, setRecentSpend] = useState<SpendEntry[]>([]);
   const [missed, setMissed] = useState<MissedRewardsReport | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioAnalysis | null>(null);
+  const [pointsSeries, setPointsSeries] = useState<PointsSeries | null>(null);
   const redirectedRef = useRef(false);
 
   // Referral code from a shared waitlist link (/?ref=CODE). Read from
@@ -100,7 +116,7 @@ export default function HomePage() {
     // no auth, so these calls would just 401 in the console (P2-1).
     if (!isReady || !isAuthenticated || !sessionId) return;
     try {
-      const [summary, spend, missedReport] = await Promise.all([
+      const [summary, spend, missedReport, portfolioAnalysis, points] = await Promise.all([
         getWalletSummary(sessionId),
         getSpendHistory(sessionId, 5, 0).catch(() => []),
         // Missed-rewards is Pro-gated server-side; skip the guaranteed-402
@@ -108,10 +124,16 @@ export default function HomePage() {
         isPro
           ? getMissedRewards(sessionId, { sinceDays: 90, top: 1 }).catch(() => null)
           : Promise.resolve(null),
+        // Coverage card + points chart — both degrade to null on failure so
+        // their sections simply don't render (no thrown error, no console 4xx).
+        getPortfolioAnalysis(sessionId).catch(() => null),
+        getPointsSeries(sessionId, 6).catch(() => null),
       ]);
       setWalletSummary(summary);
       setRecentSpend(spend ?? []);
       setMissed(missedReport);
+      setPortfolio(portfolioAnalysis);
+      setPointsSeries(points);
     } catch {
       setWalletSummary(null);
     }
@@ -134,6 +156,10 @@ export default function HomePage() {
   // sweet-spot ceiling is shown as an "up to" upside, not a second total.
   const totalValue = walletSummary?.value_range_low ?? 0;
   const totalValueHigh = walletSummary?.value_range_high ?? 0;
+  // Sweet-spot is the headline figure in the redesign's stat ribbon and the
+  // gold ceiling on the wallet gauge. Falls back to base when the engine
+  // didn't produce a distinct sweet-spot (pure-cashback wallet).
+  const totalValueSweet = walletSummary?.value_sweet_spot ?? totalValue;
   const cardsCount = wallet.length;
   // Distinct loyalty programs, not card count — four Aeroplan cards are one
   // program, not four. Empty program_name (pure-cashback cards) doesn't count.
@@ -430,6 +456,37 @@ export default function HomePage() {
   return (
     <div className="screen-shell dashboard-screen reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px clamp(16px, 1.5vw, 28px)" }}>
+        {/* ── Wayfinding context strip ────────────────────────────────────── */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 22,
+            fontSize: 12,
+          }}
+        >
+          <span className="mono" style={{ color: "var(--ink-3)", letterSpacing: "0.06em" }}>
+            Workspace
+          </span>
+          <span style={{ color: "var(--ink-4)" }}>/</span>
+          <span className="mono" style={{ color: "var(--ink)", letterSpacing: "0.06em" }}>
+            Home
+          </span>
+          <span style={{ flex: 1, height: 1, background: "var(--rule)", margin: "0 4px" }} />
+          <span
+            className="mono"
+            style={{
+              color: "var(--ink-3)",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            Updated just now · CAD
+          </span>
+        </div>
+
         {/* ── The one inviting, animated first-login hero ──────────────────
            * Single coherent stat surface (folded into the masthead) + the
            * real "best move today". No duplicated grids, no fabricated cards. */}
@@ -439,35 +496,15 @@ export default function HomePage() {
           initial={reduceMotion ? false : "hidden"}
           animate="show"
         >
-          {/* Elevated free-floating card fan — fades + lifts in on the right */}
-          <motion.div className="mr-hero-art" variants={heroArt}>
+          {/* Elevated free-floating card fan — fades + lifts in on the right.
+             * Decorative by product-owner choice; spotlight anchor for the tour. */}
+          <motion.div className="mr-hero-art" variants={heroArt} data-tour-id="home-card-fan">
             <CardFan height="100%" intensity={0.65} focusIndex={2} />
           </motion.div>
 
           <div className="mr-hero-copy">
             <motion.div className="home-hero-eyebrow" variants={heroItem}>
               <span className="eyebrow">{greeting}</span>
-              <span className="mr-kicker-line" />
-              <button
-                type="button"
-                onClick={() => tour.start()}
-                className="mono"
-                style={{
-                  background: "transparent",
-                  border: "1px solid var(--rule-strong)",
-                  borderRadius: 999,
-                  color: "var(--ink-2)",
-                  padding: "6px 14px",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.10em",
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Take the tour
-              </button>
             </motion.div>
 
             <motion.h1 className="display mr-hero-title" variants={heroItem}>
@@ -487,12 +524,9 @@ export default function HomePage() {
               <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Wallet value</div>
                 <div className="display home-stat-num">
-                  $<Counter value={Math.round(totalValue)} />
+                  $<Counter value={Math.round(totalValueSweet)} />
                 </div>
-                <div className="mono home-stat-sub">
-                  {`CAD · base CPP`}
-                  {totalValueHigh > totalValue && ` · up to $${Math.round(totalValueHigh).toLocaleString()} at sweet-spot`}
-                </div>
+                <div className="mono home-stat-sub">CAD · sweet-spot</div>
               </div>
               <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Points</div>
@@ -516,7 +550,12 @@ export default function HomePage() {
                * missed-rewards report; falls back to a routed-cleanly state
                * rather than a fabricated number. */}
             <motion.div variants={heroItem}>
-              <Link href="/optimizer" className="home-move" aria-label="Open the optimizer">
+              <Link
+                href="/optimizer"
+                className="home-move"
+                aria-label="Open the optimizer"
+                data-tour-id="home-best-move"
+              >
                 <div className="home-move-head">
                   <span className="eyebrow">Best move today</span>
                   <span
@@ -539,6 +578,43 @@ export default function HomePage() {
                     your wallet by what it would actually earn.
                   </p>
                 )}
+                {hasBestMove && (
+                  <MiniFlowArrow
+                    style={{ marginTop: 18 }}
+                    from={
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 10,
+                          padding: "5px 10px",
+                          borderRadius: 8,
+                          background: "var(--surface-2)",
+                          color: "var(--ink-2)",
+                          letterSpacing: "0.06em",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {bestCategory.toUpperCase()}
+                      </span>
+                    }
+                    to={
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 10,
+                          padding: "5px 10px",
+                          borderRadius: 8,
+                          background: "var(--accent)",
+                          color: "#fff",
+                          letterSpacing: "0.06em",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {bestCardName}
+                      </span>
+                    }
+                  />
+                )}
                 <span className="mono home-move-cta">
                   Open the optimizer →
                 </span>
@@ -557,6 +633,47 @@ export default function HomePage() {
             </motion.div>
           </div>
         </motion.section>
+
+        {/* ── Visual data row: wallet gauge + category coverage ──────────────
+           * Gauge wires the 3-tier valuation (base arc / sweet-spot ceiling /
+           * upside delta); coverage maps the portfolio utilization gaps. Each
+           * renders only when its source resolved (degrades to null on failure
+           * or for an empty wallet). */}
+        {(walletSummary || portfolio) && (
+          <div
+            className="home-data-row"
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gridTemplateColumns:
+                walletSummary && portfolio && portfolio.utilization.gaps.length > 0
+                  ? "300px minmax(0, 1fr)"
+                  : "minmax(0, 1fr)",
+              gap: 18,
+              alignItems: "start",
+            }}
+          >
+            {walletSummary && (
+              <WalletGaugeCard
+                base={totalValue}
+                sweetSpot={totalValueSweet}
+                upside={totalValueHigh}
+              />
+            )}
+            {portfolio && portfolio.utilization.gaps.length > 0 && (
+              <CoverageCard gaps={portfolio.utilization.gaps} />
+            )}
+          </div>
+        )}
+
+        {/* ── Points earned over the last 6 months (all programs) ───────────
+           * Wired to getPointsSeries; renders only when the series has data so
+           * a brand-new wallet doesn't show an empty chart. */}
+        {pointsSeries && pointsSeries.months.length > 0 && (
+          <div style={{ marginTop: 18 }}>
+            <PointsChartCard series={pointsSeries} />
+          </div>
+        )}
 
         {/* ── Recent activity ledger ────────────────────────────────── */}
         {recentSpend.length > 0 && (
@@ -661,6 +778,7 @@ export default function HomePage() {
               <Link
                 key={t.href}
                 href={t.href}
+                className="lift"
                 style={{
                   display: "block",
                   border: "1px solid var(--rule)",
@@ -699,6 +817,14 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
+        {/* Collapse the gauge/coverage data row to a single column on narrow
+           * viewports so neither card is crushed under the 300px gauge track. */}
+        <style>{`
+          @media (max-width: 760px) {
+            .home-data-row { grid-template-columns: minmax(0, 1fr) !important; }
+          }
+        `}</style>
       </div>
     </div>
   );

@@ -33,6 +33,7 @@ func NewSQCService(walletRepo WalletRepository, sqcRepo SQCRepository) *SQCServi
 type SQCFlightInputs struct {
 	FlightSQC      int     // SQC earned on flights/partners (not tracked by Maple)
 	FlightSpendCAD float64 // flight revenue in CAD for the year
+	TargetTier     string  // OPTIONAL status_level the user is targeting ("25K"|"35K"|"50K"|...); "" ⇒ no target recompute
 }
 
 func (s *SQCService) Project(ctx context.Context, sessionID string, flights SQCFlightInputs) (*model.SQCProjection, error) {
@@ -141,6 +142,39 @@ func (s *SQCService) Project(ctx context.Context, sessionID string, flights SQCF
 		if bestRate > 0 && bestRate < math.MaxInt32 {
 			out.SpendToNextTier = float64(out.SQCToNextTier * bestRate)
 			out.BestCardForGap = bestName
+		}
+	}
+
+	// ── Optional target-tier recompute. Independent of NextTier; lets the
+	// Status tile project the gap toward a user-chosen tier (25K/35K/50K).
+	// Unknown/blank target ⇒ no-op (fields stay zero, omitted via omitempty).
+	if flights.TargetTier != "" {
+		for _, t := range tiers {
+			if t.StatusLevel != flights.TargetTier {
+				continue
+			}
+			out.TargetTier = t.StatusLevel
+			out.TargetSQCRequired = t.SQCRequired
+			if out.TotalSQCEarned >= t.SQCRequired {
+				out.TargetTierAlreadyMet = true
+				break
+			}
+			out.SQCToTargetTier = t.SQCRequired - out.TotalSQCEarned
+			if len(cards) > 0 {
+				bestRate := math.MaxInt32
+				bestName := ""
+				for _, c := range cards {
+					if c.DollarsPerSQC > 0 && c.DollarsPerSQC < bestRate {
+						bestRate = c.DollarsPerSQC
+						bestName = c.CardName
+					}
+				}
+				if bestRate > 0 && bestRate < math.MaxInt32 {
+					out.SpendToTargetTier = float64(out.SQCToTargetTier * bestRate)
+					out.BestCardForTarget = bestName
+				}
+			}
+			break
 		}
 	}
 

@@ -355,7 +355,11 @@ export function TourOverlay() {
         .tour-rail {
           display: flex;
           gap: 6px;
-          flex: 1;
+          /* Shrink/clip the pip rail rather than shoving the Next button past
+             the card's right edge when there are many steps. */
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
           justify-content: center;
         }
         .tour-pip {
@@ -376,6 +380,10 @@ export function TourOverlay() {
         .tour-nav {
           display: flex;
           gap: 8px;
+          flex: 0 0 auto;
+        }
+        .tour-skip {
+          flex: 0 0 auto;
         }
         .tour-btn {
           font-family: var(--font-mono);

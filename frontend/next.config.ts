@@ -4,13 +4,17 @@ import type { NextConfig } from "next";
 // Services and talks to the backend API cross-origin, so the CSP allows those
 // while still locking the clickjacking / object / base-uri vectors. The
 // non-CSP headers are unconditionally safe for a normal SPA.
+const isDev = process.env.NODE_ENV === "development";
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
       // Next.js injects a small inline bootstrap; GIS is loaded from Google.
-      "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com",
+      // 'unsafe-eval' is added in development only — React Fast Refresh and the
+      // dev error overlay (callstack reconstruction) require eval(); production
+      // never gets it.
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://accounts.google.com https://apis.google.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",

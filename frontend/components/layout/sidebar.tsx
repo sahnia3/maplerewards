@@ -3,8 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Zap,
@@ -21,8 +20,6 @@ import {
   X,
   Settings,
   Sparkles,
-  Sun,
-  Moon,
   Wrench,
   Flame,
   Trophy,
@@ -110,9 +107,6 @@ export function Sidebar() {
   const { totalPoints, wallet, summary } = useWallet();
   const { isAuthenticated, isPro, isAdmin, isLoading: authLoading } = useAuth();
   const { isCollapsed, toggleSidebar, isMobileOpen, setMobileOpen } = useSidebar();
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   // Drawer focus management: when the mobile drawer opens, move focus to its
   // first focusable control (screen-reader + keyboard users land inside the
@@ -132,7 +126,6 @@ export function Sidebar() {
   }, [isMobileOpen]);
 
   const sidebarWidth = isCollapsed ? 56 : 240;
-  const isDark = mounted && theme === "dark";
 
   const isActive = (href: string) =>
     pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -278,8 +271,8 @@ export function Sidebar() {
                     className="display"
                     style={{ fontSize: 26, lineHeight: 1, color: "var(--ink)" }}
                   >
-                    {summary?.value_range_high
-                      ? `$${summary.value_range_high.toFixed(0)}`
+                    {summary?.value_sweet_spot
+                      ? `$${summary.value_sweet_spot.toFixed(0)}`
                       : `$${(totalPoints / 100).toFixed(0)}`}
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2.5">
@@ -368,26 +361,6 @@ export function Sidebar() {
           <div className="space-y-0.5">
             {BOTTOM_NAV.map((item) => renderNavItem(item, isMobile))}
           </div>
-
-          {/* Theme toggle */}
-          {!collapsed && mounted && (
-            <button
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg mono transition-all"
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--ink-2)",
-                background: "var(--card-fill)",
-                border: "1px solid var(--rule)",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-              }}
-            >
-              {isDark ? <Sun size={13} /> : <Moon size={13} />}
-              <span>{isDark ? "Light" : "Dark"} mode</span>
-            </button>
-          )}
 
           {/* Auth: User menu or Sign In */}
           {!authLoading &&

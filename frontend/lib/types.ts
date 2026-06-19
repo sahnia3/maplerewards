@@ -218,6 +218,20 @@ export interface CardStat {
   avg_return: number;
 }
 
+export interface PointsMonth {
+  month: string; // YYYY-MM
+  points_earned: number;
+  dollar_value: number;
+  entry_count: number;
+}
+
+export interface PointsSeries {
+  months: PointsMonth[];
+  window_total: number;
+  prior_total: number;
+  delta_pct: number;
+}
+
 // ── Transfer Partners ────────────────────────────────────────────────────────
 
 export interface TransferPartner {
@@ -246,6 +260,7 @@ export interface CardSummaryItem {
   base_cpp: number;
   value_low: number;
   value_high: number;
+  value_sweet_spot: number;
   best_transfer_partner?: string;
   best_transfer_cpp?: number;
 }
@@ -254,6 +269,7 @@ export interface WalletSummary {
   total_points: number;
   value_range_low: number;
   value_range_high: number;
+  value_sweet_spot: number;
   cards: CardSummaryItem[];
 }
 
@@ -504,6 +520,19 @@ export interface SQCProjection {
   revenue_floor_met?: boolean;
   /** Additional flight revenue (CAD) needed to clear the next tier's floor. */
   revenue_floor_gap_cad?: number;
+  // ── Optional target-tier selector (additive; absent ⇒ legacy behaviour) ──
+  /** Echo of the requested target tier, normalized to the matched status_level. */
+  target_tier?: string;
+  /** sqc_required of the matched target tier. */
+  target_sqc_required?: number;
+  /** SQC still needed to reach the chosen target tier (0 if already met). */
+  sqc_to_target_tier?: number;
+  /** CAD spend at the user's best card rate to close the target gap. */
+  spend_to_target_tier?: number;
+  /** Which card minimises spend-to-target. */
+  best_card_for_target?: string;
+  /** True when total_sqc_earned already clears the target tier. */
+  target_tier_already_met?: boolean;
 }
 
 // ── Renewal optimizer ────────────────────────────────────────────────────────
@@ -702,6 +731,8 @@ export interface AwardWatch {
   is_active: boolean;
   last_checked_at?: string;
   last_min_points?: number | null;
+  seats_available?: number | null;   // cheapest award's seat count from latest worker probe
+  seats_checked_at?: string;          // RFC3339, when seats were last refreshed
   created_at?: string;
 }
 
@@ -760,6 +791,38 @@ export interface DevaluationEvent {
   source_url?: string;
   days_until: number;
   user_holds_balance: boolean;
+}
+
+export interface DevaluationTrendPoint {
+  month: string; // "YYYY-MM"
+  points: number;
+}
+
+export interface DevaluationProjection {
+  id: string;
+  program_slug: string;
+  title: string;
+  severity: "minor" | "major";
+  effective_date: string;
+  days_until: number;
+  hike_percent: number; // e.g. 0.171 (derived from severity, not per-event data)
+  burn_fraction: number; // e.g. 0.30
+  today_points: number; // fixed UI anchor, e.g. 75000
+  after_points: number; // e.g. 87825
+  user_holds_balance: boolean;
+  balance: number; // user's points in this program (0 if none)
+  cpp: number; // cents per point
+  value_today: number; // CAD (0 when no balance)
+  value_after: number; // CAD
+  exposure: number; // CAD = today - after
+  headline: string;
+  alert_enabled: boolean; // persisted toggle state
+  trend: DevaluationTrendPoint[]; // synthetic/directional projection series
+}
+
+export interface DevaluationAlert {
+  program_slug: string;
+  created_at: string;
 }
 
 // ── Triple-stack calculator ──────────────────────────────────────────────────

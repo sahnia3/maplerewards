@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"maplerewards/internal/service"
@@ -47,6 +48,9 @@ func (h *SQCHandler) GetProjection(w http.ResponseWriter, r *http.Request) {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= maxFlightSpendCAD {
 			flights.FlightSpendCAD = f
 		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("target_tier")); v != "" {
+		flights.TargetTier = v
 	}
 
 	out, err := h.svc.Project(r.Context(), sessionID, flights)

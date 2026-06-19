@@ -316,17 +316,16 @@ html { overflow-x: clip; }
   html { -webkit-font-smoothing: antialiased; }
   body {
     background: var(--paper);
-    /* Editorial drench — all in the red family. The previous version had
-     * a warm-umber top-right that was bleeding into yellow when blended
-     * with cream. Now: burgundy top-left, burnt-orange top-right (the
-     * only non-pure-red, complements maple without going yellow), maple
-     * mid-band, deep-wine bottom anchor. Layered gradient + the grain
-     * pseudo-element below = "grainy red gradient" Linear/Apple-Card feel. */
+    /* Soft multi-hue editorial wash (redesign): faint forest top-left, gold
+     * top-right, forest bottom-right, faint maple bottom-left — a calmer,
+     * paper-forward canvas instead of the old heavy red drench. The dark
+     * register below keeps its warm red radial drench (protected). Grain
+     * pseudo-element below preserves the Linear/Apple-Card substrate feel. */
     background-image:
-      radial-gradient(ellipse 75% 55% at 12% -5%,   rgba(92, 31, 37, 0.50), transparent 60%),
-      radial-gradient(ellipse 65% 50% at 88% -5%,   rgba(194, 65, 28, 0.20), transparent 65%),
-      radial-gradient(ellipse 60% 35% at 50% 35%,   rgba(165, 31, 45, 0.10), transparent 70%),
-      radial-gradient(ellipse 100% 55% at 50% 115%, rgba(122, 24, 39, 0.32), transparent 70%);
+      radial-gradient(ellipse 74% 54% at 4% -4%,    rgba(36, 116, 90, 0.16), transparent 60%),
+      radial-gradient(ellipse 58% 46% at 98% -2%,   rgba(184, 142, 60, 0.20), transparent 64%),
+      radial-gradient(ellipse 72% 48% at 80% 110%,  rgba(24, 58, 55, 0.14), transparent 68%),
+      radial-gradient(ellipse 66% 42% at 20% 114%,  rgba(165, 31, 45, 0.10), transparent 70%);
     background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
@@ -517,6 +516,11 @@ input[type="number"]::-webkit-inner-spin-button {
 .hover-lift { transition: transform 200ms cubic-bezier(.2,.7,.2,1), box-shadow 200ms; }
 .hover-lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
 
+/* Redesign lift — slightly deeper raise + accent border on hover (Explore-Maple
+ * cards, directory cards). Matches the editorial prototype's .lift. */
+.lift { transition: transform 220ms cubic-bezier(.16,1,.3,1), box-shadow 220ms cubic-bezier(.16,1,.3,1), border-color 220ms cubic-bezier(.16,1,.3,1); }
+.lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-2); border-color: var(--accent); }
+
 /* Wallet-row interaction: 2px lift + heavier shadow + maple text on the
  * card name. Turns a static list into a portfolio that feels owned. */
 .wallet-row:hover {
@@ -583,9 +587,14 @@ input[type="number"]::-webkit-inner-spin-button {
   border-left: 1px solid var(--rule);
 }
 .home-stat-num {
-  font-size: clamp(17px, 1.5vw, 27px);
+  /* Dynamic + bounded: shrinks with the viewport and stays on one line with
+     tabular figures so even a wide value (e.g. 278,025) sits inside its own
+     min-width:0 track instead of spilling across the divider. */
+  font-size: clamp(15px, 1.35vw, 24px);
   color: var(--ink);
   line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   font-feature-settings: "ss01";
   font-variant-numeric: tabular-nums;
 }
@@ -702,7 +711,10 @@ input[type="number"]::-webkit-inner-spin-button {
 .mr-hero-copy {
   position: relative;
   z-index: 2;
-  max-width: min(590px, 58%);
+  /* Fill the copy grid-track (capped on huge screens) instead of 58% of it —
+     the old 58% cap squeezed the stat ribbon to ~275px, making 3 columns too
+     narrow to hold a wide value like 278,025 without spilling the divider. */
+  max-width: min(640px, 100%);
   display: flex; flex-direction: column;
   padding: 0 32px;
 }
@@ -790,6 +802,35 @@ input[type="number"]::-webkit-inner-spin-button {
   from { stroke-dashoffset: 1000; }
   to   { stroke-dashoffset: 0; }
 }
+
+/* ── Redesign data-viz animation system (mr-*) ──────────────────────────────
+ * SVG draw-ins, growing bars, flowing dashes, pulsing orbs/dots — ported from
+ * the editorial redesign handoff. Driver utilities default the element to its
+ * FINAL visible state when not animating (`both` fill), so first paint / SSR /
+ * background tabs never blank. The reduced-motion block below neutralizes
+ * animation-duration, so these snap to their end state for those users. */
+@keyframes mr-draw       { from { stroke-dashoffset: var(--len, 1000); } to { stroke-dashoffset: 0; } }
+@keyframes mr-grow-x     { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes mr-grow-y     { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes mr-dash       { to { stroke-dashoffset: -1000; } }
+@keyframes mr-orb        { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes mr-pulse      { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.65); opacity: 0.55; } }
+@keyframes mr-fade       { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mr-rise       { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mr-float      { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes mr-ping       { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes mr-count-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Driver utilities — opt-in. Editorial ease curve throughout. */
+.mr-draw-in   { animation: mr-draw 1.6s cubic-bezier(.16,1,.3,1) both; }
+.mr-grow-x-in { transform-origin: left center;   animation: mr-grow-x .9s cubic-bezier(.16,1,.3,1) both; }
+.mr-grow-y-in { transform-origin: bottom center; animation: mr-grow-y .9s cubic-bezier(.16,1,.3,1) both; }
+.mr-fade-in   { animation: mr-fade .8s ease both; }
+.mr-rise-in   { animation: mr-rise .7s cubic-bezier(.16,1,.3,1) both; }
+.mr-dash-flow { animation: mr-dash 1.1s linear infinite; }
+.mr-orb-pulse { animation: mr-orb 3.4s ease-in-out infinite; }
+.mr-dot-pulse { animation: mr-pulse 2s ease-in-out infinite; }
+.mr-leaf-float { animation: mr-float 5s ease-in-out infinite; }
 
 /* CardFan ambient float keyframes deleted — cards now stay still until user
  * interacts with them. The user explicitly asked for hover-only motion. */
@@ -964,20 +1005,26 @@ input[type="number"]::-webkit-inner-spin-button {
 @media (min-width: 1121px) {
   .mr-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) min(44%, 540px);
-    gap: 32px;
+    /* A generous fan column that uses the wide empty space on the right of the
+     * hero, so the whole fan shows instead of being clipped to a narrow box. */
+    grid-template-columns: minmax(0, 1fr) min(56%, 720px);
+    gap: 28px;
     align-items: start;
   }
-  .mr-hero-copy { grid-column: 1; grid-row: 1; }
+  /* Copy is capped well short of its track so there is always empty space on
+   * its right for the fan to extend into — the fan can come left without ever
+   * reaching the copy text. */
+  .mr-hero-copy { grid-column: 1; grid-row: 1; max-width: min(500px, 100%); }
   .mr-hero-art {
     grid-column: 2;
     grid-row: 1;
-    /* Centre the fan vertically against the (taller) copy column so it sits at
-     * a natural mid-level instead of clinging to the top-right, and pull it
-     * well left so it sits closer to the copy rather than crammed in the far
-     * right margin. */
     align-self: center;
-    --fan-shift-x: -170px;
+    /* Nudge the fan slightly left within its (now roomy) column. The column
+     * starts to the RIGHT of the capped 500px copy, so the fan never overlaps
+     * the copy/ribbon; overflow:hidden only ever trims a sliver at the very
+     * narrowest desktop. */
+    --fan-shift-x: -20px;
+    overflow: hidden;
     /* Bounded box: the fan lives here and cannot extend past the hero into
      * the ledger no matter how tall the copy column grows. */
     height: clamp(330px, 30vw, 430px);

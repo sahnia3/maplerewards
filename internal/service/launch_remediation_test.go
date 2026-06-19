@@ -92,15 +92,15 @@ func TestProjectAeroplan_ExposureUsesBuyingPowerLoss(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := NewDevaluationService(repo, nil)
+	svc := NewDevaluationService(repo, nil, nil)
 
 	proj, err := svc.ProjectAeroplanJune2026(context.Background(), "sess")
 	if err != nil {
 		t.Fatalf("project: %v", err)
 	}
 
-	const burn = 0.30 // aeroplanJune2026BurnFraction
-	const hike = 0.171 // aeroplanJune2026HikePercent
+	const burn = 0.30                  // aeroplanJune2026BurnFraction
+	const hike = 0.171                 // aeroplanJune2026HikePercent
 	valueToday := 100000 * 2.0 / 100.0 // $2000
 	want := math.Round(valueToday*burn*(hike/(1+hike))*100) / 100
 

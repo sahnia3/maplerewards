@@ -149,7 +149,11 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 		parsed := parseTravelQuery(req.Message)
 
 		// ── STEP 2: SerpAPI — get REAL flight prices from Google Flights ──
+		// liveFlights/awardResults are hoisted out of their fetch blocks so the
+		// two datasets survive into the FACTS-block computation below (they are
+		// otherwise out of scope by the time the other one exists).
 		var flightDataContext string
+		var liveFlights []FlightResult
 		if parsed != nil && s.serpSvc != nil && s.serpSvc.IsAvailable() {
 			serpCtx, serpCancel := context.WithTimeout(ctx, 15*time.Second)
 			defer serpCancel()
@@ -158,19 +162,22 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 				parsed.Date, parsed.Cabin, parsed.Passengers,
 			)
 			if serpErr == nil && len(flights) > 0 {
+				liveFlights = flights
 				flightDataContext = formatSerpFlightsForPrompt(flights, parsed)
 			}
 		}
 
 		// ── STEP 3: Award search — points costs + CPP from YAML/KB ───
 		var awardContext string
+		var awardResults []model.AwardSearchResult
 		if parsed != nil && s.awardSearchSvc != nil {
 			if parsed.SessionID == "" {
 				parsed.SessionID = req.SessionID
 			}
-			awardResults, aErr := s.awardSearchSvc.Search(ctx, *parsed)
-			if aErr == nil && len(awardResults) > 0 {
-				awardContext = formatAwardResultsForPrompt(awardResults, parsed)
+			results, aErr := s.awardSearchSvc.Search(ctx, *parsed)
+			if aErr == nil && len(results) > 0 {
+				awardResults = results
+				awardContext = formatAwardResultsForPrompt(results, parsed)
 			}
 		}
 
@@ -197,6 +204,21 @@ func (s *AIService) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, e
 		}
 		if awardContext != "" {
 			researchContext += awardContext + "\n"
+		}
+		// ── Pre-computed FACTS block ─────────────────────────────────────────
+		// Compute every award fact (CPP, direct affordability, transfer top-up
+		// plans) in Go and inject them so the model narrates rather than doing
+		// arithmetic. Any repo failure degrades to an empty block — never fails
+		// the chat.
+		if len(awardResults) > 0 {
+			var liveCash float64
+			if len(liveFlights) > 0 {
+				liveCash = liveFlights[0].Price
+			}
+			walletBySlug := s.walletBalancesBySlug(ctx, req.SessionID)
+			transferRoutes := s.inboundTransferRoutes(ctx, awardResults, walletBySlug)
+			facts := computeAwardFacts(awardResults, liveCash, walletBySlug, transferRoutes)
+			researchContext += renderAwardFactsBlock(facts)
 		}
 		if travelWebContext != "" {
 			researchContext += travelWebContext + "\n"
@@ -361,6 +383,89 @@ func formatPoints(pts int64) string {
 	return string(result)
 }
 
+// walletBalancesBySlug returns the user's aggregated point balance keyed by
+// loyalty-program slug. It mirrors buildWalletContext's program grouping but
+// keys by slug (not name) so it composes with transfer-route lookups. Any repo
+// error or empty session yields an empty map so the FACTS computation degrades
+// gracefully rather than failing the chat.
+func (s *AIService) walletBalancesBySlug(ctx context.Context, sessionID string) map[string]int64 {
+	out := map[string]int64{}
+	if sessionID == "" {
+		return out
+	}
+	user, err := s.walletRepo.GetUserBySession(ctx, sessionID)
+	if err != nil || user == nil {
+		return out
+	}
+	cards, err := s.walletRepo.GetUserCards(ctx, user.ID)
+	if err != nil {
+		return out
+	}
+	for _, uc := range cards {
+		if uc.Card == nil || uc.Card.LoyaltyProgram == nil {
+			continue
+		}
+		out[uc.Card.LoyaltyProgram.Slug] += uc.PointBalance
+	}
+	return out
+}
+
+// inboundTransferRoutes builds, per award issuer key, the list of transfer
+// routes that flow INTO that award currency from a program the user holds.
+//
+// The service's TransferRepository exposes only the FROM-direction
+// GetTransferRoutes, so we walk each source program the user holds, fetch its
+// outbound routes, and bucket them by destination issuer key
+// (slugToIssuer(ToProgram.Slug)). GetTransferRoutes leaves FromProgram nil
+// (it only joins the destination), so we stamp the source program onto each
+// row — computeAwardFacts reads tp.FromProgram for the source name/slug. Any
+// repo error is skipped so a single bad lookup degrades to fewer paths rather
+// than failing the chat.
+func (s *AIService) inboundTransferRoutes(
+	ctx context.Context,
+	awardResults []model.AwardSearchResult,
+	walletBySlug map[string]int64,
+) map[string][]model.TransferPartner {
+	routes := map[string][]model.TransferPartner{}
+	if s.transferRepo == nil || s.cardRepo == nil || len(walletBySlug) == 0 {
+		return routes
+	}
+
+	// Only the award currencies actually present in the results are relevant.
+	wantedIssuer := map[string]bool{}
+	for _, r := range awardResults {
+		wantedIssuer[r.Program] = true
+	}
+
+	for sourceSlug, bal := range walletBySlug {
+		if bal <= 0 {
+			continue
+		}
+		prog, err := s.cardRepo.GetProgramBySlug(ctx, sourceSlug)
+		if err != nil || prog == nil {
+			continue
+		}
+		partners, err := s.transferRepo.GetTransferRoutes(ctx, prog.ID)
+		if err != nil {
+			continue
+		}
+		for _, tp := range partners {
+			if tp.ToProgram == nil || !tp.IsActive {
+				continue
+			}
+			issuerKey := slugToIssuer(tp.ToProgram.Slug)
+			if !wantedIssuer[issuerKey] {
+				continue
+			}
+			// GetTransferRoutes leaves FromProgram nil; stamp the source so the
+			// pure compute fn can read the source identity.
+			tp.FromProgram = prog
+			routes[issuerKey] = append(routes[issuerKey], tp)
+		}
+	}
+	return routes
+}
+
 func (s *AIService) buildCategoryContext(ctx context.Context) string {
 	categories, err := s.cardRepo.ListCategories(ctx)
 	if err != nil || len(categories) == 0 {
@@ -485,6 +590,7 @@ Rules:
 - Round dollar amounts to 2 decimal places
 - Be honest about limitations — if you're unsure, say so
 - Never make up card details or multiplier rates
+- TRANSFER AMOUNTS: when you recommend transferring points to a program, state the EXACT number to transfer — the award's points cost — framed against their balance, e.g. "Transfer **60,000** of your 1,500,000 MR (the rest stays in your account)." A transfer moves ONLY what the award costs. NEVER tell the user to transfer their whole balance, and never imply they must move all their points.
 - Keep responses under 500 words unless the user asks for a detailed breakdown
 - Use markdown formatting for clarity (bold, bullet points, etc.)
 
@@ -513,6 +619,15 @@ when Priority 1 or 2 data is available.
 - Do NOT present ESTIMATED/knowledge-base points costs as exact — say "starting from ~X points (published rate)" and note that actual availability may differ
 - Do NOT confuse LIVE data (marked "live" in Source column) with ESTIMATED data (marked "estimated")
 - When award search results show Source="estimated", ALWAYS caveat: "These are published award chart rates. Actual prices vary by date — check the airline's website for live availability."
+- PRE-COMPUTED FACTS BLOCK: when a "✅ PRE-COMPUTED FACTS" block is present, those points costs, CPP values, and transfer amounts are AUTHORITATIVE and already correct. Quote them EXACTLY as written. You MUST NOT perform your own arithmetic, recompute CPP, or restate different points/transfer numbers — narrate the pre-computed facts, do not recalculate them.
+
+## ⚠️ ONLY CLAIM WHAT THE DATA ACTUALLY VERIFIES (do not fabricate)
+Award availability is only REAL when it comes from a LIVE award search result below (Source="live"). The user can only trust numbers they can verify, so:
+- Specific travel DATES, SEAT COUNTS ("5–8 seats", "1 seat left"), exact points, taxes, and CPP may ONLY be stated for a program when those exact values appear in a LIVE result. If a program wasn't searched live, you do NOT know its dates or seats — do NOT invent them.
+- VERIFY/BOOKING LINKS: only output a link that appears VERBATIM in the data. NEVER hand-build a deep link with dates or fare classes baked in. If the data has no link for a program, link to that program's general award-search page and tell the user to enter their own dates there — do not present it as a confirmation of a specific flight.
+- ESTIMATED programs (Source="estimated" or anything from the knowledge-base award charts): present as "from ~X points (published chart rate)" with NO specific dates, NO seat counts, and NO claimed CPP. Add: "I don't have live availability for this program — search your dates at <program award site> to confirm."
+- The headline recommendation / "Best" pick MUST be a program whose availability was LIVE-verified. If only one program returned live results (e.g. Aeroplan), make THAT the actionable recommendation, and clearly label every other program as an UNVERIFIED estimate the user must check themselves — never rank an unverified estimate above a live-verified option.
+- If NO program returned live availability, say so plainly ("I couldn't confirm live award space for your dates") instead of presenting confident points/dates/seats.
 
 TRAVEL RESPONSE FORMAT — Always structure travel answers like this:
 1. **💰 Cash Price** — Quote the exact price from the flight data table
@@ -528,8 +643,13 @@ Additional travel rules:
 - Always note: "Check the [Travel page](/trip-planner) for the full redemption calculator"
 - If NO live data is available, be upfront: "I don't have live prices right now — check Google Flights for current pricing"
 
-`)
+## HOTELS — always give a real, points-aware booking link
+When you recommend hotels:
+- Give EVERY hotel a working booking link the user can actually click to finish the booking. Prefer the hotel's or chain's official booking site (or the loyalty program's award-stay page); only output a link you are confident resolves. Do not fabricate deep links.
+- If the hotel belongs to a points program the user can use (Marriott Bonvoy, World of Hyatt, Hilton Honors, IHG One Rewards), give the POINTS booking link (the program's award/points-stay search) in addition to the cash link, with the points cost per night and the multi-night total. Make it explicit: "Book this on points here: <link>".
+- Only call a stay "bookable on points" when you can point to the program and a points cost. If you only have a live cash rate, say "cash rate — confirm award availability on <program> before assuming a points booking exists." Never imply a points redemption you can't substantiate.
 
+`)
 
 	// Add research context if available
 	if researchContext != "" {
@@ -685,7 +805,7 @@ func containsTravelKeywords(msg string) bool {
 		"departure", "layover", "stopover", "nonstop", "non-stop", "direct flight",
 		"flexible date", "flexible dates", "best time to fly", "best time to book",
 		"cheapest", "award availability", "award space",
-		"yyz", "yvr", "yul", "yyc", "yow", "yhz",  // Canadian airports
+		"yyz", "yvr", "yul", "yyc", "yow", "yhz", // Canadian airports
 		"lhr", "cdg", "nrt", "hnd", "sin", "dxb", "bom", "del", "hkg", "icn", // Major intl airports
 	}
 	for _, kw := range keywords {
@@ -1011,7 +1131,7 @@ func formatSerpFlightsForPrompt(flights []FlightResult, req *model.AwardSearchRe
 	}
 
 	fmt.Fprintf(&sb, "\n**Cheapest cash option: $%.0f CAD** (%s)\n", flights[0].Price, flights[0].Airline)
-	sb.WriteString("Use these cash prices to calculate CPP: (cash_price / points_cost) × 100\n\n")
+	sb.WriteString("CPP and transfer math are pre-computed in the FACTS block below — quote those numbers; do not calculate your own.\n\n")
 
 	return sb.String()
 }

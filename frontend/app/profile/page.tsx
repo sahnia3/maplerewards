@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import {
   Loader2,
@@ -9,9 +10,13 @@ import {
   Trash2,
   AlertTriangle,
   CreditCard,
+  Sun,
+  Moon,
+  Compass,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
+import { useTour } from "@/contexts/tour-context";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { ApiError, createPortalSession } from "@/lib/api";
@@ -43,9 +48,16 @@ export default function ProfilePage() {
   const router = useRouter();
   const { user, isPro, plan, isAuthenticated, isLoading, logout, updateProfile } = useAuth();
   const { wallet, totalPoints } = useWallet();
+  const { theme, setTheme } = useTheme();
+  const tour = useTour();
 
   const [displayName, setDisplayName] = useState(user?.display_name || "");
   const [saving, setSaving] = useState(false);
+  // Theme reads as undefined on the server; gate the toggle on mount so the
+  // label/icon don't flash the wrong state during hydration.
+  const [themeMounted, setThemeMounted] = useState(false);
+  useEffect(() => setThemeMounted(true), []);
+  const isDark = themeMounted && theme === "dark";
 
   // `user` resolves after mount (cookie refresh), so the lazy initializer
   // above runs while it's still null — sync the saved name in once it lands.
@@ -296,6 +308,112 @@ export default function ProfilePage() {
                 </span>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Appearance — theme toggle (moved here from the sidebar to declutter
+            the nav). Reuses the same next-themes hook, so persistence and the
+            data-theme flip on <html> are identical to the old sidebar control. */}
+        <section style={{ marginBottom: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Appearance</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              padding: "16px 18px",
+              border: "1px solid var(--rule)",
+              borderRadius: 10,
+              background: "var(--card-fill-strong)",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 13, color: "var(--ink)", letterSpacing: "0.02em" }}>
+                Theme
+              </div>
+              <p className="serif" style={{ margin: "4px 0 0", fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", lineHeight: 1.45 }}>
+                {themeMounted ? (isDark ? "Dark mode is on." : "Light mode is on.") : "Toggle between light and dark."}
+              </p>
+            </div>
+            {themeMounted && (
+              <button
+                type="button"
+                onClick={() => setTheme(isDark ? "light" : "dark")}
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                className="mono"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  background: "transparent",
+                  border: "1px solid var(--rule-strong)",
+                  color: "var(--ink-2)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                {isDark ? <Sun size={14} /> : <Moon size={14} />}
+                <span>{isDark ? "Light" : "Dark"} mode</span>
+              </button>
+            )}
+          </div>
+
+          {/* Replay the guided product tour any time. tour.start() activates the
+              walkthrough; the tour context navigates to Home where its steps
+              live, so this works from the profile page. */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              padding: "16px 18px",
+              marginTop: 12,
+              border: "1px solid var(--rule)",
+              borderRadius: 10,
+              background: "var(--card-fill-strong)",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 13, color: "var(--ink)", letterSpacing: "0.02em" }}>
+                Product tour
+              </div>
+              <p className="serif" style={{ margin: "4px 0 0", fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", lineHeight: 1.45 }}>
+                Replay the quick walkthrough of your dashboard whenever you like.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => tour.start()}
+              aria-label="Take the tour again"
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 16px",
+                borderRadius: 8,
+                background: "transparent",
+                border: "1px solid var(--rule-strong)",
+                color: "var(--ink-2)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              <Compass size={14} />
+              <span>Take the tour</span>
+            </button>
           </div>
         </section>
 

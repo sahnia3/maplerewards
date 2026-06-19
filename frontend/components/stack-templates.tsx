@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSpendStats } from "@/lib/api";
+import { Sparkline } from "@/components/editorial/dataviz";
 
 /* P4.1 — recommend a stack from the user's real logged spend. Transparent
  * heuristic over GetSpendStats category shares (no fabricated data; if there's
@@ -54,6 +55,9 @@ interface StackCard {
   name: string;
   role: string;
   feeCAD: number;
+  /** Illustrative blended effective return (%) this card contributes to the
+   *  stack on a typical Canadian spend mix. Used only for the combo-bar viz. */
+  blendedReturn: number;
 }
 
 interface StackTemplate {
@@ -73,9 +77,9 @@ const TEMPLATES: StackTemplate[] = [
     audience: "$30–60K annual spend, Canadian groceries + dining + everyday",
     kicker: "Most-recommended PFC combo",
     cards: [
-      { name: "Amex Cobalt", role: "Groceries (Metro/Sobeys/IGA), dining, streaming — 5×", feeCAD: 155.88 },
-      { name: "Tangerine Money-Back", role: "Groceries at Loblaws/Costco where Amex is rejected — 2%", feeCAD: 0 },
-      { name: "Rogers World Elite MC", role: "FX-fee no-FX & 1.5% on everything else", feeCAD: 0 },
+      { name: "Amex Cobalt", role: "Groceries (Metro/Sobeys/IGA), dining, streaming — 5×", feeCAD: 155.88, blendedReturn: 5.0 },
+      { name: "Tangerine Money-Back", role: "Groceries at Loblaws/Costco where Amex is rejected — 2%", feeCAD: 0, blendedReturn: 2.0 },
+      { name: "Rogers World Elite MC", role: "FX-fee no-FX & 1.5% on everything else", feeCAD: 0, blendedReturn: 1.5 },
     ],
     rationale:
       "Cobalt earns 5× MR on the largest grocery categories that accept Amex; the Tangerine fills the Loblaws + Costco hole. Rogers covers USD purchases and miscellaneous spend without an FX premium.",
@@ -87,9 +91,9 @@ const TEMPLATES: StackTemplate[] = [
     audience: "Frequent flier targeting Aeroplan elite status + transferable MR",
     kicker: "Stack for the SQC chase",
     cards: [
-      { name: "Amex Cobalt", role: "5× MR on grocery + dining → transfer 1:1 to Aeroplan", feeCAD: 155.88 },
-      { name: "TD Aeroplan Visa Infinite Privilege", role: "1.5× direct Aeroplan + SQC + fast-track milestones", feeCAD: 599 },
-      { name: "Brim World Elite MC", role: "Zero FX-fee for non-Star-Alliance international", feeCAD: 199 },
+      { name: "Amex Cobalt", role: "5× MR on grocery + dining → transfer 1:1 to Aeroplan", feeCAD: 155.88, blendedReturn: 5.0 },
+      { name: "TD Aeroplan Visa Infinite Privilege", role: "1.5× direct Aeroplan + SQC + fast-track milestones", feeCAD: 599, blendedReturn: 3.0 },
+      { name: "Brim World Elite MC", role: "Zero FX-fee for non-Star-Alliance international", feeCAD: 199, blendedReturn: 1.5 },
     ],
     rationale:
       "Cobalt's 5× and Privilege's milestones produce ~140K Aeroplan/year on $30K spend. Privilege also bumps you toward 75K Status Qualifying Credits without paying for separate flights.",
@@ -101,8 +105,8 @@ const TEMPLATES: StackTemplate[] = [
     audience: "Lounge access + concierge + high-end transferable points",
     kicker: "Two-card platinum stack",
     cards: [
-      { name: "Amex Platinum", role: "Travel/dining 3×, lounge access, $200 travel credit, $200 dining credit", feeCAD: 799 },
-      { name: "Amex Cobalt", role: "Drops grocery/dining to 5× MR — same currency as Plat", feeCAD: 155.88 },
+      { name: "Amex Platinum", role: "Travel/dining 3×, lounge access, $200 travel credit, $200 dining credit", feeCAD: 799, blendedReturn: 3.0 },
+      { name: "Amex Cobalt", role: "Drops grocery/dining to 5× MR — same currency as Plat", feeCAD: 155.88, blendedReturn: 5.0 },
     ],
     rationale:
       "Platinum's $400+ in annual credits brings the effective fee close to $400, then lounge access + 3× on travel + 1:1 transfer to Aeroplan/Avios/Flying Blue justifies the spend. Cobalt fills the food categories Plat caps at 1×.",
@@ -114,8 +118,8 @@ const TEMPLATES: StackTemplate[] = [
     audience: "First-time card holder, no track record, low spend",
     kicker: "Build credit, earn anyway",
     cards: [
-      { name: "RBC ION+ Visa", role: "3× on groceries, dining, gas, transit, streaming — $48 fee waived first year", feeCAD: 48 },
-      { name: "PC Mastercard", role: "Free; PC Optimum at Loblaws/No Frills/Shoppers + 10% on PC Mobile", feeCAD: 0 },
+      { name: "RBC ION+ Visa", role: "3× on groceries, dining, gas, transit, streaming — $48 fee waived first year", feeCAD: 48, blendedReturn: 3.0 },
+      { name: "PC Mastercard", role: "Free; PC Optimum at Loblaws/No Frills/Shoppers + 10% on PC Mobile", feeCAD: 0, blendedReturn: 1.0 },
     ],
     rationale:
       "RBC ION+ has the lowest spend threshold for its welcome bonus ($1,500 in 6 months) and earns 3× on the categories that actually matter for a typical student/young-professional spend.",
@@ -270,6 +274,38 @@ export function StackTemplates({ sessionId }: { sessionId?: string | null } = {}
                     </li>
                   ))}
                 </ul>
+
+                {/* Blended-return combo bars: each card's effective return on
+                    the stack's target spend mix (illustrative, see type note). */}
+                <div style={{ padding: "10px 0", borderTop: "1px solid var(--rule)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span className="eyebrow" style={{ fontSize: 9 }}>Blended return by card</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>
+                      {Math.max(...t.cards.map((c) => c.blendedReturn)).toFixed(1)}% peak
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+                    <Sparkline
+                      values={t.cards.map((c) => c.blendedReturn)}
+                      kind="bar"
+                      color="var(--accent)"
+                      width={Math.max(60, t.cards.length * 26)}
+                      height={34}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {t.cards.map((c) => (
+                        <div key={c.name} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {c.name}
+                          </span>
+                          <span className="mono" style={{ fontSize: 10, color: "var(--ink-2)", whiteSpace: "nowrap" }}>
+                            {c.blendedReturn.toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
                 <div
                   style={{

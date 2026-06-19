@@ -62,6 +62,10 @@ type SpendRepository interface {
 	RecordSpendBatch(ctx context.Context, rows []repo.BatchSpendRow, applyBonus bool) (int, error)
 	ListSpendEntries(ctx context.Context, userID string, limit, offset int) ([]model.SpendEntry, error)
 	GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error)
+	// GetPointsSeries returns per-month points_earned/dollar_value/entry_count for
+	// the trailing `months` calendar months (zero-filled), plus the prior-period
+	// total over the equal-length window immediately before it.
+	GetPointsSeries(ctx context.Context, userID string, months int) (*model.PointsSeries, error)
 }
 
 // BonusRepository abstracts welcome bonus tracking data access.

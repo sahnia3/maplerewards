@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/contexts/session-context";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -10,6 +11,9 @@ import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { ProToolsPersonalStrip } from "@/components/pro-tools/PersonalStrip";
 import { WalletStatsStrip } from "@/components/pro-tools/WalletStatsStrip";
 import { ProToolsUpsell } from "@/components/pro-tools/UpsellWall";
+import { WorkspaceDirectory, WORKSPACES, type WorkspaceKey } from "@/components/pro-tools/WorkspaceDirectory";
+import { WorkspaceHeader } from "@/components/pro-tools/WorkspaceHeader";
+
 import { MissedRewardsTile } from "@/components/pro-tools/MissedRewardsTile";
 import { WelcomeBonusMissionTile } from "@/components/pro-tools/WelcomeBonusMissionTile";
 import { CreditsTile } from "@/components/pro-tools/CreditsTile";
@@ -28,37 +32,49 @@ import { SimulatorTile } from "@/components/pro-tools/SimulatorTile";
 import { HouseholdTile } from "@/components/pro-tools/HouseholdTile";
 import { BuyPointsTile } from "@/components/pro-tools/BuyPointsTile";
 import { CardOffersTile } from "@/components/pro-tools/CardOffersTile";
-import { DevaluationTile } from "@/components/pro-tools/DevaluationTile";
+import { DevaluationTrackerTile } from "@/components/pro-tools/DevaluationTrackerTile";
 import { PCOptimumModule } from "@/components/pro-tools/PCOptimumModule";
 
 /* Pro Tools — coordination only.
  *
- * Tiles live in components/pro-tools/. The editorial substrate (PaperTile) and
- * the EmptyState primitive live in components/editorial/. This file wires
- * tabs, routes free users to the upsell, and renders the personal strip. */
+ * The page is a single route. The landing view is a directory of four
+ * workspaces; a ?ws=<key> query param swaps in that workspace's full-width
+ * stacked tiles. Because there is one route, the sidebar "Pro Tools" item stays
+ * active on every sub-view automatically. useSearchParams is wrapped in a
+ * <Suspense> boundary, as Next requires. Tiles live in components/pro-tools/;
+ * this file wires routing, the upsell wall, and the personal strips. */
 
-type ProTab = "forensics" | "status" | "stacking" | "knowledge";
+const VALID_WS = new Set<WorkspaceKey>(["forensics", "status", "stacking", "knowledge"]);
 
-interface TabSpec {
-  key: ProTab;
-  label: string;
-  count: number;
-  hint: string;
+function isWorkspace(v: string | null): v is WorkspaceKey {
+  return v != null && VALID_WS.has(v as WorkspaceKey);
 }
 
-const TABS: TabSpec[] = [
-  { key: "forensics", label: "Forensics", count: 6, hint: "What you missed, what to renew, what's expiring, what changed." },
-  { key: "status", label: "Status & balances", count: 5, hint: "Aeroplan SQC, loyalty programs, transfer sweet-spots, points expiry, award watches." },
-  { key: "stacking", label: "Stacking & math", count: 7, hint: "Your next best card, wallet swap simulator, household optimizer, card combos, portal stacks, buy-points, offers." },
-  { key: "knowledge", label: "Knowledge", count: 2, hint: "Devaluations, PC Optimum." },
-];
+const WORKSPACE_COPY: Record<WorkspaceKey, { name: string; title: React.ReactNode; lede: string }> = {
+  forensics: {
+    name: "Forensics",
+    title: <>What you <span style={{ fontStyle: "italic", color: "var(--accent)" }}>missed</span>.</>,
+    lede: "The backward-looking audit: every dollar your wallet left on the table, every credit you forgot, every fee about to hit.",
+  },
+  status: {
+    name: "Status & balances",
+    title: <>What you&apos;ve <span style={{ fontStyle: "italic", color: "var(--accent)" }}>earned</span>.</>,
+    lede: "Where you stand right now — status progress, live balances, the best ways to move points, and what's at risk of expiring.",
+  },
+  stacking: {
+    name: "Stacking & math",
+    title: <>Shape next month&apos;s <span style={{ fontStyle: "italic", color: "var(--accent)" }}>spend</span>.</>,
+    lede: "Your next-best card, a wallet-swap simulator, household math, combos, portal stacks, buy-points break-even and cart-linked offers.",
+  },
+  knowledge: {
+    name: "Knowledge",
+    title: <>Stay <span style={{ fontStyle: "italic", color: "var(--accent)" }}>ahead</span> of the change.</>,
+    lede: "Programs devalue quietly. These two tools warn you before a chart change or a points reset costs you real money.",
+  },
+};
 
 export default function ProToolsPage() {
-  const { sessionId, isReady, ensureSession } = useSession();
-  const { wallet } = useWallet();
   const { isLoading: authLoading, isAuthenticated, isPro } = useAuth();
-  const [active, setActive] = useState<ProTab>("forensics");
-  const activeHint = useMemo(() => TABS.find((t) => t.key === active)?.hint, [active]);
 
   if (authLoading) {
     return (
@@ -82,158 +98,142 @@ export default function ProToolsPage() {
   }
 
   return (
+    <Suspense fallback={<ProToolsFallback />}>
+      <ProToolsRouter />
+    </Suspense>
+  );
+}
+
+function ProToolsFallback() {
+  return (
+    <div style={{ minHeight: "40vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-3)" }}>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase" }}>
+        Loading toolkit…
+      </div>
+    </div>
+  );
+}
+
+function ProToolsRouter() {
+  const { sessionId, isReady, ensureSession } = useSession();
+  const { wallet } = useWallet();
+  const router = useRouter();
+  const params = useSearchParams();
+
+  const raw = params.get("ws");
+  const ws = isWorkspace(raw) ? raw : null;
+
+  const openWorkspace = (key: WorkspaceKey) => {
+    router.replace(`/pro-tools?ws=${key}`, { scroll: false });
+  };
+  const allTools = () => {
+    router.replace("/pro-tools", { scroll: false });
+  };
+
+  // ── Workspace view ─────────────────────────────────────────────────────────
+  if (ws) {
+    const copy = WORKSPACE_COPY[ws];
+    const spec = WORKSPACES.find((w) => w.key === ws)!;
+    return (
+      <div className="reveal" style={{ paddingTop: 0 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+          <WorkspaceHeader
+            name={copy.name}
+            count={spec.count}
+            title={copy.title}
+            lede={copy.lede}
+            onAllTools={allTools}
+          />
+
+          {ws === "forensics" && (
+            <>
+              <MissedRewardsTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <WelcomeBonusMissionTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <CreditsTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <RenewalTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <CardValueTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <IssuerChangesTile />
+            </>
+          )}
+
+          {ws === "status" && (
+            <>
+              <SQCTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <LoyaltyAccountsTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
+              <LeafDivider />
+              <TransferSweetSpotsTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <ExpiryGuardianTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <AwardWatchTile sessionId={sessionId} ensureSession={ensureSession} />
+            </>
+          )}
+
+          {ws === "stacking" && (
+            <>
+              <ChurnPlannerTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <SimulatorTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <HouseholdTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <StackTemplates sessionId={sessionId} />
+              <LeafDivider />
+              <StackTile sessionId={sessionId} ensureSession={ensureSession} />
+              <LeafDivider />
+              <BuyPointsTile />
+              <LeafDivider />
+              <CardOffersTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
+            </>
+          )}
+
+          {ws === "knowledge" && (
+            <>
+              <DevaluationTrackerTile sessionId={sessionId} isReady={isReady} />
+              <LeafDivider />
+              <PCOptimumModule />
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Directory (landing) view ────────────────────────────────────────────────
+  return (
     <div className="reveal" style={{ paddingTop: 0 }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px clamp(20px, 4vw, 60px) 80px" }}>
+        <nav style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, fontSize: 12 }}>
+          <span className="mono" style={{ color: "var(--ink-3)", letterSpacing: "0.06em" }}>Workspace</span>
+          <span style={{ color: "var(--ink-4)" }}>/</span>
+          <span className="mono" style={{ color: "var(--ink)", letterSpacing: "0.06em" }}>Pro Tools</span>
+          <span style={{ flex: 1, height: 1, background: "var(--rule)", margin: "0 4px" }} />
+          <span className="mono" style={{ color: "var(--ink-3)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            20 tools · Canada-first · CAD
+          </span>
+        </nav>
+
         <PageMasthead
           eyebrow="Pro tools"
-          eyebrowEnd="Canada-first · CAD"
           title={
             <>
               The <span style={{ fontStyle: "italic", color: "var(--accent)" }}>Pro</span> toolkit.
             </>
           }
-          lede="20 Canadian-rewards tools grouped by purpose. Forensics shows what you've missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead of program changes."
+          lede="20 Canadian-rewards tools, grouped by what they do. Forensics shows what you missed. Status tracks what you've earned. Stacking shapes next month's spend. Knowledge keeps you ahead."
+          maxWidth={640}
         />
 
         <ProToolsPersonalStrip sessionId={sessionId} isReady={isReady} />
         <WalletStatsStrip wallet={wallet} />
 
-        <div
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 20,
-            margin: "8px -8px 22px",
-            padding: "10px 8px",
-            background: "color-mix(in oklab, var(--surface) 85%, transparent)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
-            borderBottom: "1px solid var(--rule)",
-          }}
-        >
-          <div
-            role="tablist"
-            aria-label="Pro tool sections"
-            style={{ display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none" }}
-          >
-            {TABS.map((t) => {
-              const isActive = active === t.key;
-              return (
-                <button
-                  key={t.key}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setActive(t.key)}
-                  className="mono"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "9px 16px",
-                    borderRadius: 999,
-                    border: `1px solid ${isActive ? "var(--accent)" : "var(--rule-strong)"}`,
-                    background: isActive ? "var(--accent)" : "var(--surface)",
-                    color: isActive ? "#fff" : "var(--ink-2)",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.10em",
-                    textTransform: "uppercase",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    boxShadow: isActive ? "var(--shadow-accent-glow)" : "none",
-                    transition:
-                      "background 220ms cubic-bezier(0.16, 1, 0.3, 1), color 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
-                    transform: isActive ? "translateY(-1px)" : "translateY(0)",
-                  }}
-                >
-                  {t.label}
-                  <span
-                    style={{
-                      fontSize: 9,
-                      padding: "2px 7px",
-                      borderRadius: 999,
-                      background: isActive ? "rgba(255,255,255,0.24)" : "var(--accent-wash)",
-                      color: isActive ? "#fff" : "var(--accent)",
-                      letterSpacing: "0.04em",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {t.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <p
-            className="serif"
-            style={{
-              marginTop: 10,
-              marginBottom: 0,
-              fontSize: 12,
-              fontStyle: "italic",
-              color: "var(--ink-3)",
-              lineHeight: 1.4,
-            }}
-          >
-            {activeHint}
-          </p>
-        </div>
-
-        {active === "forensics" && (
-          <>
-            <MissedRewardsTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <WelcomeBonusMissionTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <CreditsTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <RenewalTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <CardValueTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <IssuerChangesTile />
-          </>
-        )}
-
-        {active === "status" && (
-          <>
-            <SQCTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <LoyaltyAccountsTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
-            <LeafDivider />
-            <TransferSweetSpotsTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <ExpiryGuardianTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <AwardWatchTile sessionId={sessionId} ensureSession={ensureSession} />
-          </>
-        )}
-
-        {active === "stacking" && (
-          <>
-            <ChurnPlannerTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <SimulatorTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <HouseholdTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <StackTemplates sessionId={sessionId} />
-            <LeafDivider />
-            <StackTile sessionId={sessionId} ensureSession={ensureSession} />
-            <LeafDivider />
-            <BuyPointsTile />
-            <LeafDivider />
-            <CardOffersTile sessionId={sessionId} isReady={isReady} ensureSession={ensureSession} />
-          </>
-        )}
-
-        {active === "knowledge" && (
-          <>
-            <DevaluationTile sessionId={sessionId} isReady={isReady} />
-            <LeafDivider />
-            <PCOptimumModule />
-          </>
-        )}
+        <WorkspaceDirectory sessionId={sessionId} isReady={isReady} onOpen={openWorkspace} />
       </div>
     </div>
   );
