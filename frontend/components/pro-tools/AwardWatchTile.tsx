@@ -173,26 +173,51 @@ export function AwardWatchTile({ sessionId, ensureSession }: Props) {
                     {w.max_points ? ` · max ${w.max_points.toLocaleString()} pts` : ""}
                   </div>
                 </div>
-                <button
-                  onClick={() => w.id && remove(w.id)}
-                  className="mono"
-                  style={{
-                    padding: 8,
-                    border: "1px solid var(--rule)",
-                    borderRadius: 8,
-                    background: "transparent",
-                    color: "var(--ink-3)",
-                    cursor: "pointer",
-                  }}
-                  aria-label="Remove"
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <SeatBadge seats={w.seats_available} checkedAt={w.seats_checked_at} />
+                  <button
+                    onClick={() => w.id && remove(w.id)}
+                    className="mono"
+                    style={{
+                      padding: 8,
+                      border: "1px solid var(--rule)",
+                      borderRadius: 8,
+                      background: "transparent",
+                      color: "var(--ink-3)",
+                      cursor: "pointer",
+                    }}
+                    aria-label="Remove"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </PaperTile>
     </section>
+  );
+}
+
+/* Live seat count from the worker's last probe. "N seats" (pulsing dot) when the
+ * cheapest award has availability; "—" when the watch has never been probed or
+ * the latest probe found none. */
+function SeatBadge({ seats, checkedAt }: { seats?: number | null; checkedAt?: string }) {
+  if (seats != null && seats > 0) {
+    return (
+      <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--gain)", whiteSpace: "nowrap" }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--gain)", animation: "mr-pulse 2s ease-in-out infinite" }} />
+        {seats} seat{seats === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  // Probed but no availability vs never probed — both read as "—" but the title
+  // disambiguates for hover.
+  const title = checkedAt ? "Checked — no award seats found" : "Not yet checked";
+  return (
+    <span className="mono" title={title} style={{ fontSize: 11, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+      {checkedAt ? "0 seats" : "—"}
+    </span>
   );
 }

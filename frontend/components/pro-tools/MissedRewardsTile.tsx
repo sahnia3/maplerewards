@@ -6,6 +6,7 @@ import { getMissedRewards } from "@/lib/api";
 import type { MissedRewardsReport } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { ProgressRing } from "@/components/editorial/dataviz";
 import { ExportButton, Stat, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
@@ -30,6 +31,12 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
   }, [sessionId, isReady, sinceDays]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Value-capture ratio: actual ÷ optimal, surfaced as the "38% captured" ring.
+  const capturePct =
+    report && report.total_optimal_value > 0
+      ? Math.min(100, (report.total_actual_value / report.total_optimal_value) * 100)
+      : 0;
 
   return (
     <section style={sectionStyle}>
@@ -95,10 +102,31 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
               </div>
             </div>
 
-            <div className="protool-stat-row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--rule)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)" }}>
-              <Stat label="Total spend" value={fmtCAD(report.total_spend)} />
-              <Stat label="Earned" value={fmtCAD(report.total_actual_value)} />
-              <Stat label="Optimal" value={fmtCAD(report.total_optimal_value)} last />
+            <div style={{ display: "flex", alignItems: "stretch", gap: 14, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  border: "1px solid var(--rule)",
+                  borderRadius: 12,
+                  padding: "14px 20px",
+                  background: "var(--card-fill)",
+                }}
+              >
+                <ProgressRing pct={capturePct} label="CAPTURED" />
+                <div style={{ maxWidth: 150 }}>
+                  <div className="eyebrow" style={{ marginBottom: 5 }}>Value capture</div>
+                  <div className="serif" style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.4 }}>
+                    You&apos;re earning <strong style={{ color: "var(--ink)", fontStyle: "normal" }}>{Math.round(capturePct)}%</strong> of what your wallet could on this spend.
+                  </div>
+                </div>
+              </div>
+              <div className="protool-stat-row" style={{ flex: 1, minWidth: 280, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--rule)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)" }}>
+                <Stat label="Total spend" value={fmtCAD(report.total_spend)} />
+                <Stat label="Earned" value={fmtCAD(report.total_actual_value)} />
+                <Stat label="Optimal" value={fmtCAD(report.total_optimal_value)} last />
+              </div>
             </div>
 
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>

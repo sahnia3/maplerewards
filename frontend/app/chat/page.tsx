@@ -1,16 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
+import { useWallet } from "@/contexts/wallet-context";
 import { chatStream, request, ApiError } from "@/lib/api";
-import type { ChatMessage, ChatRequest } from "@/lib/api";
-import { PageMasthead } from "@/components/editorial/page-masthead";
-import { MapleLeaf } from "@/components/editorial/leaf-divider";
+import type { ChatMessage, ChatRequest, ChatResult } from "@/lib/api";
+import { IssuerBadge } from "@/components/editorial/issuer-badge";
 import { FREE_LIMITS } from "@/lib/pro-features";
+
+const LOGO = "/brand/maple-leaf-origami.png";
+
+// A chat message plus the optional structured headline result the backend may
+// emit (via the SSE "result" event) for the assistant turn it belongs to. We
+// keep `result` on the local message so the 3-up grid renders for that reply.
+type ChatMessageWithResult = ChatMessage & { result?: ChatResult };
 
 // In-flight tool calls rendered as status pills under the user's last message.
 type ToolPill = {
@@ -67,20 +75,30 @@ function conversationLabel(c: ConversationSummary): string {
   return date || `Conversation ${c.id}`;
 }
 
-const SUGGESTIONS = [
-  { label: "I'm new to credit-card rewards — how should I start?", prompt: "I'm new to credit-card rewards — how should I start?" },
-  { label: "Best way to fly business class to London", prompt: "Best way to fly business class to London with my points" },
-  { label: "Hotels in Paris using my points", prompt: "Find me hotels in Paris using my points — 3 nights" },
-  { label: "Points needed for Tokyo economy", prompt: "How many Aeroplan points do I need for Tokyo economy class from Toronto?" },
-  { label: "Which card for my upcoming flight", prompt: "Which card should I use for my upcoming flight purchase?" },
-  { label: "Maximize my points value", prompt: "How can I maximize the value of my points across all my cards?" },
-  { label: "Best welcome bonuses right now", prompt: "What are the best credit card welcome bonuses available right now in Canada?" },
-];
+// Compact point-balance formatter for the wallet-context chips (e.g. 214.6K).
+function formatPoints(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}K`;
+  return String(Math.round(n));
+}
+
+// Drop the issuer prefix from a card name so the chip reads short ("Cobalt",
+// "Aeroplan Visa Infinite") — the issuer badge already carries the brand.
+function shortCardName(name: string, issuer: string): string {
+  let out = (name ?? "").trim();
+  const lead = (issuer ?? "").trim();
+  if (lead && out.toLowerCase().startsWith(lead.toLowerCase())) {
+    out = out.slice(lead.length).trim();
+  }
+  return out || name || "Card";
+}
 
 export default function ChatPage() {
   const { sessionId, ensureSession } = useSession();
   const { isPro, isAuthenticated } = useAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { summary } = useWallet();
+  const [messages, setMessages] = useState<ChatMessageWithResult[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [researchMode, setResearchMode] = useState(false);
@@ -96,9 +114,22 @@ export default function ChatPage() {
   const [pills, setPills] = useState<ToolPill[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Holds the structured result for the in-flight turn (arrives as a "result"
+  // SSE event before the final "done"); merged onto the assistant message once
+  // `done` rebuilds the history.
+  const pendingResultRef = useRef<ChatResult | null>(null);
   // Guards the mount-time auto-restore against clobbering a thread the user
   // already started or picked before the history fetch resolved.
   const hasInteractedRef = useRef(false);
+
+  // Wallet-context chips: source from the live wallet summary. Each card →
+  // issuer badge + short name + balance, plus an accent "total" pill.
+  const walletCards = summary?.cards ?? [];
+  const walletTotal = summary?.total_points ?? walletCards.reduce((s, c) => s + (c.point_balance ?? 0), 0);
+  // Maple AI chips: only the top 3 cards (by point balance) are shown, with a
+  // "+N" pill for the rest, so a large wallet doesn't wrap into several rows.
+  const topCards = [...walletCards].sort((a, b) => (b.point_balance ?? 0) - (a.point_balance ?? 0)).slice(0, 3);
+  const extraCards = Math.max(0, walletCards.length - topCards.length);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -168,6 +199,7 @@ export default function ChatPage() {
     setError(null);
     setLoading(true);
     setPills([]);
+    pendingResultRef.current = null;
     const userMsg: ChatMessage = { role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
     try {
@@ -191,8 +223,30 @@ export default function ChatPage() {
                 p.id === e.id ? { ...p, state: "done", summary: e.summary } : p
               )
             );
+          } else if (e.type === "result") {
+            // Structured headline (Points / Cash / Value-per-pt) for the turn —
+            // stash it; merged onto the assistant message when `done` lands.
+            pendingResultRef.current = {
+              points: e.points,
+              cash_cad: e.cash_cad,
+              value_per_pt_cents: e.value_per_pt_cents,
+              label: e.label,
+            };
           } else if (e.type === "done") {
-            setMessages(e.history);
+            // Rebuild from the canonical history, then attach any pending
+            // structured result to the final assistant message.
+            const pending = pendingResultRef.current;
+            const next: ChatMessageWithResult[] = e.history.slice();
+            if (pending) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                if (next[i].role === "assistant") {
+                  next[i] = { ...next[i], result: pending };
+                  break;
+                }
+              }
+            }
+            setMessages(next);
+            pendingResultRef.current = null;
             // The done payload carries the conversation_id (new or existing)
             // for signed-in users — keep it so the next send continues the
             // same thread, and surface a freshly minted thread in the list.
@@ -249,29 +303,213 @@ export default function ChatPage() {
   return (
     // NOTE: no `reveal` class here. `.reveal`'s entrance animation ends on
     // transform: translateY(0) (fill-mode both), and ANY non-none transform on
-    // an ancestor makes it the containing block for position:fixed descendants —
-    // which would anchor the fixed input bar to this div's (content-tall) bottom
-    // instead of the viewport, pushing the textarea off-screen on mobile.
+    // an ancestor makes it the containing block for position:sticky descendants —
+    // which would break the floating input bar's viewport pinning.
     <div style={{ paddingTop: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, maxWidth: 880, width: "100%", margin: "0 auto", padding: "32px clamp(20px, 3vw, 40px) 24px" }}>
-        <PageMasthead
-          eyebrow="Maple"
-          // No hardcoded model name: turns route between models server-side
-          // (cheap model for simple asks, stronger model for tool-heavy ones)
-          // and the API doesn't report which one answered — so naming a
-          // specific version here would be fabricated. Neutral, honest label.
-          eyebrowEnd="Powered by Claude"
-          title={
-            <>
-              The <span style={{ fontStyle: "italic" }}>rewards</span> editor.
-            </>
-          }
-          lede="Ask anything — which card to use, what your points are worth, or how rewards work. Wired to your live wallet data."
-        />
+      <div
+        style={{
+          flex: 1,
+          maxWidth: 840,
+          width: "100%",
+          margin: "0 auto",
+          padding: "28px clamp(20px, 3vw, 40px) 0",
+          minHeight: "calc(100vh - 116px)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* ── Header: logo + glow, title, status, new-chat ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6 }}>
+          <div style={{ position: "relative", flexShrink: 0, width: 50, height: 50 }}>
+            {/* Soft radial glow behind the leaf — blurred accent-soft, pulsing. */}
+            <span
+              aria-hidden
+              className="mr-orb-pulse"
+              style={{
+                position: "absolute",
+                inset: -10,
+                borderRadius: "50%",
+                background: "radial-gradient(circle, var(--accent-soft), transparent 70%)",
+                filter: "blur(8px)",
+                zIndex: 0,
+              }}
+            />
+            <Image
+              src={LOGO}
+              alt="Maple AI"
+              width={50}
+              height={50}
+              priority
+              style={{ position: "relative", zIndex: 1, objectFit: "contain", display: "block" }}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="display" style={{ fontSize: 26, lineHeight: 1 }}>
+              Maple <span style={{ fontStyle: "italic", color: "var(--accent)" }}>AI</span>
+            </div>
+            <div
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "var(--ink-3)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                marginTop: 5,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <span
+                aria-hidden
+                className="mr-dot-pulse"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--gain)",
+                  boxShadow: "0 0 0 3px var(--gain-soft)",
+                }}
+              />
+              Wired to your wallet · Powered by Claude
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={startNewConversation}
+            disabled={loading}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              padding: "9px 16px",
+              borderRadius: 10,
+              border: "1px solid var(--rule-strong)",
+              background: "var(--surface)",
+              color: "var(--ink-2)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+              flexShrink: 0,
+              transition: "border-color 160ms, color 160ms",
+            }}
+            onMouseEnter={(e) => { if (!loading) { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--ink)"; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--rule-strong)"; e.currentTarget.style.color = "var(--ink-2)"; }}
+          >
+            ＋ New chat
+          </button>
+        </div>
+
+        {/* ── Wallet-context chips ── */}
+        {walletCards.length > 0 ? (
+          <div
+            data-tour-id="maple-chat"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+              margin: "16px 0 22px",
+              paddingBottom: 18,
+              borderBottom: "1px solid var(--rule)",
+            }}
+          >
+            <span
+              className="mono"
+              style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 2 }}
+            >
+              Maple can see
+            </span>
+            {topCards.map((c) => (
+              <span
+                key={c.card_id}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "5px 11px",
+                  borderRadius: 999,
+                  border: "1px solid var(--rule)",
+                  background: "var(--card-fill)",
+                }}
+              >
+                <IssuerBadge issuer={c.issuer} cardName={c.card_name} size={26} />
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>
+                  {shortCardName(c.card_name, c.issuer)}
+                </span>
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink)" }}>
+                  {formatPoints(c.point_balance)}
+                </span>
+              </span>
+            ))}
+            {extraCards > 0 && (
+              <span
+                title={`${extraCards} more card${extraCards === 1 ? "" : "s"} in your wallet`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "5px 12px",
+                  borderRadius: 999,
+                  border: "1px solid var(--rule-strong)",
+                  background: "var(--card-fill)",
+                }}
+              >
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 600 }}>
+                  +{extraCards} more
+                </span>
+              </span>
+            )}
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 12px",
+                borderRadius: 999,
+                border: "1px solid var(--accent)",
+                background: "var(--accent-soft)",
+              }}
+            >
+              <span className="mono" style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>
+                {formatPoints(walletTotal)} total
+              </span>
+            </span>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+              margin: "16px 0 22px",
+              paddingBottom: 18,
+              borderBottom: "1px solid var(--rule)",
+            }}
+          >
+            <span
+              className="mono"
+              style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}
+            >
+              Maple can see
+            </span>
+            <Link
+              href="/wallet"
+              className="mono"
+              style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none", letterSpacing: "0.04em" }}
+            >
+              Add cards to your wallet for personalised advice →
+            </Link>
+          </div>
+        )}
 
         {/* Conversation history — signed-in users only (anon chats aren't persisted). */}
         {isAuthenticated && conversations.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
             <span className="eyebrow">History</span>
             <select
               value={conversationId ?? ""}
@@ -297,157 +535,103 @@ export default function ChatPage() {
                 <option key={c.id} value={c.id}>{conversationLabel(c)}</option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={startNewConversation}
-              disabled={loading}
-              className="mono"
-              style={{
-                padding: "7px 12px",
-                borderRadius: 999,
-                border: "1px solid var(--rule)",
-                background: "transparent",
-                color: "var(--ink-3)",
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              New chat
-            </button>
           </div>
         )}
 
+        {/* ── Conversation / empty state ── */}
         {messages.length === 0 ? (
-          <>
-            {/* Welcome card */}
-            <div
-              style={{
-                border: "1px solid var(--rule)",
-                borderTop: "3px solid var(--accent)",
-                borderRadius: 14,
-                background: "var(--card-fill-strong)",
-                padding: "26px 28px",
-                marginBottom: 28,
-              }}
+          <div
+            style={{
+              border: "1px solid var(--rule)",
+              borderTop: "3px solid var(--accent)",
+              borderRadius: 16,
+              background: "var(--card-fill-strong)",
+              padding: "26px 28px",
+            }}
+          >
+            <span className="eyebrow">From the editor</span>
+            <p
+              className="serif"
+              style={{ fontSize: 17, fontStyle: "italic", lineHeight: 1.5, color: "var(--ink-2)", marginTop: 10 }}
             >
-              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                <MapleLeaf size={20} />
-                <div style={{ flex: 1 }}>
-                  <span className="eyebrow">From the editor</span>
-                  <p
-                    className="serif"
-                    style={{ fontSize: 17, fontStyle: "italic", lineHeight: 1.5, color: "var(--ink-2)", marginTop: 8 }}
-                  >
-                    I&rsquo;m wired to your wallet — your cards, your point balances, your spend
-                    history. Ask me which card to use, how to transfer points, or how to
-                    redeem for a specific trip.
-                    {!sessionId && (
-                      <> Add cards in the <Link href="/wallet" style={{ color: "var(--accent)" }}>Wallet</Link> tab for personalised advice.</>
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Suggestion ledger */}
-            <div style={{ borderTop: "1px solid var(--ink)" }}>
-              <div className="eyebrow" style={{ padding: "16px 4px 12px" }}>Try one of these</div>
-              {SUGGESTIONS.map((s, i) => (
-                <button
-                  key={s.label}
-                  type="button"
-                  onClick={() => handleSend(s.prompt)}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    display: "grid",
-                    gridTemplateColumns: "40px 1fr 60px",
-                    alignItems: "center",
-                    gap: 16,
-                    padding: "16px 4px",
-                    borderTop: i > 0 ? "1px solid var(--rule)" : "1px solid var(--rule)",
-                    background: "transparent",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "background 160ms",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-fill)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.10em" }}>
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="serif" style={{ fontSize: 17, fontStyle: "italic", color: "var(--ink-2)" }}>
-                    {s.label}
-                  </span>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--accent)", textAlign: "right", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                    Ask →
-                  </span>
-                </button>
-              ))}
-            </div>
-          </>
+              I&rsquo;m wired to your wallet — your cards, your point balances, your spend history.
+              Ask me which card to use, how to transfer points, or how to redeem for a specific trip.
+              {!sessionId && (
+                <> Add cards in the <Link href="/wallet" style={{ color: "var(--accent)" }}>Wallet</Link> tab for personalised advice.</>
+              )}
+            </p>
+          </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-                  width: "100%",
-                }}
-              >
-                <div
-                  style={{
-                    minWidth: 0,
-                    maxWidth: m.role === "user" ? "min(560px, 80%)" : "100%",
-                    // Padding in one shorthand per role — prior code combined a
-                    // shorthand with `paddingLeft/Top: undefined` for non-assistant,
-                    // which React serialised to "" and reset those longhands to 0,
-                    // so user bubbles ended up flush-left against the rounded edge.
-                    padding: m.role === "user" ? "12px 16px" : "14px 0 0 18px",
-                    borderRadius: m.role === "user" ? 14 : 0,
-                    background: m.role === "user" ? "var(--accent)" : "transparent",
-                    color: m.role === "user" ? "#fff" : "var(--ink)",
-                    borderTop: m.role === "assistant" ? "1px solid var(--rule)" : "none",
-                    borderLeft: m.role === "assistant" ? "2px solid var(--accent)" : "none",
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {m.role === "assistant" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div
+                    style={{
+                      maxWidth: "80%",
+                      minWidth: 0,
+                      padding: "13px 17px",
+                      borderRadius: "16px 16px 4px 16px",
+                      background: "var(--accent)",
+                      color: "#fff",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    <p
+                      className="sans"
+                      style={{ fontSize: 15, lineHeight: 1.5, margin: 0, color: "#fff", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}
+                    >
+                      {m.content}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div key={i} style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+                  <Image
+                    src={LOGO}
+                    alt="Maple"
+                    width={30}
+                    height={30}
+                    style={{ objectFit: "contain", flexShrink: 0, marginTop: 2 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       className="sans chat-message"
                       style={{ fontSize: 15, lineHeight: 1.65, maxWidth: "100%", overflowX: "auto" }}
                     >
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     </div>
-                  ) : (
-                    <p className="sans" style={{ fontSize: 14, lineHeight: 1.5, margin: 0, color: "#fff", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{m.content}</p>
-                  )}
+                    {m.result && <ResultGrid result={m.result} />}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
 
             {loading && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 0", borderLeft: "2px solid var(--accent)", paddingLeft: 18 }}>
-                {/* Always-present, animated "thinking" line so the wait reads as
-                   alive motion rather than a static stack of pills. */}
-                <ThinkingIndicator searching={searching} />
-                {/* Tool-call pills (when the model is using tools) fade in below. */}
-                {pills.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {pills.map((p) => (
-                      <div key={p.id} className="maple-pill-in">
-                        <ToolStatusPill pill={p} />
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+                <Image
+                  src={LOGO}
+                  alt="Maple"
+                  width={30}
+                  height={30}
+                  style={{ objectFit: "contain", flexShrink: 0, marginTop: 2 }}
+                />
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
+                  {/* Always-present, animated "thinking" line so the wait reads as
+                     alive motion rather than a static stack of pills. */}
+                  <ThinkingIndicator searching={searching} />
+                  {/* Tool-call pills (when the model is using tools) fade in below. */}
+                  {pills.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {pills.map((p) => (
+                        <div key={p.id} className="maple-pill-in">
+                          <ToolStatusPill pill={p} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -476,7 +660,7 @@ export default function ChatPage() {
             style={{
               marginTop: 22,
               border: "1px solid var(--accent)",
-              borderRadius: 14,
+              borderRadius: 16,
               padding: "22px 24px",
               background: "var(--accent-soft)",
               textAlign: "center",
@@ -509,154 +693,134 @@ export default function ChatPage() {
             </Link>
           </div>
         )}
-      </div>
 
-      {/* Input bar — STICKY (not fixed) so it lives in the page flow: it stays
-          pinned to the viewport bottom while scrolling, but (a) respects the
-          sidebar offset via <main>'s margin so its content centres under the chat
-          column instead of the whole viewport, and (b) releases at the very
-          bottom so the global footer below it is reachable. */}
-      <div
-        style={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 41,
-          // Opaque fill: the previous 90%-translucent color-mix relied on
-          // backdrop-filter to stay legible, but that is a no-op on iOS Safari,
-          // so the page content bled through the bar while scrolling.
-          background: "var(--paper)",
-          borderTop: "1px solid var(--rule)",
-          backdropFilter: "blur(20px) saturate(1.4)",
-        }}
-      >
-        <div style={{ maxWidth: 880, margin: "0 auto", padding: "14px clamp(20px, 3vw, 40px) 18px" }}>
-          {/* Research mode toggle + free-tier quota indicator */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setResearchMode(!researchMode)}
-              className="mono"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 11px",
-                borderRadius: 999,
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                background: researchMode ? "var(--accent-soft)" : "transparent",
-                color: researchMode ? "var(--accent)" : "var(--ink-3)",
-                border: `1px solid ${researchMode ? "var(--accent)" : "var(--rule)"}`,
-                cursor: "pointer",
-              }}
-            >
-              {researchMode ? "● " : ""}Research mode
-            </button>
-            {researchMode && (
-              <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
-                web sources cited
-              </span>
-            )}
-            {/* Soft free-tier indicator. Shows remaining count instead of
-                hard-disabling the input — user can still compose and only
-                hits friction at send time. Hidden for Pro members. */}
-            {!isPro && (
-              <span
-                className="mono"
-                style={{
-                  fontSize: 10,
-                  letterSpacing: "0.10em",
-                  textTransform: "uppercase",
-                  color: rateLimited ? "var(--accent)" : "var(--ink-3)",
-                  marginLeft: "auto",
-                }}
-              >
-                {rateLimited ? (
-                  <>
-                    Free limit reached ·{" "}
-                    <Link href="/pricing" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-                      Upgrade for unlimited
-                    </Link>
-                  </>
-                ) : isAuthenticated ? (
-                  <>Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month · upgrade for unlimited</>
-                ) : (
-                  <>
-                    Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month ·{" "}
-                    <Link href="/login?redirect=/chat" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-                      Sign in to save your chats
-                    </Link>
-                  </>
-                )}
-              </span>
-            )}
-          </div>
-
+        {/* ── Floating input bar — sticky, pinned to viewport bottom ── */}
+        <div style={{ position: "sticky", bottom: 16, marginTop: "auto", paddingTop: 26, paddingBottom: 16, zIndex: 41 }}>
           <div
             style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 12,
-              padding: "12px 14px",
-              borderRadius: 12,
-              background: "var(--surface)",
               border: `1px solid ${researchMode ? "var(--accent)" : "var(--rule-strong)"}`,
+              borderRadius: 16,
+              background: "var(--surface)",
+              boxShadow: "var(--shadow-2)",
+              padding: "14px 16px",
             }}
           >
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={rateLimited && !isPro ? "Free monthly limit reached — upgrade for unlimited" : "Ask the editor about your rewards…"}
-              rows={1}
-              disabled={loading}
-              className="serif"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                width: "100%",
-                background: "transparent",
-                resize: "none",
-                outline: "none",
-                border: "none",
-                fontSize: 16,
-                color: "var(--ink)",
-                fontStyle: "italic",
-                maxHeight: 120,
-                padding: 0,
-                lineHeight: 1.4,
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-                wordBreak: "break-word",
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => handleSend()}
-              disabled={!input.trim() || loading || (rateLimited && !isPro)}
-              style={{
-                width: 44,
-                height: 44,
-                flexShrink: 0,
-                borderRadius: 8,
-                background: input.trim() && !loading ? "var(--accent)" : "var(--surface-2)",
-                color: input.trim() && !loading ? "#fff" : "var(--ink-3)",
-                border: "none",
-                cursor: input.trim() && !loading ? "pointer" : "not-allowed",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              aria-label="Send"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={rateLimited && !isPro ? "Free monthly limit reached — upgrade for unlimited" : "Ask Maple anything about your rewards…"}
+                rows={1}
+                disabled={loading}
+                className="serif"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  width: "100%",
+                  background: "transparent",
+                  resize: "none",
+                  outline: "none",
+                  border: "none",
+                  fontSize: 16,
+                  color: "var(--ink)",
+                  fontStyle: "italic",
+                  maxHeight: 120,
+                  padding: 0,
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => handleSend()}
+                disabled={!input.trim() || loading || (rateLimited && !isPro)}
+                style={{
+                  width: 42,
+                  height: 42,
+                  flexShrink: 0,
+                  borderRadius: 11,
+                  background: input.trim() && !loading ? "var(--accent)" : "var(--surface-2)",
+                  color: input.trim() && !loading ? "#fff" : "var(--ink-3)",
+                  border: "none",
+                  cursor: input.trim() && !loading ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: input.trim() && !loading ? "var(--shadow-accent-glow)" : "none",
+                  transition: "background 160ms, box-shadow 160ms",
+                }}
+                aria-label="Send"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Research-mode toggle (only pill) + quiet free-tier quota indicator. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setResearchMode(!researchMode)}
+                className="mono"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "5px 11px",
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  background: researchMode ? "var(--accent-soft)" : "transparent",
+                  color: researchMode ? "var(--accent)" : "var(--ink-3)",
+                  border: `1px solid ${researchMode ? "var(--accent)" : "var(--rule)"}`,
+                  cursor: "pointer",
+                  transition: "background 160ms, color 160ms, border-color 160ms",
+                }}
+              >
+                {researchMode ? "● " : ""}Research mode
+              </button>
+              {/* Soft free-tier indicator. Shows remaining count instead of
+                  hard-disabling the input — user can still compose and only
+                  hits friction at send time. Hidden for Pro members. */}
+              {!isPro && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: rateLimited ? "var(--accent)" : "var(--ink-3)",
+                    marginLeft: "auto",
+                  }}
+                >
+                  {rateLimited ? (
+                    <>
+                      Free limit reached ·{" "}
+                      <Link href="/pricing" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                        Upgrade for unlimited
+                      </Link>
+                    </>
+                  ) : isAuthenticated ? (
+                    <>Free tier · {FREE_LIMITS.maxChatMessagesPerMonth} messages/month</>
+                  ) : (
+                    <>
+                      Free tier ·{" "}
+                      <Link href="/login?redirect=/chat" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                        Sign in to save your chats
+                      </Link>
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
           </div>
 
           <p className="mono" style={{ fontSize: 9, textAlign: "center", marginTop: 8, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
@@ -691,8 +855,7 @@ export default function ChatPage() {
           from { opacity: 0; transform: translateY(4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        /* Loading dots inside in-flight tool-status pills. Was referenced by
-           the Dot component but never defined — the dots sat motionless. */
+        /* Loading dots inside in-flight tool-status pills. */
         @keyframes chat-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
           40%           { transform: translateY(-4px); opacity: 1; }
@@ -707,6 +870,33 @@ export default function ChatPage() {
         .maple-thinking-text { display: inline-block; animation: maple-fade-in 420ms ease both; }
         .maple-pill-in { animation: maple-fade-in 320ms ease both; }
       `}</style>
+    </div>
+  );
+}
+
+// 3-up structured result grid: Points / Cash / Value-per-pt. Rendered only when
+// a `result` event arrived for the assistant message. value_per_pt_cents is
+// ALREADY cents-per-point — render as-is with a ¢ suffix (do not transform).
+function ResultGrid({ result }: { result: ChatResult }) {
+  const pointsLabel = Number.isFinite(result.points) ? result.points.toLocaleString("en-CA") : "—";
+  const cashLabel = Number.isFinite(result.cash_cad)
+    ? `$${result.cash_cad.toLocaleString("en-CA", { maximumFractionDigits: 0 })}`
+    : "—";
+  const valueLabel = Number.isFinite(result.value_per_pt_cents) ? `${result.value_per_pt_cents}¢` : "—";
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14 }}>
+      <div style={{ border: "1px solid var(--rule)", borderRadius: 12, padding: "14px 16px", background: "var(--card-fill)" }}>
+        <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Points</div>
+        <div className="display" style={{ fontSize: 24, marginTop: 4 }}>{pointsLabel}</div>
+      </div>
+      <div style={{ border: "1px solid var(--rule)", borderRadius: 12, padding: "14px 16px", background: "var(--card-fill)" }}>
+        <div className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Cash</div>
+        <div className="display" style={{ fontSize: 24, marginTop: 4 }}>{cashLabel}</div>
+      </div>
+      <div style={{ border: "1px solid var(--gain)", borderRadius: 12, padding: "14px 16px", background: "var(--gain-soft)" }}>
+        <div className="mono" style={{ fontSize: 9, color: "var(--gain)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Value / pt</div>
+        <div className="display" style={{ fontSize: 24, marginTop: 4, color: "var(--gain)" }}>{valueLabel}</div>
+      </div>
     </div>
   );
 }

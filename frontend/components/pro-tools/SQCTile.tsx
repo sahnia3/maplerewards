@@ -22,8 +22,10 @@ export function SQCTile({ sessionId, isReady }: Props) {
   // ⇒ omitted from the request ⇒ backend defaults to 0 (legacy projection).
   const [flightSpend, setFlightSpend] = useState("");
   const [flightSqc, setFlightSqc] = useState("");
+  // Optional target-tier selector. null ⇒ legacy next-tier projection.
+  const [targetTier, setTargetTier] = useState<string | null>(null);
 
-  function load(opts?: { flightSqc?: number; flightSpendCad?: number }) {
+  function load(opts?: { flightSqc?: number; flightSpendCad?: number; targetTier?: string }) {
     if (!sessionId) return;
     setLoading(true);
     setErr(null);
@@ -40,14 +42,25 @@ export function SQCTile({ sessionId, isReady }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isReady]);
 
-  function applyFlightInputs(e: React.FormEvent) {
-    e.preventDefault();
+  function currentOpts(): { flightSqc?: number; flightSpendCad?: number; targetTier?: string } {
     const spend = flightSpend.trim() === "" ? undefined : Math.max(0, Number(flightSpend));
     const sqc = flightSqc.trim() === "" ? undefined : Math.max(0, Math.round(Number(flightSqc)));
-    load({
+    return {
       flightSpendCad: spend != null && Number.isFinite(spend) ? spend : undefined,
       flightSqc: sqc != null && Number.isFinite(sqc) ? sqc : undefined,
-    });
+      targetTier: targetTier ?? undefined,
+    };
+  }
+
+  function applyFlightInputs(e: React.FormEvent) {
+    e.preventDefault();
+    load(currentOpts());
+  }
+
+  function pickTarget(tier: string | null) {
+    setTargetTier(tier);
+    const opts = currentOpts();
+    load({ ...opts, targetTier: tier ?? undefined });
   }
 
   const tierProgress = proj && proj.tiers.length > 0
@@ -76,10 +89,13 @@ export function SQCTile({ sessionId, isReady }: Props) {
           The 2026 SQC framework collapsed three legacy metrics into one. Maple projects your year-end tier from current spend rate.
         </p>
 
-        {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Projecting…</p>}
+        {/* Only blank the tile on the FIRST load. A tier-change / recalc refetch
+            keeps the existing projection visible (with a subtle "updating" hint)
+            so the controls feel responsive instead of flashing empty. */}
+        {loading && !proj && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Projecting…</p>}
         {err && <p className="serif" style={{ fontStyle: "italic", color: "var(--loss)", fontSize: 14 }}>{err}</p>}
 
-        {!loading && !err && proj && proj.wallet_has_no_aeroplan_cards && (
+        {!err && proj && proj.wallet_has_no_aeroplan_cards && (
           <EmptyState
             icon={Plane}
             title="No Aeroplan-earning cards yet"
@@ -88,8 +104,8 @@ export function SQCTile({ sessionId, isReady }: Props) {
           />
         )}
 
-        {!loading && !err && proj && !proj.wallet_has_no_aeroplan_cards && (
-          <>
+        {!err && proj && !proj.wallet_has_no_aeroplan_cards && (
+          <div style={{ opacity: loading ? 0.55 : 1, transition: "opacity 160ms" }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
               <div>
                 <span className="eyebrow">{proj.year} year-to-date</span>
@@ -104,9 +120,62 @@ export function SQCTile({ sessionId, isReady }: Props) {
               )}
             </div>
 
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+                Target tier
+              </span>
+              <div style={{ display: "inline-flex", gap: 4, padding: 4, borderRadius: 11, background: "var(--surface)", border: "1px solid var(--rule)" }}>
+                {(["25K", "35K", "50K"] as const).map((t) => {
+                  const active = targetTier === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => pickTarget(active ? null : t)}
+                      disabled={loading}
+                      className="mono"
+                      style={{
+                        padding: "6px 13px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: active ? "var(--accent)" : "transparent",
+                        color: active ? "#fff" : "var(--ink-2)",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: "0.04em",
+                        cursor: loading ? "default" : "pointer",
+                        transition: "background 160ms, color 160ms",
+                      }}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={{ height: 6, background: "var(--rule)", borderRadius: 999, overflow: "hidden", marginBottom: 14 }}>
               <div style={{ width: `${tierProgress}%`, height: "100%", background: "var(--accent)", transition: "width 280ms" }} />
             </div>
+
+            {targetTier && proj.target_tier && (
+              proj.target_tier_already_met ? (
+                <p className="serif" style={{ marginBottom: 14, fontSize: 14, fontStyle: "italic", color: "var(--gain)", borderLeft: "2px solid var(--gain)", paddingLeft: 10 }}>
+                  You&apos;ve already cleared <strong style={{ color: "var(--ink)", fontStyle: "normal" }}>{proj.target_tier}</strong> on SQC.
+                </p>
+              ) : (
+                <div className="protool-stat-row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--accent)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)", marginBottom: 14 }}>
+                  <Stat label="Target tier" value={proj.target_tier} />
+                  <Stat label="SQC to target" value={(proj.sqc_to_target_tier ?? 0).toLocaleString("en-CA")} />
+                  <Stat label="Spend to target" value={proj.spend_to_target_tier != null ? fmtCAD(proj.spend_to_target_tier) : "—"} last />
+                </div>
+              )
+            )}
+            {targetTier && proj.best_card_for_target && !proj.target_tier_already_met && (
+              <p className="serif" style={{ marginTop: -2, marginBottom: 14, fontSize: 13, color: "var(--ink-2)" }}>
+                Fastest to the target tier: <strong style={{ color: "var(--ink)" }}>{proj.best_card_for_target}</strong>
+              </p>
+            )}
 
             {proj.next_tier && proj.sqc_to_next_tier != null && (
               <div className="protool-stat-row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", border: "1px solid var(--rule)", borderRadius: 10, overflow: "hidden", background: "var(--card-fill)" }}>
@@ -209,7 +278,7 @@ export function SQCTile({ sessionId, isReady }: Props) {
                 ))}
               </div>
             )}
-          </>
+          </div>
         )}
       </PaperTile>
     </section>

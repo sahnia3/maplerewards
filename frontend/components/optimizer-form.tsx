@@ -444,7 +444,7 @@ export function OptimizerForm() {
           </div>
 
           {/* Merchant network constraint */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
             <span className="eyebrow">Merchant:</span>
             <select
               value={merchant}
@@ -462,6 +462,11 @@ export function OptimizerForm() {
                 border: `1px solid ${merchant ? "var(--accent)" : "var(--rule)"}`,
                 borderRadius: 8,
                 cursor: "pointer",
+                // The longest option ("Costco (in-warehouse) · MC only") sizes the
+                // select wider than a phone viewport; cap + shrink so it never
+                // clips off the right edge on mobile.
+                maxWidth: "100%",
+                minWidth: 0,
               }}
             >
               <option value="">Any merchant</option>

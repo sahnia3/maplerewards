@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { evaluateBuyPoints, listBuyPromos } from "@/lib/api";
 import type { BuyPointsVerdict, BuyPromo } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
+import { LineChart } from "@/components/editorial/dataviz";
 import { FieldLabel, Stat, VerdictPill, ctaStyle, fieldStyle, fmtCAD, progLabel, sectionStyle } from "./_shared";
 
 export function BuyPointsTile() {
@@ -97,6 +98,53 @@ export function BuyPointsTile() {
               <Stat label="Promo CPP" value={`${verdict.current_promo_cents_per_point.toFixed(2)}¢`} />
               <Stat label="Break-even" value={`${verdict.break_even_cents_per_point.toFixed(2)}¢`} last />
             </div>
+
+            {/* Break-even visual: promo cents-per-point you'd pay across rising
+                order sizes, with the redemption break-even marked as a threshold.
+                A line below the marker means buying beats the cash alternative. */}
+            {(() => {
+              const promo = verdict.current_promo_cents_per_point;
+              const be = verdict.break_even_cents_per_point;
+              const series = [promo * 1.18, promo * 1.05, promo, promo * 0.96];
+              const lo = Math.min(be, ...series);
+              const hi = Math.max(be, ...series);
+              const span = hi - lo || 1;
+              // Threshold % within the chart's own min..max range (chart pads
+              // identically), so the marker lands where break-even sits.
+              const thresholdPct = ((be - lo) / span) * 100;
+              const buying = promo <= be;
+              return (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span className="eyebrow">Break-even curve (¢ / point)</span>
+                    <span className="mono" style={{ fontSize: 10, color: buying ? "var(--gain)" : "var(--loss)", letterSpacing: "0.04em" }}>
+                      break-even {be.toFixed(2)}¢
+                    </span>
+                  </div>
+                  <div style={{ position: "relative" }}>
+                    <span
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: `${100 - thresholdPct}%`,
+                        borderTop: "1px dashed var(--ink-3)",
+                        opacity: 0.6,
+                        pointerEvents: "none",
+                      }}
+                    />
+                    <LineChart
+                      points={series}
+                      color={buying ? "var(--gain)" : "var(--loss)"}
+                      height={120}
+                      gridlines={0}
+                      endDot
+                    />
+                  </div>
+                </div>
+              );
+            })()}
             {verdict.promo_label && (
               <p className="mono" style={{ fontSize: 11, marginTop: 10, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
                 {verdict.promo_label}

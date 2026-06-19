@@ -8,6 +8,7 @@ import type {
   SpendEntry,
   SpendLogRequest,
   SpendStats,
+  PointsSeries,
   WalletSummary,
   CardDetail,
   LoyaltyProgram,
@@ -267,7 +268,10 @@ export async function listCategories(): Promise<Category[]> {
 // ── Wallet ───────────────────────────────────────────────────────────────────
 
 export async function getWallet(sessionId: string): Promise<UserCard[]> {
-  return request<UserCard[]>(`/wallet/${sessionId}`);
+  // The backend returns JSON `null` for an empty wallet (Go nil slice), but the
+  // contract here is an array. Coalesce so every consumer can safely read
+  // `.length`/`.map` without a null guard.
+  return (await request<UserCard[]>(`/wallet/${sessionId}`)) ?? [];
 }
 
 export async function addCardToWallet(sessionId: string, cardId: string): Promise<void> {
@@ -343,6 +347,15 @@ export async function getSpendStats(sessionId: string): Promise<SpendStats> {
   return request<SpendStats>(`/wallet/${sessionId}/spend/stats`);
 }
 
+export async function getPointsSeries(
+  sessionId: string,
+  months = 12
+): Promise<PointsSeries> {
+  return request<PointsSeries>(
+    `/wallet/${sessionId}/spend/points-series?months=${months}`
+  );
+}
+
 // ── Wallet Summary ────────────────────────────────────────────────────────────
 
 export async function getWalletSummary(sessionId: string): Promise<WalletSummary> {
@@ -407,8 +420,21 @@ export type ChatStreamEvent =
   | { type: "tool_start"; id: string; name: string; args: unknown }
   | { type: "tool_done"; id: string; name: string; summary: string }
   | { type: "round_end"; round: number; has_more: boolean }
+  | { type: "result"; points: number; cash_cad: number; value_per_pt_cents: number; label: string }
   | { type: "done"; reply: string; history: ChatMessage[] }
   | { type: "error"; message: string };
+
+/**
+ * ChatResult — structured headline redemption surfaced by the backend "result"
+ * SSE event. value_per_pt_cents is ALREADY in cents-per-point (e.g. 2.1 = 2.1¢/pt);
+ * render as-is with a ¢/pt suffix — do not multiply or divide.
+ */
+export interface ChatResult {
+  points: number;
+  cash_cad: number;
+  value_per_pt_cents: number;
+  label: string;
+}
 
 /**
  * chatStream — POST to /chat/stream and yield events as the backend tool-use
@@ -730,11 +756,12 @@ import type { SQCProjection } from "./types";
 
 export async function getSQCProjection(
   sessionId: string,
-  opts?: { flightSqc?: number; flightSpendCad?: number },
+  opts?: { flightSqc?: number; flightSpendCad?: number; targetTier?: string },
 ): Promise<SQCProjection> {
   const qs = new URLSearchParams();
   if (opts?.flightSqc != null) qs.set("flight_sqc", String(opts.flightSqc));
   if (opts?.flightSpendCad != null) qs.set("flight_spend_cad", String(opts.flightSpendCad));
+  if (opts?.targetTier) qs.set("target_tier", opts.targetTier);
   const tail = qs.toString() ? `?${qs.toString()}` : "";
   return request<SQCProjection>(`/wallet/${sessionId}/sqc-projection${tail}`);
 }
@@ -807,7 +834,7 @@ export async function getExpiryGuardian(sessionId: string): Promise<ExpiryReport
 import type {
   AwardWatch, CreateAwardWatchRequest,
   BuyPromo, BuyPointsRequest, BuyPointsVerdict,
-  DevaluationEvent,
+  DevaluationEvent, DevaluationProjection, DevaluationTrendPoint, DevaluationAlert,
   Merchant, StackRecommendation,
   CardValueSummary,
   TangerineCategory,
@@ -846,6 +873,25 @@ export async function evaluateBuyPoints(req: BuyPointsRequest): Promise<BuyPoint
 export async function listDevaluations(sessionId?: string): Promise<DevaluationEvent[]> {
   const path = sessionId ? `/wallet/${sessionId}/devaluations` : "/devaluations";
   return request<DevaluationEvent[]>(path);
+}
+
+export async function getDevaluationProjections(sessionId: string): Promise<DevaluationProjection[]> {
+  return request<DevaluationProjection[]>(`/wallet/${sessionId}/devaluation-projections`);
+}
+
+export async function listDevaluationAlerts(sessionId: string): Promise<DevaluationAlert[]> {
+  return request<DevaluationAlert[]>(`/wallet/${sessionId}/devaluation-alerts`);
+}
+
+export async function setDevaluationAlert(sessionId: string, programSlug: string): Promise<DevaluationAlert> {
+  return request<DevaluationAlert>(`/wallet/${sessionId}/devaluation-alerts`, {
+    method: "PUT",
+    body: JSON.stringify({ program_slug: programSlug }),
+  });
+}
+
+export async function removeDevaluationAlert(sessionId: string, programSlug: string): Promise<void> {
+  return request<void>(`/wallet/${sessionId}/devaluation-alerts/${encodeURIComponent(programSlug)}`, { method: "DELETE" });
 }
 
 // ── Triple-stack calculator ──────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { getCardCredits, recordCreditRedemption, getWallet, createCardCredit } f
 import type { CardCreditStatus, UserCard } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { Donut } from "@/components/editorial/dataviz";
 import { fmtCAD, sectionStyle } from "./_shared";
 
 interface Props {
@@ -78,6 +79,8 @@ export function CreditsTile({ sessionId, isReady }: Props) {
   }
 
   const totalUnused = credits.reduce((s, c) => s + (c.status === "unused" ? c.value_cad : c.remaining), 0);
+  const totalIssued = credits.reduce((s, c) => s + c.value_cad, 0);
+  const unclaimedPct = totalIssued > 0 ? Math.min(100, (totalUnused / totalIssued) * 100) : 0;
   const upcoming = credits.filter((c) => c.days_to_renewal != null && c.days_to_renewal <= 60);
 
   return (
@@ -161,17 +164,21 @@ export function CreditsTile({ sessionId, isReady }: Props) {
 
         {!loading && !err && credits.length > 0 && (
           <>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 14 }}>
               <div>
                 <span className="eyebrow">Unused credit value</span>
-                <div className="display" style={{ fontSize: 36, color: "var(--gain)", lineHeight: 1, marginTop: 4 }}>
+                <div className="display" style={{ fontSize: 40, color: "var(--gold)", lineHeight: 1, marginTop: 4 }}>
                   {fmtCAD(totalUnused)}
                 </div>
-              </div>
-              {upcoming.length > 0 && (
-                <div className="mono" style={{ fontSize: 12, color: "var(--accent)", letterSpacing: "0.04em" }}>
-                  {upcoming.length} renewal{upcoming.length === 1 ? "" : "s"} in next 60 days
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 5 }}>
+                  of {fmtCAD(totalIssued)} issued · {Math.round(unclaimedPct)}% still unclaimed
+                  {upcoming.length > 0 && (
+                    <span style={{ color: "var(--accent)" }}> · {upcoming.length} renewal{upcoming.length === 1 ? "" : "s"} in 60 days</span>
+                  )}
                 </div>
+              </div>
+              {totalIssued > 0 && (
+                <Donut pct={unclaimedPct} color="var(--gold)" centerLabel={`${Math.round(unclaimedPct)}%`} />
               )}
             </div>
 

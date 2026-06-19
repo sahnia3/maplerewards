@@ -47,13 +47,18 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const [autoplay, setAutoplay] = useState(false);
   // Ensures the auto-fire gate evaluates at most once per session.
   const armedRef = useRef(false);
+  // Mirror of stepIndex so next/prev can read the current step without putting
+  // side effects inside a setState updater (which runs during render).
+  const stepRef = useRef(0);
+  useEffect(() => {
+    stepRef.current = stepIndex;
+  }, [stepIndex]);
 
   const start = useCallback(() => {
     setInvite(false);
     setStepIndex(0);
     setActive(true);
-    router.push(TOUR_STEPS[0].route);
-  }, [router]);
+  }, []);
 
   const finish = useCallback(() => {
     setActive(false);
@@ -67,36 +72,32 @@ export function TourProvider({ children }: { children: ReactNode }) {
     markTourSeen(user?.id);
   }, [user]);
 
-  const goTo = useCallback(
-    (i: number) => {
-      const idx = Math.max(0, Math.min(LAST, i));
-      setStepIndex(idx);
-      router.push(TOUR_STEPS[idx].route);
-    },
-    [router],
-  );
+  const goTo = useCallback((i: number) => {
+    setStepIndex(Math.max(0, Math.min(LAST, i)));
+  }, []);
 
   const next = useCallback(() => {
-    setStepIndex((i) => {
-      if (i >= LAST) {
-        finish();
-        return i;
-      }
-      const ni = i + 1;
-      router.push(TOUR_STEPS[ni].route);
-      return ni;
-    });
-  }, [router, finish]);
+    if (stepRef.current >= LAST) {
+      finish();
+      return;
+    }
+    setStepIndex(stepRef.current + 1);
+  }, [finish]);
 
   const prev = useCallback(() => {
-    setStepIndex((i) => {
-      const pi = Math.max(0, i - 1);
-      router.push(TOUR_STEPS[pi].route);
-      return pi;
-    });
-  }, [router]);
+    setStepIndex(Math.max(0, stepRef.current - 1));
+  }, []);
 
   const toggleAutoplay = useCallback(() => setAutoplay((a) => !a), []);
+
+  // Navigate to the active step's route in an EFFECT — never inside render or a
+  // setState updater (that triggered "Cannot update Router while rendering
+  // TourProvider"). Same-route steps (the Home tour is all "/") are a no-op.
+  useEffect(() => {
+    if (!active) return;
+    const route = TOUR_STEPS[stepIndex]?.route;
+    if (route && route !== pathname) router.push(route);
+  }, [active, stepIndex, pathname, router]);
 
   // ── Auto-fire gate ──────────────────────────────────────────────────────
   // Replay (from Settings) fires immediately. Otherwise: a freshly-created
