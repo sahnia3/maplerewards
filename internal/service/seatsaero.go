@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,20 +13,31 @@ import (
 	"time"
 )
 
+// ErrSeatsAeroQuotaExhausted is returned by SearchAwards when the Seats.aero
+// monthly call budget has been spent (or the quota system is degraded and the
+// call fails closed). The caller in award_search degrades gracefully — it logs
+// and falls back to YAML estimates without surfacing the error.
+var ErrSeatsAeroQuotaExhausted = errors.New("seats.aero monthly quota exhausted")
+
 // SeatsAeroService calls the Seats.aero Partner API for live award availability.
 // It returns mileage costs, seat counts, and airline info per loyalty program.
+// Seats.aero is a paid plan ($9.99/mo), so calls are metered through the shared
+// quota client (denial-of-wallet control) the same way SerpAPI/Apify are.
 type SeatsAeroService struct {
 	apiKey string
 	client *http.Client
+	quota  QuotaSpender
 }
 
-// NewSeatsAeroService creates the Seats.aero service.
-func NewSeatsAeroService(apiKey string) *SeatsAeroService {
+// NewSeatsAeroService creates the Seats.aero service. quotaClient may be nil in
+// unit tests; when nil the quota check is skipped (treated as unlimited).
+func NewSeatsAeroService(apiKey string, quotaClient QuotaSpender) *SeatsAeroService {
 	return &SeatsAeroService{
 		apiKey: apiKey,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		quota: quotaClient,
 	}
 }
 
@@ -38,9 +50,9 @@ func (s *SeatsAeroService) IsAvailable() bool {
 
 type seatsAeroResponse struct {
 	Data    []seatsAeroAvailability `json:"data"`
-	Count   int                    `json:"count"`
-	HasMore bool                   `json:"hasMore"`
-	Cursor  int                    `json:"cursor"`
+	Count   int                     `json:"count"`
+	HasMore bool                    `json:"hasMore"`
+	Cursor  int                     `json:"cursor"`
 }
 
 type seatsAeroAvailability struct {
@@ -49,10 +61,10 @@ type seatsAeroAvailability struct {
 	Date  string         `json:"Date"` // "YYYY-MM-DD"
 
 	// Per-cabin availability
-	YAvailable bool   `json:"YAvailable"`
-	WAvailable bool   `json:"WAvailable"`
-	JAvailable bool   `json:"JAvailable"`
-	FAvailable bool   `json:"FAvailable"`
+	YAvailable bool `json:"YAvailable"`
+	WAvailable bool `json:"WAvailable"`
+	JAvailable bool `json:"JAvailable"`
+	FAvailable bool `json:"FAvailable"`
 
 	// Per-cabin mileage costs (strings — e.g. "30000" or "")
 	YMileageCost string `json:"YMileageCost"`
@@ -78,7 +90,7 @@ type seatsAeroAvailability struct {
 	JDirect bool `json:"JDirect"`
 	FDirect bool `json:"FDirect"`
 
-	Source    string `json:"Source"`    // loyalty program (e.g. "aeroplan")
+	Source    string `json:"Source"` // loyalty program (e.g. "aeroplan")
 	UpdatedAt string `json:"UpdatedAt"`
 }
 
@@ -104,6 +116,25 @@ func (s *SeatsAeroService) SearchAwards(
 ) ([]AwardItem, error) {
 	if !s.IsAvailable() {
 		return nil, fmt.Errorf("SEATSAERO_API_KEY not configured")
+	}
+
+	// Paid-API spend gate — only when wired in. A nil client means tests/dev
+	// override. FAILS CLOSED: a Redis/quota error denies the paid call (it is
+	// surfaced as exhausted=true), so a Redis outage can never uncap Seats.aero
+	// spend. award_search treats ErrSeatsAeroQuotaExhausted as a soft failure
+	// and falls back to YAML estimates, so this degrades gracefully.
+	if s.quota != nil {
+		remaining, exhausted, err := s.quota.SpendTier(ctx, "seatsaero", quotaTierFromCtx(ctx))
+		if err != nil {
+			slog.Warn("[seats.aero] quota system degraded; denying paid call (fail-closed)", "err", err)
+			return nil, ErrSeatsAeroQuotaExhausted
+		}
+		if exhausted {
+			slog.Warn("[seats.aero] monthly quota exhausted; skipping HTTP call",
+				"remaining", remaining)
+			return nil, ErrSeatsAeroQuotaExhausted
+		}
+		slog.Info("[seats.aero] quota debited", "remaining", remaining)
 	}
 
 	start := time.Now()
@@ -147,7 +178,7 @@ func (s *SeatsAeroService) SearchAwards(
 	if err != nil {
 		return nil, fmt.Errorf("seats.aero API call: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
+	defer resp.Body.Close()                  //nolint:errcheck // close on read-only response body
 	respBody, _ := readCappedBody(resp.Body) // 16 MiB cap — guard against a huge/malicious upstream body
 
 	if resp.StatusCode != http.StatusOK {

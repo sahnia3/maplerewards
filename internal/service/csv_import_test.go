@@ -79,9 +79,9 @@ func TestCSVImport_DateFormats(t *testing.T) {
 
 func TestCSVImport_MoneyFormats(t *testing.T) {
 	cases := []struct {
-		in       string
-		want     float64
-		wantCcy  string
+		in      string
+		want    float64
+		wantCcy string
 	}{
 		{"$1,234.56", 1234.56, ""},
 		{"1234.56", 1234.56, ""},
@@ -206,6 +206,9 @@ func (m *csvSpendRepo) ListSpendEntries(context.Context, string, int, int) ([]mo
 }
 func (m *csvSpendRepo) GetSpendStats(context.Context, string) (*model.SpendStats, error) {
 	return &model.SpendStats{}, nil
+}
+func (m *csvSpendRepo) GetPointsSeries(context.Context, string, int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
 }
 
 // csvWalletRepo: a session that owns exactly csvTestCard.

@@ -121,6 +121,26 @@ type claudeToolUseResponse struct {
 	} `json:"error"`
 }
 
+// ── Self-check (anti-hallucination) ──────────────────────────────────────────
+
+// evidenceItem is one captured tool result for the turn-scoped self-check
+// accumulator. payload is the raw JSON the tool returned — kept opaque so the
+// self-check stays generic across all tools (no typed parsing).
+type evidenceItem struct {
+	tool    string
+	payload json.RawMessage
+}
+
+// selfCheckTravelTools gates the self-check pass: only run the extra Haiku
+// verdict call when one of these live-data travel tools actually fired this
+// turn. web_search is intentionally excluded — it's generic and would trigger
+// the pass on non-travel answers.
+var selfCheckTravelTools = map[string]bool{
+	"search_award_space":  true,
+	"search_cash_flights": true,
+	"search_hotels":       true,
+}
+
 // ── Tool registry ────────────────────────────────────────────────────────────
 
 // ToolHandler executes a single tool call. The handler is given the user's
@@ -349,6 +369,45 @@ func summarizeToolResult(raw json.RawMessage) string {
 		return fmt.Sprintf("%.2f¢/pt", cpp)
 	}
 	return "Done"
+}
+
+// extractChatResult parses a concrete redemption out of a tool result so the
+// stream can emit a structured `result` event for the 3-up Points/Cash/Value
+// grid. Returns ok=false for tools/results that don't carry a complete
+// (points + cash + cpp) rated redemption — the grid then simply doesn't render.
+func extractChatResult(toolName string, out json.RawMessage) (map[string]any, bool) {
+	if toolName != "search_award_space" {
+		return nil, false
+	}
+	var probe struct {
+		Results []struct {
+			PointsCost   int     `json:"points_cost"`
+			CashPriceCAD float64 `json:"cash_price_cad"`
+			CPP          float64 `json:"cpp"`
+			ProgramName  string  `json:"program_name"`
+			Cabin        string  `json:"cabin"`
+			Rated        bool    `json:"rated"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		return nil, false
+	}
+	for _, r := range probe.Results {
+		if !r.Rated || r.PointsCost <= 0 {
+			continue
+		}
+		label := r.ProgramName
+		if r.Cabin != "" {
+			label = r.ProgramName + " · " + titleCabin(r.Cabin)
+		}
+		return map[string]any{
+			"points":             r.PointsCost,
+			"cash_cad":           r.CashPriceCAD,
+			"value_per_pt_cents": r.CPP,
+			"label":              label,
+		}, true
+	}
+	return nil, false
 }
 
 func pluralS(n int) string {
@@ -1665,6 +1724,16 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	totalTokens := 0 // actual input+output across all rounds — debits the real budget
 	finalText := strings.Builder{}
 
+	// Turn-scoped evidence for the post-turn self-check. evidence captures each
+	// tool's raw JSON result (appended from parallel goroutines, so guarded by
+	// evMu). travelToolRan gates the self-check to turns that actually consulted
+	// live award/flight/hotel data — it is set in the SYNCHRONOUS execute[]
+	// decision loop below, never inside a goroutine, to avoid racing the read
+	// after wg.Wait().
+	var evidence []evidenceItem
+	var evMu sync.Mutex
+	travelToolRan := false
+
 	for round := 0; round < maxRounds; round++ {
 		if emit != nil {
 			emit("round_start", map[string]any{"round": round + 1})
@@ -1768,6 +1837,11 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 			if paidTools[tc.Name] {
 				paidToolsUsed++
 			}
+			// Mark synchronously (not in the goroutine) that a live travel/award
+			// tool is about to run this turn — this is the self-check gate.
+			if selfCheckTravelTools[tc.Name] {
+				travelToolRan = true
+			}
 			execute[i] = true
 		}
 		var wg sync.WaitGroup
@@ -1805,6 +1879,15 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 				tctx, cancel := context.WithTimeout(ctx, 110*time.Second)
 				defer cancel()
 				out := s.tools.call(tctx, req.SessionID, isPro, tc.Name, tc.Input)
+				// Capture the raw result for the post-turn self-check. out is a
+				// shared buffer that may be reused, so copy it; the slice is
+				// written from parallel goroutines, so guard with evMu.
+				evMu.Lock()
+				evidence = append(evidence, evidenceItem{
+					tool:    tc.Name,
+					payload: append(json.RawMessage(nil), out...),
+				})
+				evMu.Unlock()
 				results[i] = claudeBlock{
 					Type:      "tool_result",
 					ToolUseID: tc.ID,
@@ -1817,6 +1900,9 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 						"name":    tc.Name,
 						"summary": summary,
 					})
+					if res, ok := extractChatResult(tc.Name, out); ok {
+						emit("result", res)
+					}
 				}
 			}(i, tc)
 		}
@@ -1835,6 +1921,15 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		reply = "I couldn't generate a response. Please try rephrasing the question."
 	}
 
+	// Anti-hallucination pass: cheap, time-bounded, FAIL-OPEN. Runs only when a
+	// live travel/award tool fired this turn and routing is enabled. It flags
+	// concrete dates/seats/prices/points/URLs in the reply that aren't backed by
+	// the captured tool evidence, then corrects or annotates the reply. Returns
+	// the reply unchanged on any skip or error — it must never break the turn.
+	// Mutating reply here lands the correction in both the persisted history
+	// (built below) and the handler's emit("done") (which reads ChatResponse).
+	reply = s.selfCheckReply(ctx, reply, evidence, travelToolRan)
+
 	// Build user-facing history (excludes tool turns).
 	history := make([]model.ChatMessage, 0, len(req.History)+2)
 	history = append(history, req.History...)
@@ -1851,6 +1946,160 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		History:    history,
 		TokensUsed: totalTokens,
 	}, nil
+}
+
+// selfCheckVerdict is the JSON contract the Haiku verdict call must return:
+//
+//	{"ok": bool, "issues": ["..."], "corrected_reply": "..."}
+//
+// ok=true means every concrete figure in the reply is backed by the evidence.
+type selfCheckVerdict struct {
+	OK             bool     `json:"ok"`
+	Issues         []string `json:"issues"`
+	CorrectedReply string   `json:"corrected_reply"`
+}
+
+// selfCheckUnverifiedNote is appended when the reply has unverifiable figures
+// but the verdict offered no usable corrected reply.
+const selfCheckUnverifiedNote = "\n\n⚠️ Some specific figures above could not be verified against live data — double-check before booking."
+
+// selfCheckReply runs a cheap, time-bounded, FAIL-OPEN anti-hallucination pass.
+// It asks Haiku to confirm that every concrete date / seat count / dollar
+// amount / points number / URL in reply appears in the turn's tool evidence,
+// and applies a correction (or appends a short unverified note) when it does
+// not. Every skip and every error returns the ORIGINAL reply unchanged — this
+// must never break the turn.
+func (s *AIService) selfCheckReply(ctx context.Context, reply string, evidence []evidenceItem, travelToolRan bool) string {
+	// Gating skips — return reply as-is, no network call.
+	switch {
+	case !travelToolRan:
+		return reply
+	case len(evidence) == 0:
+		return reply
+	case s.apiKey == "":
+		return reply
+	case s.fastModelID == "" || s.fastModelID == s.modelID:
+		// Routing disabled — don't pay for a second model call.
+		return reply
+	case len(reply) < 40:
+		// Trivially short replies carry no figures worth verifying.
+		return reply
+	}
+
+	// Build a size-capped evidence string from the raw tool payloads.
+	const maxEvidenceChars = 12_000
+	var sb strings.Builder
+	for _, e := range evidence {
+		sb.WriteString("[")
+		sb.WriteString(e.tool)
+		sb.WriteString("] ")
+		sb.Write(e.payload)
+		sb.WriteString("\n")
+	}
+	evidenceStr := truncateStr(sb.String(), maxEvidenceChars)
+
+	// Time-bound the verdict call. On timeout it fails open (~6s worst case).
+	vctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	sysBlocks := []systemBlock{{
+		Type: "text",
+		Text: "You are a strict fact-checker for a credit-card-rewards travel assistant. " +
+			"You are given an ASSISTANT REPLY and the raw EVIDENCE (tool results) it was based on. " +
+			"Flag ONLY concrete figures in the reply that DO NOT appear in the evidence: " +
+			"specific dates (e.g. 2026-01-14 or \"Jan 14\"), seat counts, dollar amounts ($X or X CAD), " +
+			"points/mileage numbers, and URLs. Treat equivalent phrasings of the same number as supported " +
+			"(e.g. 62,300 and 62.3K). Do NOT flag general advice, card names, or qualitative statements. " +
+			"Never invent new facts. Preserve everything else verbatim. " +
+			"Respond with ONLY a JSON object, no markdown fences, no prose: " +
+			"{\"ok\": boolean, \"issues\": [string], \"corrected_reply\": string}. " +
+			"If every concrete figure is supported, set ok=true and leave corrected_reply empty. " +
+			"If some are not supported, set ok=false, list them in issues, and put a fixed version " +
+			"(figures removed or hedged, everything else unchanged) in corrected_reply.",
+	}}
+	prompt := "ASSISTANT REPLY:\n" + reply + "\n\nEVIDENCE:\n" + evidenceStr
+	msgs := []claudeBlockMessage{{
+		Role:    "user",
+		Content: []claudeBlock{{Type: "text", Text: prompt}},
+	}}
+
+	resp, err := s.callClaudeWithTools(vctx, sysBlocks, nil, msgs, 1024, s.fastModelID)
+	if err != nil {
+		slog.Warn("[ai-tools] self-check call failed, keeping original reply", "error", err)
+		return reply
+	}
+
+	var raw strings.Builder
+	for _, b := range resp.Content {
+		if b.Type == "text" {
+			raw.WriteString(b.Text)
+		}
+	}
+	jsonStr := extractFirstJSONObject(raw.String())
+	if jsonStr == "" {
+		slog.Warn("[ai-tools] self-check returned no JSON, keeping original reply")
+		return reply
+	}
+	var verdict selfCheckVerdict
+	if err := json.Unmarshal([]byte(jsonStr), &verdict); err != nil {
+		slog.Warn("[ai-tools] self-check JSON parse failed, keeping original reply", "error", err)
+		return reply
+	}
+
+	if verdict.OK {
+		return reply
+	}
+
+	// Not OK. Prefer a usable corrected reply; fall back to a short note. Guard
+	// against a degenerate correction that collapses the answer (a too-short or
+	// near-empty rewrite is treated as no usable correction).
+	corrected := strings.TrimSpace(verdict.CorrectedReply)
+	if len(corrected) >= 40 && corrected != reply {
+		slog.Info("[ai-tools] self-check corrected reply", "issues", len(verdict.Issues))
+		return corrected
+	}
+	slog.Info("[ai-tools] self-check flagged unverified figures, appending note", "issues", len(verdict.Issues))
+	return reply + selfCheckUnverifiedNote
+}
+
+// extractFirstJSONObject returns the first balanced {...} object found in s, or
+// "" if none. Lets the self-check tolerate a model that wraps its JSON verdict
+// in prose or markdown fences. Brace counting is string-literal aware so braces
+// inside JSON string values don't unbalance the scan.
+func extractFirstJSONObject(s string) string {
+	start := strings.IndexByte(s, '{')
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	escaped := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
 }
 
 // callClaudeWithTools — block-based, tool-aware variant of callClaude.

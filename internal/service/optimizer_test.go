@@ -15,7 +15,7 @@ import (
 // ── Mock implementations ────────────────────────────────────────────────────
 
 type mockCardRepo struct {
-	categories  map[string]*model.Category // keyed by slug
+	categories  map[string]*model.Category       // keyed by slug
 	multipliers map[string]*model.CardMultiplier // keyed by "cardID:categoryID"
 	fallback    *model.CardMultiplier
 }
@@ -70,7 +70,7 @@ func (m *mockCardRepo) GetProgramBySlug(ctx context.Context, slug string) (*mode
 }
 
 type mockWalletRepo struct {
-	users map[string]*model.User     // keyed by sessionID
+	users map[string]*model.User      // keyed by sessionID
 	cards map[string][]model.UserCard // keyed by userID
 }
 
@@ -131,7 +131,7 @@ func (m *mockTransferRepo) GetTransferRoutes(ctx context.Context, fromProgramID 
 
 type mockSpendRepo struct {
 	monthlySpend map[string]map[string]float64 // "userID:cardID:month" -> {categoryID: amount}
-	capGroups    map[string]*model.CapGroup     // "cardID:categoryID" -> capGroup
+	capGroups    map[string]*model.CapGroup    // "cardID:categoryID" -> capGroup
 }
 
 func (m *mockSpendRepo) GetMonthlySpend(ctx context.Context, userID, cardID string, month time.Time) (map[string]float64, error) {
@@ -184,6 +184,10 @@ func (m *mockSpendRepo) ListSpendEntries(ctx context.Context, userID string, lim
 
 func (m *mockSpendRepo) GetSpendStats(ctx context.Context, userID string) (*model.SpendStats, error) {
 	return &model.SpendStats{}, nil
+}
+
+func (m *mockSpendRepo) GetPointsSeries(ctx context.Context, userID string, months int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
 }
 
 type mockCache struct {
@@ -543,8 +547,8 @@ func TestGetBestCard_TransferPartnerYieldsHigherValue(t *testing.T) {
 		},
 	}
 	ts.cardRepo.multipliers["c1:cat-g"] = &model.CardMultiplier{EarnRate: 5.0, EarnType: "points", FallbackEarnRate: 1.0}
-	ts.valuationRepo.cpps["amex-mr:base"] = 1.0     // Native: 1cpp
-	ts.valuationRepo.cpps["aeroplan:base"] = 2.5     // Transfer partner: 2.5cpp
+	ts.valuationRepo.cpps["amex-mr:base"] = 1.0  // Native: 1cpp
+	ts.valuationRepo.cpps["aeroplan:base"] = 2.5 // Transfer partner: 2.5cpp
 
 	ts.transferRepo.routes["lp-mr"] = []model.TransferPartner{
 		{
@@ -602,8 +606,8 @@ func TestGetBestCard_TransferNotUsedWhenNativeIsBetter(t *testing.T) {
 		},
 	}
 	ts.cardRepo.multipliers["c1:cat-g"] = &model.CardMultiplier{EarnRate: 5.0, EarnType: "points", FallbackEarnRate: 1.0}
-	ts.valuationRepo.cpps["amex-mr:base"] = 2.0   // Native: 2cpp
-	ts.valuationRepo.cpps["bad-prog:base"] = 0.5   // Transfer: only 0.5cpp
+	ts.valuationRepo.cpps["amex-mr:base"] = 2.0  // Native: 2cpp
+	ts.valuationRepo.cpps["bad-prog:base"] = 0.5 // Transfer: only 0.5cpp
 
 	ts.transferRepo.routes["lp-mr"] = []model.TransferPartner{
 		{
@@ -876,8 +880,10 @@ func TestSafeStr(t *testing.T) {
 // Scenario: Cobalt 5x groceries (cap_amount NIL on the multiplier) with a
 // $2,500/mo shared cap group, vs a plain uncapped 3x card, on $10,000 of
 // grocery spend, same program/CPP so the comparison is purely about the cap.
-//   Cobalt blended rate = (2500*5 + 7500*1) / 10000 = 2.0x  → 4.0% return
-//   Plain 3x (uncapped)  = 3.0x                               → 6.0% return
+//
+//	Cobalt blended rate = (2500*5 + 7500*1) / 10000 = 2.0x  → 4.0% return
+//	Plain 3x (uncapped)  = 3.0x                               → 6.0% return
+//
 // The uncapped card must win and Cobalt must report the blended rate + cap hit.
 func TestGetBestCard_SharedCapGroupEnforcedWhenMultiplierCapNil(t *testing.T) {
 	ts := newTestOptimizer()

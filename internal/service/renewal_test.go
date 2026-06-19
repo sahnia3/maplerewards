@@ -27,6 +27,9 @@ type mockRenSpend struct {
 func (m *mockRenSpend) GetSpendStats(_ context.Context, _ string) (*model.SpendStats, error) {
 	return m.stats, nil
 }
+func (m *mockRenSpend) GetPointsSeries(_ context.Context, _ string, _ int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
+}
 func (m *mockRenSpend) SpendMonthsObserved(_ context.Context, _ string) (int, error) {
 	return m.months, nil
 }

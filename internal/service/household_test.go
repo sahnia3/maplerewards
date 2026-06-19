@@ -28,6 +28,9 @@ type mockHHSpend struct{ stats *model.SpendStats }
 func (m *mockHHSpend) GetSpendStats(_ context.Context, _ string) (*model.SpendStats, error) {
 	return m.stats, nil
 }
+func (m *mockHHSpend) GetPointsSeries(_ context.Context, _ string, _ int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
+}
 
 // mockHHCard backs a tiny in-memory catalog: cards by id, categories, programs,
 // and a per-(cardID,categoryID) multiplier table. ListMultipliersForCard

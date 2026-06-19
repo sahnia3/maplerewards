@@ -101,11 +101,18 @@ func TierForPlan(plan string, isPro bool) Tier {
 //
 // Numbers (monthly calls), and the env var that overrides each:
 //
-//	provider │ free                       │ pro                       │ pro_plus                       │ lifetime
-//	─────────┼────────────────────────────┼───────────────────────────┼────────────────────────────────┼─────────────────────────────────
-//	serpapi  │ 25  SERPAPI_CAP_FREE        │ 250  SERPAPI_CAP_PRO      │ 600  SERPAPI_CAP_PROPLUS       │ 600  SERPAPI_CAP_LIFETIME
-//	apify    │ 0   APIFY_CAP_FREE          │ 1500 APIFY_CAP_PRO        │ 3000 APIFY_CAP_PROPLUS         │ 3000 APIFY_CAP_LIFETIME
-//	tavily   │ 50  TAVILY_CAP_FREE         │ 1000 TAVILY_CAP_PRO       │ 2500 TAVILY_CAP_PROPLUS        │ 2500 TAVILY_CAP_LIFETIME
+//	provider  │ free                       │ pro                       │ pro_plus                       │ lifetime
+//	──────────┼────────────────────────────┼───────────────────────────┼────────────────────────────────┼─────────────────────────────────
+//	serpapi   │ 25  SERPAPI_CAP_FREE        │ 250  SERPAPI_CAP_PRO      │ 600  SERPAPI_CAP_PROPLUS       │ 600  SERPAPI_CAP_LIFETIME
+//	apify     │ 0   APIFY_CAP_FREE          │ 1500 APIFY_CAP_PRO        │ 3000 APIFY_CAP_PROPLUS         │ 3000 APIFY_CAP_LIFETIME
+//	tavily    │ 50  TAVILY_CAP_FREE         │ 1000 TAVILY_CAP_PRO       │ 2500 TAVILY_CAP_PROPLUS        │ 2500 TAVILY_CAP_LIFETIME
+//	seatsaero │ 50  SEATSAERO_CAP_FREE      │ 1000 SEATSAERO_CAP_PRO    │ 2500 SEATSAERO_CAP_PROPLUS     │ 2500 SEATSAERO_CAP_LIFETIME
+//
+// Seats.aero free is a small non-zero cap (50): unlike Apify, the live
+// Seats.aero call in award_search.go is NOT Pro-gated — it runs for free
+// users too — so a 0 cap would silently kill the free award-availability
+// path (SpendTier short-circuits exhausted=true on a 0 cap). 50 keeps free
+// users working while still bounding cost on a paid ($9.99/mo) source.
 //
 // Apify free is 0: the live Apify scrape is already Pro-gated in
 // award_search.go, so a free user should never reach it — the 0 cap makes that
@@ -131,6 +138,16 @@ var tierCaps = map[string]map[Tier]int{
 		TierProPlus:  envInt("TAVILY_CAP_PROPLUS", 2500),
 		TierLifetime: envInt("TAVILY_CAP_LIFETIME", 2500),
 	},
+	"seatsaero": {
+		// Free is a small non-zero cap on purpose: the live Seats.aero call is
+		// not Pro-gated in award_search.go, so a 0 cap would silently disable
+		// award availability for every free user (SpendTier short-circuits
+		// exhausted on a 0 cap). See the table comment above.
+		TierFree:     envInt("SEATSAERO_CAP_FREE", 50),
+		TierPro:      envInt("SEATSAERO_CAP_PRO", 1000),
+		TierProPlus:  envInt("SEATSAERO_CAP_PROPLUS", 2500),
+		TierLifetime: envInt("SEATSAERO_CAP_LIFETIME", 2500),
+	},
 }
 
 // FreeTierLimits maps each provider to the LARGEST per-tier monthly cap. It is
@@ -139,9 +156,10 @@ var tierCaps = map[string]map[Tier]int{
 // NOT the actual enforced cap — SpendTier enforces the per-tier caps in
 // tierCaps. Per-tier callers should use TierCap / RemainingTier instead.
 var FreeTierLimits = map[string]int{
-	"serpapi": maxTierCap("serpapi"),
-	"apify":   maxTierCap("apify"),
-	"tavily":  maxTierCap("tavily"),
+	"serpapi":   maxTierCap("serpapi"),
+	"apify":     maxTierCap("apify"),
+	"tavily":    maxTierCap("tavily"),
+	"seatsaero": maxTierCap("seatsaero"),
 }
 
 // processHardCaps is the absolute number of paid calls a SINGLE process will
@@ -151,9 +169,10 @@ var FreeTierLimits = map[string]int{
 // low enough that a runaway loop during a Redis outage is bounded to a known
 // worst-case dollar amount. Override per provider via *_PROCESS_HARD_CAP.
 var processHardCaps = map[string]int64{
-	"serpapi": int64(envInt("SERPAPI_PROCESS_HARD_CAP", 1000)),
-	"apify":   int64(envInt("APIFY_PROCESS_HARD_CAP", 4000)),
-	"tavily":  int64(envInt("TAVILY_PROCESS_HARD_CAP", 4000)),
+	"serpapi":   int64(envInt("SERPAPI_PROCESS_HARD_CAP", 1000)),
+	"apify":     int64(envInt("APIFY_PROCESS_HARD_CAP", 4000)),
+	"tavily":    int64(envInt("TAVILY_PROCESS_HARD_CAP", 4000)),
+	"seatsaero": int64(envInt("SEATSAERO_PROCESS_HARD_CAP", 4000)),
 }
 
 // processUsed holds the live per-process authorized-call counters that back the
@@ -161,9 +180,10 @@ var processHardCaps = map[string]int64{
 // multiple Client values in one process (API + worker share a binary in tests)
 // still share one hard ceiling.
 var processUsed = map[string]*atomic.Int64{
-	"serpapi": {},
-	"apify":   {},
-	"tavily":  {},
+	"serpapi":   {},
+	"apify":     {},
+	"tavily":    {},
+	"seatsaero": {},
 }
 
 // TierCap returns the configured monthly cap for a provider+tier (0 if the

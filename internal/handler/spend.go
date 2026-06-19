@@ -145,3 +145,26 @@ func (h *SpendHandler) GetSpendStats(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOK(w, stats)
 }
+
+// GetPointsSeries returns the monthly points-earned time series for the Home chart.
+func (h *SpendHandler) GetPointsSeries(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if sessionID == "" {
+		jsonError(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+
+	months := 12
+	if v := r.URL.Query().Get("months"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 24 {
+			months = n
+		}
+	}
+
+	series, err := h.svc.GetPointsSeries(r.Context(), sessionID, months)
+	if err != nil {
+		jsonInternalError(w, "spend.points_series", err)
+		return
+	}
+	jsonOK(w, series)
+}

@@ -51,6 +51,10 @@ func (m *mockMissedSpendRepo) GetSpendStats(ctx context.Context, userID string) 
 	return &model.SpendStats{}, nil
 }
 
+func (m *mockMissedSpendRepo) GetPointsSeries(ctx context.Context, userID string, months int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
+}
+
 // mockMissedOptimizer returns a fixed best-card-per-category map.
 type mockMissedOptimizer struct {
 	bestByCat map[string]model.CardRecommendation

@@ -540,3 +540,32 @@ func TestRemainingTier_FreshKeyReturnsLimit_Redis(t *testing.T) {
 		t.Fatalf("tavily pro remaining = %d, want full %d", rem, tierCaps["tavily"][TierPro])
 	}
 }
+
+// TestSpendTier_SeatsAeroProvider guards the "seatsaero" provider registration:
+// it must be recognized by SpendTier (no unknown-provider error) across every
+// tier and carry positive caps — including a NON-ZERO free cap, because the
+// live Seats.aero call is not Pro-gated, so a 0 free cap would silently kill
+// award availability for free users.
+func TestSpendTier_SeatsAeroProvider(t *testing.T) {
+	resetProcessUsed()
+	defer withTempHardCap(t, "seatsaero", 1_000_000)() // keep backstop out of the way
+
+	f := newFakeRedis()
+	c := newWithDoer(f)
+	ctx := context.Background()
+
+	for _, tier := range []Tier{TierFree, TierPro, TierProPlus, TierLifetime} {
+		if cap := TierCap("seatsaero", tier); cap <= 0 {
+			t.Fatalf("seatsaero %s cap = %d, want > 0 (provider must be registered with a usable cap)", tier, cap)
+		}
+		// A registered provider+tier must not return the unknown-provider error;
+		// with a fresh fake Redis and a positive cap the first call is allowed.
+		_, exhausted, err := c.SpendTier(ctx, "seatsaero", tier)
+		if err != nil {
+			t.Fatalf("seatsaero %s: unexpected err %v (provider not registered?)", tier, err)
+		}
+		if exhausted {
+			t.Fatalf("seatsaero %s: first call exhausted=true, want false (cap must be > 0)", tier)
+		}
+	}
+}

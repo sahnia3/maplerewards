@@ -36,6 +36,9 @@ type mockChurnSpend struct {
 func (m *mockChurnSpend) GetSpendStats(_ context.Context, _ string) (*model.SpendStats, error) {
 	return m.stats, nil
 }
+func (m *mockChurnSpend) GetPointsSeries(_ context.Context, _ string, _ int) (*model.PointsSeries, error) {
+	return &model.PointsSeries{Months: []model.PointsMonth{}}, nil
+}
 func (m *mockChurnSpend) SpendMonthsObserved(_ context.Context, _ string) (int, error) {
 	return m.months, nil
 }

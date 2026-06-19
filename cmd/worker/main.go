@@ -118,7 +118,7 @@ func main() {
 	workerQuota := quota.New(rdb)
 	apify := service.NewApifyAwardService(getEnv("APIFY_TOKEN", ""), workerQuota)
 	serp := service.NewSerpAPIService(getEnv("SERPAPI_KEY", ""), workerQuota)
-	seatsAero := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""))
+	seatsAero := service.NewSeatsAeroService(getEnv("SEATSAERO_API_KEY", ""), workerQuota)
 	// Transfer/program lookups are nil here: the worker's award sweep doesn't
 	// render the "Boost via {partner}" hint (that's a frontend trip-planner
 	// concern), so the producer is intentionally omitted.
@@ -393,7 +393,7 @@ func probeOne(
 
 	// Find the cheapest result for this watch's program. If none, this is a
 	// "no availability" probe — record it as such.
-	var minPoints *int
+	var minPoints, seats *int
 	for _, r := range results {
 		if r.Program != w.ProgramSlug {
 			continue
@@ -401,10 +401,12 @@ func probeOne(
 		if minPoints == nil || r.PointsCost < *minPoints {
 			p := r.PointsCost
 			minPoints = &p
+			s := r.SeatsAvailable
+			seats = &s
 		}
 	}
 
-	if err := watchRepo.RecordCheck(ctx, w.ID, minPoints); err != nil {
+	if err := watchRepo.RecordCheck(ctx, w.ID, minPoints, seats); err != nil {
 		log.Warn("record check failed", "watch_id", w.ID, "err", err)
 		return
 	}
