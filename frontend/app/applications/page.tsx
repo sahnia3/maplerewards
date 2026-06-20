@@ -213,7 +213,7 @@ export default function ApplicationsPage() {
 
         <section style={{ marginBottom: 32 }}>
           <h2 className="display" style={{ fontSize: 22, marginBottom: 12 }}>Record an application</h2>
-          <form onSubmit={handleAdd} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <form onSubmit={handleAdd} className="m-grid-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <label style={{ gridColumn: "1 / -1" }}>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Card</div>
               <select

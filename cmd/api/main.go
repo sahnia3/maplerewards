@@ -274,6 +274,7 @@ func main() {
 			Devaluation:   devalSvc,
 			AwardWatch:    awardWatchSvc,
 		},
+		quotaClient, // global monthly Anthropic request backstop (denial-of-wallet)
 	).WithTransferBonus(transferBonusRepo) // AU-2: auto-fill live bonus in simulate_transfer_with_bonus
 
 	// Apify smoke-test goroutine. Fires every 24h against a known query
@@ -339,7 +340,7 @@ func main() {
 	adminMetricsH := handler.NewAdminMetricsHandler()
 	adminUsersH := handler.NewAdminUsersHandler(authRepo, dataExportSvc)
 	summaryH := handler.NewSummaryHandler(walletRepo, transferRepo)
-	programH := handler.NewProgramHandler(cardRepo, transferRepo)
+	programH := handler.NewProgramHandler(cardRepo, transferRepo, valuationRepo)
 	cardDetailH := handler.NewCardDetailHandler(cardRepo, transferRepo)
 	recommendH := handler.NewRecommendHandler(recommenderSvc)
 	authH := handler.NewAuthHandler(authSvc)

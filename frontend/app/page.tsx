@@ -27,7 +27,7 @@ import { LandingHeroDemo } from "@/components/marketing/landing-hero-demo";
 import { LandingKineticProof } from "@/components/marketing/landing-kinetic-proof";
 import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { Counter } from "@/components/editorial/counter";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 import { MiniFlowArrow } from "@/components/editorial/dataviz";
 import { WalletGaugeCard } from "@/components/home/wallet-gauge-card";
 import { CoverageCard } from "@/components/home/coverage-card";
@@ -526,7 +526,9 @@ export default function HomePage() {
                 <div className="display home-stat-num">
                   $<Counter value={Math.round(totalValueSweet)} />
                 </div>
-                <div className="mono home-stat-sub">CAD · sweet-spot</div>
+                <div className="mono home-stat-sub">
+                  CAD · <Term term="sweet spot">sweet-spot</Term>
+                </div>
               </div>
               <div className="home-stat">
                 <div className="eyebrow" style={{ marginBottom: 6 }}>Points</div>
@@ -627,7 +629,7 @@ export default function HomePage() {
               </span>
               {recoverable > 0 && (
                 <Link href="/insights" className="mono home-hero-foot-link">
-                  Full <Term k="leakage" /> report →
+                  Full <Term term="leakage" /> report →
                 </Link>
               )}
             </motion.div>
@@ -770,7 +772,7 @@ export default function HomePage() {
             {[
               { href: "/portfolio", title: "Wallet coverage", desc: "Which categories your cards cover — and the gaps.", badge: "Free" },
               { href: "/wallet", title: "Your wallet", desc: "Manage cards, balances and details." },
-              { href: "/cards", title: "Find a card", desc: "Browse 100+ Canadian cards." },
+              { href: "/cards", title: "Find a card", desc: "Browse 94 Canadian cards." },
               { href: "/chat", title: "Ask Maple", desc: "Your AI rewards advisor." },
               { href: "/insights", title: "Insights", desc: "Where your rewards leak — and the fix." },
               { href: "/tools", title: "More tools", desc: "Trip planner, award search, milestones." },

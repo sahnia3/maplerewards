@@ -6,6 +6,7 @@ import { getChurnPlan } from "@/lib/api";
 import type { ChurnPlan, ChurnCandidate } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { Term } from "@/components/ui/term";
 import { ExportButton, Stat, fmtCAD, sectionStyle } from "./_shared";
 
 interface Props {
@@ -97,7 +98,7 @@ export function ChurnPlannerTile({ sessionId, isReady }: Props) {
           className="serif"
           style={{ marginTop: -4, marginBottom: 16, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.5 }}
         >
-          Maple ranks every card you don&apos;t hold by welcome-bonus value, nets out the annual fee, checks the issuer&apos;s cooldown rules, and flags whether your spending can actually clear the minimum.
+          The <Term term="churn">churn</Term> planner ranks every card you don&apos;t hold by <Term term="welcome bonus">welcome-bonus</Term> value, nets out the <Term term="annual fee">annual fee</Term>, checks the issuer&apos;s cooldown rules, and flags whether your spending can actually clear the minimum.
         </p>
 
         {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Scanning the catalog…</p>}

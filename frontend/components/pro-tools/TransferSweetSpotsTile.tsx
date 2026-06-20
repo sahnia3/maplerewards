@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeftRight, ArrowRight } from "lucide-react";
 import { getTransferSweetSpots } from "@/lib/api";
 import type { TransferSweetSpotReport, TransferSweetSpotSource } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
@@ -42,6 +43,30 @@ function SourceRow({ src }: { src: TransferSweetSpotSource }) {
           <div className="mono" style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 4 }}>
             {ptsLabel(best.transferred_points)} → worth {fmtCAD(best.transfer_value_cad)} ·{" "}
             <span style={{ color: "var(--gain)", fontWeight: 600 }}>+{fmtCAD2(best.uplift_cad)} uplift</span>
+          </div>
+          {best.min_transfer > 0 && (
+            <div className="serif" style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink-3)", marginTop: 4 }}>
+              Min {best.min_transfer.toLocaleString("en-CA")} pts to transfer
+            </div>
+          )}
+          <div style={{ marginTop: 6 }}>
+            <Link
+              href={`/loyalty/${best.to_program_slug}`}
+              className="mono"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11.5,
+                fontWeight: 600,
+                letterSpacing: "0.02em",
+                color: "var(--accent)",
+                textDecoration: "none",
+              }}
+            >
+              See how to redeem {progLabel(best.to_program_slug)}
+              <ArrowRight size={12} aria-hidden style={{ flexShrink: 0 }} />
+            </Link>
           </div>
           {best.bonus_label && (
             <div

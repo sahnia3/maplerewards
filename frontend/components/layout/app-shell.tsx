@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "./sidebar";
 import { MobileNavTrigger } from "./mobile-nav";
 import { useSidebar } from "@/contexts/sidebar-context";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const pageVariants = {
   initial: {
@@ -51,7 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             animate="enter"
             exit="exit"
           >
-            {children}
+            <ErrorBoundary surface="page">{children}</ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -98,7 +99,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             animate="enter"
             exit="exit"
           >
-            {children}
+            <ErrorBoundary surface="page">{children}</ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

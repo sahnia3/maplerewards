@@ -14,6 +14,8 @@
  */
 
 import { RadialGauge } from "@/components/editorial/dataviz";
+import { Term } from "@/components/ui/term";
+import { CATALOG_VALUATION_AS_OF, formatAsOf } from "@/lib/valuation-meta";
 
 function money(n: number): string {
   return `$${Math.round(n).toLocaleString("en-CA")}`;
@@ -33,6 +35,9 @@ export function WalletGaugeCard({
   // ceiling (new wallet) by falling back to the largest known figure.
   const max = Math.max(upside, sweetSpot, base, 1);
   const upsideDelta = Math.max(0, upside - base);
+  // Provenance: these CAD figures rest on catalog point valuations — caption
+  // them with the catalog review date so they aren't shown unsourced.
+  const valuationAsOf = formatAsOf(CATALOG_VALUATION_AS_OF);
 
   return (
     <div
@@ -51,9 +56,16 @@ export function WalletGaugeCard({
       </div>
       <div
         className="serif"
+        style={{ fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", marginBottom: 6, lineHeight: 1.4 }}
+      >
+        Here&rsquo;s what your wallet is worth &mdash; and where you&rsquo;re leaving points behind.
+      </div>
+      <div
+        className="serif"
         style={{ fontSize: 13, fontStyle: "italic", color: "var(--ink-3)", marginBottom: 10 }}
       >
-        Base CPP vs. sweet-spot ceiling
+        <Term term="base cpp">Base CPP</Term> vs.{" "}
+        <Term term="sweet spot">sweet-spot</Term> ceiling
       </div>
       <RadialGauge
         value={base}
@@ -69,6 +81,22 @@ export function WalletGaugeCard({
           { label: "UPSIDE", value: `+${money(upsideDelta)}`, color: "var(--gain)", align: "right" },
         ]}
       />
+      {valuationAsOf && (
+        <div
+          className="mono"
+          style={{
+            marginTop: 12,
+            fontSize: 9,
+            letterSpacing: "0.10em",
+            textTransform: "uppercase",
+            color: "var(--ink-3)",
+            fontWeight: 500,
+            textAlign: "center",
+          }}
+        >
+          Valuations as of {valuationAsOf}
+        </div>
+      )}
     </div>
   );
 }

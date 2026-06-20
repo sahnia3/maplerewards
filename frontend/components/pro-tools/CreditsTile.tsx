@@ -28,6 +28,9 @@ export function CreditsTile({ sessionId, isReady }: Props) {
   const [fRec, setFRec] = useState("annual");
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState<string | null>(null);
+  // Surfaced (not swallowed) when "Mark used" fails — this is a money action,
+  // so a silent no-op would leave the user thinking a credit was redeemed.
+  const [redeemErr, setRedeemErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!isReady || !sessionId) return;
@@ -70,11 +73,16 @@ export function CreditsTile({ sessionId, isReady }: Props) {
 
   async function markRedeemed(c: CardCreditStatus) {
     if (!sessionId) return;
+    setRedeemErr(null);
     try {
       await recordCreditRedemption(sessionId, c.credit_def_id, { redeemed_amount: c.value_cad });
       load();
-    } catch {
-      /* swallow */
+    } catch (e) {
+      setRedeemErr(
+        e instanceof Error
+          ? `Couldn't mark "${c.name}" redeemed: ${e.message}`
+          : `Couldn't mark "${c.name}" redeemed. Try again.`,
+      );
     }
   }
 
@@ -181,6 +189,16 @@ export function CreditsTile({ sessionId, isReady }: Props) {
                 <Donut pct={unclaimedPct} color="var(--gold)" centerLabel={`${Math.round(unclaimedPct)}%`} />
               )}
             </div>
+
+            {redeemErr && (
+              <p
+                role="alert"
+                className="mono"
+                style={{ fontSize: 12, color: "var(--loss)", margin: "0 0 10px" }}
+              >
+                {redeemErr}
+              </p>
+            )}
 
             <div style={{ borderTop: "1px solid var(--rule)" }}>
               {credits.map((c) => {

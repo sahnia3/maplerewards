@@ -156,6 +156,17 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.ChatWithTools(r.Context(), req.ChatRequest, isPro, plan)
 	if err != nil {
+		// Global monthly Anthropic capacity hit (or quota system degraded,
+		// fail-closed): this is NOT a crash — chat is temporarily unavailable.
+		// Return a clean 503 + Retry-After so the client can back off, not a 500.
+		if errors.Is(err, service.ErrAnthropicQuotaExhausted) {
+			slog.Warn("AI chat at capacity (anthropic monthly quota)", "user_id", userID, "is_pro", isPro)
+			w.Header().Set("Retry-After", "3600")
+			jsonErrorCode(w, "AT_CAPACITY",
+				"The AI assistant is at capacity right now — please try again shortly.",
+				http.StatusServiceUnavailable)
+			return
+		}
 		// P0: do NOT leak Anthropic error bodies / tool-call internals to the
 		// client. Log full error server-side, return a stable code + short
 		// message. Specific upstream failures (rate-limit, timeout) get hinted
@@ -220,6 +231,8 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 //	tool_start   {id, name, args}
 //	tool_done    {id, name, summary}
 //	round_end    {round, has_more}
+//	token        {text}                          — assistant prose, streamed live
+//	replace      {text}                           — corrected full reply (self-check)
 //	done         {reply, history, conversation_id}
 //	error        {message}
 //
@@ -381,7 +394,12 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		// non-streaming handler above. Log the full error server-side; emit a
 		// stable, generic message with the same timeout hint.
 		hint := "the AI assistant is having trouble right now — please try again"
-		if strings.Contains(err.Error(), "context deadline") || strings.Contains(err.Error(), "timeout") {
+		switch {
+		case errors.Is(err, service.ErrAnthropicQuotaExhausted):
+			// Global monthly capacity hit (or quota degraded, fail-closed) — not
+			// a crash. Tell the user it's temporary so they retry, not refresh.
+			hint = "the AI assistant is at capacity right now — please try again shortly"
+		case strings.Contains(err.Error(), "context deadline") || strings.Contains(err.Error(), "timeout"):
 			hint = "the AI assistant took too long to respond — please try again with a shorter question"
 		}
 		emit("error", map[string]any{"message": hint})

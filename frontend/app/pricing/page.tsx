@@ -10,7 +10,7 @@ import { createCheckoutSession } from "@/lib/api";
 import { PageMasthead } from "@/components/editorial/page-masthead";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { Button } from "@/components/ui/button";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Pricing — editorial treatment

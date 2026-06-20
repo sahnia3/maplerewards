@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -54,7 +55,20 @@ type AIService struct {
 	// WithTransferBonus; nil leaves simulate_transfer_with_bonus on its
 	// user-supplied bonus_percent only.
 	transferBonusRepo aiTransferBonusRepo
+	// quota is the GLOBAL monthly backstop on Anthropic (Claude) request volume,
+	// charged per-tier against the shared "anthropic" pool. It complements the
+	// per-user DAILY token budget (ai_budget.go): the daily budget bounds one
+	// user's spend, this bounds the whole tier's monthly request count and is the
+	// only denial-of-wallet ceiling on the LLM provider. FAILS CLOSED: a quota
+	// error denies the paid call. nil in unit tests = check skipped (unlimited).
+	quota QuotaSpender
 }
+
+// ErrAnthropicQuotaExhausted is returned when the GLOBAL monthly Anthropic
+// request cap for the caller's tier is hit (or the quota system is degraded and
+// fails closed). Handlers translate this into a clean "service at capacity"
+// response rather than a 500 — chat is temporarily unavailable, not broken.
+var ErrAnthropicQuotaExhausted = errors.New("anthropic monthly request quota exhausted")
 
 func NewAIService(
 	apiKey string,
@@ -68,6 +82,7 @@ func NewAIService(
 	awardSearchSvc *AwardSearchService,
 	serpSvc *SerpAPIService,
 	pro ProServices,
+	quotaClient QuotaSpender,
 ) *AIService {
 	// Model is env-overridable so we can A/B against Haiku 4.5 for cost
 	// or move to a future Sonnet revision without a redeploy. Default
@@ -100,6 +115,7 @@ func NewAIService(
 		knowledgeBase:  kb,
 		awardSearchSvc: awardSearchSvc,
 		pro:            pro,
+		quota:          quotaClient,
 	}
 	s.registerTools()
 	return s
@@ -594,6 +610,14 @@ Rules:
 - Keep responses under 500 words unless the user asks for a detailed breakdown
 - Use markdown formatting for clarity (bold, bullet points, etc.)
 
+## IN-APP DEEP LINKS (route users to MapleRewards' own surfaces)
+End an answer with an in-app CTA when one fits. These are the ONLY valid in-app routes — link to a real route only, never invent a path:
+- "Best card for a purchase / which card should I use" → [Optimizer](/optimizer)
+- A program or transfer-partner question → [the program page](/loyalty/<slug>) (fill <slug> with the program, e.g. /loyalty/aeroplan)
+- "Watch this award / track availability" → [Tools](/tools)
+- "Should I buy points / is this points sale worth it" → the buy-points tool at [Pro Tools](/pro-tools)
+These complement (do not replace) legitimate external booking links — keep both where relevant.
+
 ## ⚠️ CRITICAL: DATA PRIORITY FOR TRAVEL QUERIES
 When travel data is provided below, you MUST follow this strict priority:
 
@@ -640,7 +664,7 @@ TRAVEL RESPONSE FORMAT — Always structure travel answers like this:
 Additional travel rules:
 - For transfers: explain which card → which program → ratio
 - When dates are FLEXIBLE, suggest best months to travel for that route
-- Always note: "Check the [Travel page](/trip-planner) for the full redemption calculator"
+- Point users to the in-app [Tools](/tools) page to track award availability and run point-vs-cash math
 - If NO live data is available, be upfront: "I don't have live prices right now — check Google Flights for current pricing"
 
 ## HOTELS — always give a real, points-aware booking link

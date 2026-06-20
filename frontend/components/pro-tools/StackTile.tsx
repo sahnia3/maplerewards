@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { listMerchants, recommendStack } from "@/lib/api";
 import type { Merchant, StackRecommendation } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
+import { Term } from "@/components/ui/term";
 import { FieldLabel, ctaStyle, fieldStyle, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
@@ -45,7 +46,7 @@ export function StackTile({ sessionId, ensureSession }: Props) {
           className="serif"
           style={{ marginTop: -4, marginBottom: 16, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.5 }}
         >
-          Layer cashback portals over multipliers over network offers. The optimizer handles the order so nothing leaves money behind.
+          A <Term term="triple-stack">triple-stack</Term> layers cashback portals over multipliers over network offers. The optimizer handles the order so nothing leaves money behind.
         </p>
 
         <div className="protool-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 12, alignItems: "end" }}>

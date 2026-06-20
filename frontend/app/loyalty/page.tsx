@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Trophy } from "lucide-react";
 import { listPrograms } from "@/lib/api";
 import type { LoyaltyProgram } from "@/lib/types";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 
 type ProgramType = "all" | "airline" | "bank" | "hotel" | "cashback";
 

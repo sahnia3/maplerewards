@@ -1,13 +1,13 @@
 "use client";
 
-import { GLOSSARY } from "@/components/term";
+import { GLOSSARY } from "@/lib/glossary";
 
-/* Renders the GLOSSARY map. This lives in a CLIENT component on purpose:
- * GLOSSARY is exported from the "use client" term.tsx, so a Server Component
- * importing it receives an empty client-reference proxy (Object.values → []),
- * which left /glossary blank. A client component gets the real object, and it's
- * still server-rendered for the initial HTML, so the terms stay SEO-visible. */
-const ENTRIES = Object.values(GLOSSARY).sort((a, b) => a.full.localeCompare(b.full));
+/* Renders the GLOSSARY map (single source of truth in lib/glossary.ts). Falls
+ * back to the tooltip label/definition when an entry has no longer reference
+ * copy. */
+const ENTRIES = Object.values(GLOSSARY)
+  .map((e) => ({ full: e.full ?? e.label, detail: e.detail ?? e.definition }))
+  .sort((a, b) => a.full.localeCompare(b.full));
 
 export function GlossaryList() {
   return (

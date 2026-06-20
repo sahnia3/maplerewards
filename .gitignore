@@ -37,6 +37,8 @@ pgdata/
 SESSION-BRIEF.pdf
 # Frontend redesign handoff archive (~868MB, kept local only)
 /frontend.zip
+# Generated product-review PDFs (kept local only)
+/reports/
 
 # Stray compiled worker binary (use `make worker-build` to bin/worker instead)
 /worker

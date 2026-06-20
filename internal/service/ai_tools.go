@@ -22,10 +22,12 @@ package service
 // ─────────────────────────────────────────────────────────────────────────────
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -1570,6 +1572,9 @@ FREE TIER NOTE
 //	"tool_done"    {id, name, summary}
 //	"tool_error"   {id, name, error}
 //	"round_end"    {round, has_more bool}
+//	"token"        {text}  — one Anthropic prose delta as it streams
+//	"replace"      {text}  — full corrected reply when the post-stream
+//	                          self-check rewrote what was already streamed
 type EmitFn func(event string, data map[string]any)
 
 // ChatWithTools is the non-streaming wrapper. Calls the streaming variant with
@@ -1723,6 +1728,11 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	paidToolsUsed := 0
 	totalTokens := 0 // actual input+output across all rounds — debits the real budget
 	finalText := strings.Builder{}
+	// streamedReply mirrors exactly the text deltas pushed to the client as
+	// `token` events. After self-check, if the canonical reply differs from what
+	// the user already saw streamed, we emit a `replace` so the UI swaps to the
+	// verified text. Only meaningful when emit != nil.
+	streamedReply := strings.Builder{}
 
 	// Turn-scoped evidence for the post-turn self-check. evidence captures each
 	// tool's raw JSON result (appended from parallel goroutines, so guarded by
@@ -1749,7 +1759,38 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 		if isPro {
 			maxTokens = 4096
 		}
-		resp, err := s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens, turnModel)
+
+		// Stream this round's prose token-by-token when an emit sink is present.
+		// We forward every text delta as a `token` SSE event so the user sees the
+		// assistant prose type out live instead of waiting for the whole reply.
+		// Streaming is best-effort: if it fails to set up (or mid-stream), we fall
+		// back to the buffered call so the turn never crashes. To avoid the user
+		// seeing prose that self-check later strips, we ONLY surface tokens once
+		// the loop is genuinely producing a user-facing answer — but since any
+		// round may contribute text to the final reply (current behaviour), we
+		// stream all rounds and reconcile with `replace` after self-check.
+		var resp *claudeToolUseResponse
+		var err error
+		if emit != nil {
+			var streamedAny bool
+			resp, err = s.callClaudeWithToolsStream(ctx, system, roundTools, msgs, maxTokens, turnModel,
+				func(text string) {
+					streamedAny = true
+					streamedReply.WriteString(text)
+					emit("token", map[string]any{"text": text})
+				})
+			if err != nil {
+				// Streaming setup/parse failed — fall back to the buffered path so
+				// the turn never dies. If we'd already streamed partial tokens, the
+				// final `done`/`replace` reconciles the user's view to the canonical
+				// reply, so a partial stream is safe to discard here.
+				slog.Warn("[ai-tools] streaming round failed; falling back to buffered call",
+					"round", round+1, "err", err, "streamed_any", streamedAny)
+				resp, err = s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens, turnModel)
+			}
+		} else {
+			resp, err = s.callClaudeWithTools(ctx, system, roundTools, msgs, maxTokens, turnModel)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("claude round %d: %w", round+1, err)
 		}
@@ -1928,7 +1969,24 @@ func (s *AIService) ChatWithToolsStream(ctx context.Context, req ChatRequest, is
 	// the reply unchanged on any skip or error — it must never break the turn.
 	// Mutating reply here lands the correction in both the persisted history
 	// (built below) and the handler's emit("done") (which reads ChatResponse).
-	reply = s.selfCheckReply(ctx, reply, evidence, travelToolRan)
+	//
+	// Streaming + self-check ordering: the user has ALREADY seen the unverified
+	// prose stream out as `token` events. We run self-check on the COMPLETE
+	// assembled reply here, and if it rewrites/annotates the reply, we emit a
+	// `replace` event below so the UI swaps the streamed text for the verified
+	// version. The user is therefore never left looking at text the self-check
+	// would have stripped — the `replace`/`done` reconciliation is authoritative.
+	verifiedReply := s.selfCheckReply(ctx, reply, evidence, travelToolRan)
+	if emit != nil && streamedReply.Len() > 0 && verifiedReply != reply {
+		// Self-check actually rewrote/annotated the reply AFTER the user already
+		// saw the unverified prose stream out. Emit `replace` so the UI swaps the
+		// streamed text for the verified version. We gate on streamedReply.Len()
+		// (tokens were surfaced) and on the self-check having CHANGED the reply —
+		// a no-op self-check leaves the already-streamed prose correct, so no
+		// replace is needed (the `done` event still carries the canonical text).
+		emit("replace", map[string]any{"text": verifiedReply})
+	}
+	reply = verifiedReply
 
 	// Build user-facing history (excludes tool turns).
 	history := make([]model.ChatMessage, 0, len(req.History)+2)
@@ -2102,6 +2160,30 @@ func extractFirstJSONObject(s string) string {
 	return ""
 }
 
+// anthropicQuotaGate charges the GLOBAL monthly Anthropic request backstop
+// before any paid LLM call (buffered OR streamed). Charged per-tier against the
+// shared "anthropic" pool ONCE per LLM request — every tool-loop round, every
+// self-check call, and every streamed prose round passes through here, so each
+// is metered. This sits AFTER the per-user daily token budget (enforced in the
+// chat handler) and is the only global denial-of-wallet ceiling on the LLM.
+// FAILS CLOSED: a quota error denies the call (a Redis outage degrades chat, it
+// never uncaps paid spend). nil quota (unit tests) = check skipped.
+func (s *AIService) anthropicQuotaGate(ctx context.Context) error {
+	if s.quota == nil {
+		return nil
+	}
+	_, exhausted, err := s.quota.SpendTier(ctx, "anthropic", quotaTierFromCtx(ctx))
+	if err != nil {
+		slog.Warn("[anthropic] quota system degraded; denying paid call (fail-closed)", "err", err)
+		return ErrAnthropicQuotaExhausted
+	}
+	if exhausted {
+		slog.Warn("[anthropic] global monthly request quota exhausted; skipping API call")
+		return ErrAnthropicQuotaExhausted
+	}
+	return nil
+}
+
 // callClaudeWithTools — block-based, tool-aware variant of callClaude.
 // maxTokens is tier-dependent: free 1500, Pro 4096. Caller decides based on
 // the request's isPro state. Caps runaway-output abuse on the free tier
@@ -2120,6 +2202,13 @@ func (s *AIService) callClaudeWithTools(
 	if modelID == "" {
 		modelID = s.modelID
 	}
+
+	// GLOBAL monthly backstop — must run before the paid call. (Shared with the
+	// streaming variant via anthropicQuotaGate.)
+	if err := s.anthropicQuotaGate(ctx); err != nil {
+		return nil, err
+	}
+
 	reqBody := claudeToolUseRequest{
 		Model:     modelID,
 		MaxTokens: maxTokens,
@@ -2164,4 +2253,266 @@ func (s *AIService) callClaudeWithTools(
 		return nil, fmt.Errorf("anthropic error: %s", out.Error.Message)
 	}
 	return &out, nil
+}
+
+// ── Anthropic SSE streaming (token-by-token prose) ───────────────────────────
+
+// anthropicStreamEvent is the minimal subset of the Anthropic Messages SSE
+// schema we parse. We only assemble text/tool_use blocks and read the final
+// stop_reason + usage; thinking, signatures, and other block kinds aren't used
+// by the tool loop and are ignored.
+type anthropicStreamEvent struct {
+	Type string `json:"type"`
+	// content_block_start / content_block_delta / content_block_stop
+	Index        int `json:"index"`
+	ContentBlock *struct {
+		Type  string          `json:"type"`
+		Text  string          `json:"text"`
+		ID    string          `json:"id"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
+	} `json:"content_block"`
+	Delta *struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		PartialJSON string `json:"partial_json"`
+		// message_delta carries stop_reason here
+		StopReason string `json:"stop_reason"`
+	} `json:"delta"`
+	// message_start nests the message (with initial usage); message_delta carries
+	// the incremental output usage.
+	Message *struct {
+		ID    string `json:"id"`
+		Usage struct {
+			InputTokens         int `json:"input_tokens"`
+			OutputTokens        int `json:"output_tokens"`
+			CacheCreationTokens int `json:"cache_creation_input_tokens"`
+			CacheReadTokens     int `json:"cache_read_input_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+	Usage *struct {
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// callClaudeWithToolsStream is the streaming twin of callClaudeWithTools. It
+// runs the SAME quota gate first, sets "stream": true, parses the Anthropic SSE
+// frames, and forwards each text delta to onToken as it arrives. It assembles
+// the complete content (text + tool_use blocks) and returns the SAME
+// *claudeToolUseResponse the buffered path returns, so the tool loop is
+// unchanged downstream.
+//
+// onToken may be nil; tool_use input JSON deltas are accumulated but never
+// forwarded as tokens (only user-facing prose streams). The caller is
+// responsible for deciding whether to surface the tokens to the user.
+func (s *AIService) callClaudeWithToolsStream(
+	ctx context.Context,
+	system []systemBlock,
+	tools []map[string]any,
+	messages []claudeBlockMessage,
+	maxTokens int,
+	modelID string,
+	onToken func(text string),
+) (*claudeToolUseResponse, error) {
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
+	if modelID == "" {
+		modelID = s.modelID
+	}
+
+	// Same global backstop as the buffered path — runs BEFORE the paid call.
+	if err := s.anthropicQuotaGate(ctx); err != nil {
+		return nil, err
+	}
+
+	// Marshal the standard request, then splice in "stream": true. We keep the
+	// typed request struct (so System/Tools/Messages stay identical to the
+	// buffered call) and add the flag via a raw merge to avoid widening the
+	// shared request type.
+	reqBody := claudeToolUseRequest{
+		Model:     modelID,
+		MaxTokens: maxTokens,
+		System:    system,
+		Tools:     tools,
+		Messages:  messages,
+	}
+	raw, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		return nil, fmt.Errorf("marshal merge: %w", err)
+	}
+	asMap["stream"] = true
+	body, err := json.Marshal(asMap)
+	if err != nil {
+		return nil, fmt.Errorf("marshal stream: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", s.apiKey)
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := s.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // close on read-only response body
+
+	if resp.StatusCode != http.StatusOK {
+		// Read the (capped) error body so the message mirrors the buffered path.
+		errBody, _ := readCappedBody(resp.Body)
+		return nil, fmt.Errorf("anthropic %d: %s", resp.StatusCode, string(errBody))
+	}
+
+	out, err := parseAnthropicStream(resp.Body, onToken)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// parseAnthropicStream consumes an Anthropic Messages SSE body, forwarding each
+// text delta to onToken (when non-nil) and assembling the final response. Block
+// reassembly is index-keyed: text blocks accumulate their deltas; tool_use
+// blocks accumulate partial_json into Input. Returned response matches the
+// buffered shape exactly.
+//
+// Factored out (taking an io.Reader) so it is unit-testable without a live HTTP
+// server.
+func parseAnthropicStream(r io.Reader, onToken func(text string)) (*claudeToolUseResponse, error) {
+	out := &claudeToolUseResponse{}
+	// blocks[index] is the partial content block being assembled. toolJSON
+	// buffers tool_use partial_json until content_block_stop.
+	blocks := map[int]*claudeBlock{}
+	toolJSON := map[int]*strings.Builder{}
+	var order []int // preserve content-block order by first-seen index
+
+	sc := bufio.NewScanner(r)
+	// SSE data lines for a long completion can be large; raise the line cap well
+	// past the default 64KiB so a single delta line never overflows the scanner.
+	sc.Buffer(make([]byte, 0, 64*1024), maxExternalRespBytes)
+
+	flushTool := func(idx int) {
+		if b, ok := blocks[idx]; ok && b.Type == "tool_use" {
+			if sb, ok := toolJSON[idx]; ok {
+				js := strings.TrimSpace(sb.String())
+				if js == "" {
+					js = "{}"
+				}
+				b.Input = json.RawMessage(js)
+			} else {
+				b.Input = json.RawMessage("{}")
+			}
+		}
+	}
+
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "data:") {
+			// "event:" lines and blank separators carry no JSON we need — the
+			// "type" field inside the data payload is authoritative.
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var ev anthropicStreamEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			// A malformed frame is skipped rather than failing the whole turn —
+			// the loop keeps assembling from the well-formed frames.
+			continue
+		}
+		switch ev.Type {
+		case "error":
+			if ev.Error != nil {
+				return nil, fmt.Errorf("anthropic error: %s", ev.Error.Message)
+			}
+			return nil, fmt.Errorf("anthropic stream error")
+		case "message_start":
+			if ev.Message != nil {
+				out.ID = ev.Message.ID
+				out.Usage.InputTokens = ev.Message.Usage.InputTokens
+				out.Usage.OutputTokens = ev.Message.Usage.OutputTokens
+				out.Usage.CacheCreationTokens = ev.Message.Usage.CacheCreationTokens
+				out.Usage.CacheReadTokens = ev.Message.Usage.CacheReadTokens
+			}
+		case "content_block_start":
+			if ev.ContentBlock == nil {
+				continue
+			}
+			nb := &claudeBlock{Type: ev.ContentBlock.Type}
+			switch ev.ContentBlock.Type {
+			case "text":
+				nb.Text = ev.ContentBlock.Text
+				if nb.Text != "" && onToken != nil {
+					onToken(nb.Text)
+				}
+			case "tool_use":
+				nb.ID = ev.ContentBlock.ID
+				nb.Name = ev.ContentBlock.Name
+				toolJSON[ev.Index] = &strings.Builder{}
+			}
+			if _, seen := blocks[ev.Index]; !seen {
+				order = append(order, ev.Index)
+			}
+			blocks[ev.Index] = nb
+		case "content_block_delta":
+			if ev.Delta == nil {
+				continue
+			}
+			b := blocks[ev.Index]
+			if b == nil {
+				continue
+			}
+			switch ev.Delta.Type {
+			case "text_delta":
+				b.Text += ev.Delta.Text
+				if ev.Delta.Text != "" && onToken != nil {
+					onToken(ev.Delta.Text)
+				}
+			case "input_json_delta":
+				if sb, ok := toolJSON[ev.Index]; ok {
+					sb.WriteString(ev.Delta.PartialJSON)
+				}
+			}
+		case "content_block_stop":
+			flushTool(ev.Index)
+		case "message_delta":
+			if ev.Delta != nil && ev.Delta.StopReason != "" {
+				out.StopReason = ev.Delta.StopReason
+			}
+			if ev.Usage != nil && ev.Usage.OutputTokens > 0 {
+				out.Usage.OutputTokens = ev.Usage.OutputTokens
+			}
+		case "message_stop":
+			// Terminal frame; assembled response is complete.
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("stream read: %w", err)
+	}
+
+	// Flush any tool block that didn't receive an explicit stop, then emit blocks
+	// in first-seen order.
+	for _, idx := range order {
+		flushTool(idx)
+		if b := blocks[idx]; b != nil {
+			out.Content = append(out.Content, *b)
+		}
+	}
+	return out, nil
 }

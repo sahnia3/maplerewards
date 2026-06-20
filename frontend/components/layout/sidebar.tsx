@@ -25,6 +25,8 @@ import {
   Trophy,
   Shield,
   ClipboardList,
+  Target,
+  GitCompare,
 } from "lucide-react";
 import { useWallet } from "@/contexts/wallet-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -83,6 +85,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/insights",      label: "Insights",     icon: BarChart2       },
       { href: "/portfolio",     label: "Portfolio",    icon: PieChart        },
       { href: "/applications",  label: "Applications", icon: ClipboardList   },
+      { href: "/milestones",    label: "Milestones",   icon: Target          },
       { href: "/feed",          label: "Feed",         icon: Rss             },
       { href: "/promos",        label: "Promos",       icon: Flame           },
     ],
@@ -90,6 +93,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Tools",
     items: [
+      { href: "/compare",       label: "Compare",      icon: GitCompare      },
       { href: "/tools",         label: "All Tools",    icon: Wrench          },
     ],
   },
