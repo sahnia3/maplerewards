@@ -11,7 +11,7 @@ import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import type { WalletSummary, CardScore, Card, PortfolioAnalysis, CardCreditStatus, SQCProjection, CardValueSummary } from "@/lib/types";
 import { Check, Plus, TrendingUp, Zap, ChevronRight, Loader2, AlertTriangle, Target, DollarSign, Gift, CalendarClock, Plane, Award } from "lucide-react";
 import { PageMasthead } from "@/components/editorial/page-masthead";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 import { AnimatedCounter } from "@/components/motion/counter";
 import { AnimatedSection, AnimatedList, AnimatedItem } from "@/components/ui/animated-list";
 import { SkeletonCard } from "@/components/ui/skeleton";

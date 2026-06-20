@@ -4,14 +4,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ApiError, listCategories, optimize, logSpend, addCardToWallet, request } from "@/lib/api";
+import { ApiError, listCategories, optimize, logSpend, addCardToWallet, listCPPOverrides, request, type UserCPPOverride } from "@/lib/api";
 import { useSession } from "@/contexts/session-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useWallet } from "@/contexts/wallet-context";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 import type { Category, CardRecommendation } from "@/lib/types";
 import { EditorialCardVisual } from "@/components/editorial/editorial-card";
 import { cardImageUrl } from "@/lib/card-images";
+import { generateExplanation } from "@/lib/optimizer-explain";
+import { CATALOG_VALUATION_AS_OF, formatAsOf } from "@/lib/valuation-meta";
 
 /** Heuristic network detection from card name — Visa Infinite > Visa > Mastercard > Amex. */
 function inferNetwork(name: string): string {
@@ -87,7 +89,7 @@ function tintFor(slug: string) {
 }
 
 export function OptimizerForm() {
-  const { ensureSession } = useSession();
+  const { ensureSession, sessionId } = useSession();
   const { isAuthenticated } = useAuth();
   const { wallet, isLoading: walletLoading, refreshWallet } = useWallet();
   const router = useRouter();
@@ -109,6 +111,16 @@ export function OptimizerForm() {
   const [signupPrompt, setSignupPrompt] = useState(false);
   // Cached ephemeral demo session so repeated ranks don't reseed the cards.
   const [demoSessionId, setDemoSessionId] = useState<string | null>(null);
+  // Transparency toggles: the winner's "Why?" reasoning panel and "show the
+  // math" arithmetic expander. Keyed off the winner; runner rows track their
+  // own "Why?" state by card_id.
+  const [showWinnerWhy, setShowWinnerWhy] = useState(false);
+  const [showMath, setShowMath] = useState(false);
+  const [openWhy, setOpenWhy] = useState<Set<string>>(new Set());
+  // AU-5: the signed-in user's base-segment CPP overrides, matched to the
+  // winning recommendation by program name to mark "your valuation" (mirrors
+  // app/loyalty/[slug]/page.tsx). Empty for anonymous / sample-wallet visitors.
+  const [cppOverrides, setCppOverrides] = useState<UserCPPOverride[]>([]);
 
   // Lazily create + seed a throwaway demo session with the popular demo cards.
   // Never persisted as the user's session, so the real (empty) wallet is left
@@ -141,6 +153,19 @@ export function OptimizerForm() {
       .finally(() => setCatLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // AU-5: pull the user's saved per-program CPP overrides so the winner's
+  // Program-CPP stat can mark "your valuation" when one is in play. Only for
+  // signed-in users with a real session — the sample wallet uses our defaults.
+  useEffect(() => {
+    if (!isAuthenticated || !sessionId) {
+      setCppOverrides([]);
+      return;
+    }
+    listCPPOverrides(sessionId)
+      .then(setCppOverrides)
+      .catch(() => setCppOverrides([]));
+  }, [isAuthenticated, sessionId]);
 
   async function rank() {
     setError(null);
@@ -219,6 +244,44 @@ export function OptimizerForm() {
   const t = tintFor(categorySlug);
   const best = results?.[0];
   const runners = results ? results.slice(1) : [];
+  const amountNum = parseFloat(amount);
+  const hasAmount = !isNaN(amountNum) && amountNum > 0;
+  const category = categories.find((c) => c.slug === categorySlug);
+
+  // "Why it beat #2": dollar margin of the winner over the immediate runner-up,
+  // using the engine's already-computed dollar_value on each rec. Null when
+  // there is no runner-up to compare against.
+  const winnerDelta =
+    best && runners[0] ? best.dollar_value - runners[0].dollar_value : null;
+
+  // AU-5: a base-segment override matching the winner's program marks "your
+  // valuation". Match by program_name (the only program key the optimizer rec
+  // carries). The sweet-spot ("business") segment uses our best-case figure, so
+  // the override only applies in the base segment — mirrors the loyalty page.
+  const winnerOverride =
+    best && segment === "base"
+      ? cppOverrides.find(
+          (o) => o.segment === "base" && o.program_name === best.program_name,
+        )
+      : undefined;
+  const isUserValued = winnerOverride != null;
+  // Sub-label for the Program-CPP stat: which valuation is in play given the
+  // segment toggle, with a "your valuation" marker when the user has set one.
+  const cppValuationLabel = isUserValued
+    ? "your valuation"
+    : segment === "business"
+      ? "sweet-spot value"
+      : "base value";
+  // Provenance: MapleRewards' own CPPs carry a catalog-level review date so the
+  // figure isn't shown unsourced. A user's own valuation is dated by them.
+  const cppAsOf = isUserValued ? null : formatAsOf(CATALOG_VALUATION_AS_OF);
+  const cppSubLabel: ReactNode = cppAsOf ? (
+    <>
+      {cppValuationLabel} · as of {cppAsOf}
+    </>
+  ) : (
+    cppValuationLabel
+  );
 
   return (
     <div>
@@ -755,6 +818,23 @@ export function OptimizerForm() {
                     {best.note ||
                       `You'd earn about $${best.dollar_value.toFixed(2)} back${amount ? ` on this $${amount}` : ""} via ${best.program_name} — ${best.earn_rate.toFixed(1)}× points (${best.effective_return.toFixed(2)}% effective).`}
                   </p>
+                  {/* "Why it beat #2": dollar margin over the immediate
+                      runner-up, named. Derived straight from each rec's
+                      dollar_value — no recompute. */}
+                  {winnerDelta != null && winnerDelta > 0 && runners[0] && (
+                    <div
+                      className="mono"
+                      style={{
+                        marginTop: 10,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        letterSpacing: "0.02em",
+                        color: t.hue,
+                      }}
+                    >
+                      +${winnerDelta.toFixed(2)} over {runners[0].card_name}
+                    </div>
+                  )}
                 </div>
                 <div className="optimizer-winner-card" style={{ flexShrink: 0 }}>
                   <EditorialCardVisual
@@ -789,8 +869,122 @@ export function OptimizerForm() {
                   <Stat label="Points earned" value={Math.round(best.points_earned).toLocaleString()} />
                 )}
                 <Stat label={<>Effective <Term k="redemption">return</Term></>} value={`${best.effective_return.toFixed(2)}%`} />
-                <Stat label={<>Program <Term k="cpp">CPP</Term></>} value={`${best.program_cpp.toFixed(2)}¢`} last />
+                <Stat
+                  label={<>Program <Term k="cpp">CPP</Term></>}
+                  value={`${best.program_cpp.toFixed(2)}¢`}
+                  sub={cppSubLabel}
+                  accent={isUserValued ? t.hue : undefined}
+                  last
+                />
               </div>
+              {/* Transparency controls: surface the lifted "why this card"
+                  reasoning and the plain arithmetic so the ranking isn't a
+                  black box. Both default closed to keep the editorial result
+                  clean. */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: showWinnerWhy || showMath ? 12 : 16 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowWinnerWhy((v) => !v)}
+                  className="mono"
+                  aria-expanded={showWinnerWhy}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    background: showWinnerWhy ? t.hue : "transparent",
+                    color: showWinnerWhy ? (t.activeInk ?? "#fff") : "var(--ink-2)",
+                    border: `1px solid ${showWinnerWhy ? t.hue : "var(--rule-strong)"}`,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    transition: "all 160ms",
+                  }}
+                >
+                  {showWinnerWhy ? "Hide why" : "Why?"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMath((v) => !v)}
+                  className="mono"
+                  aria-expanded={showMath}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    background: showMath ? t.hue : "transparent",
+                    color: showMath ? (t.activeInk ?? "#fff") : "var(--ink-2)",
+                    border: `1px solid ${showMath ? t.hue : "var(--rule-strong)"}`,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    transition: "all 160ms",
+                  }}
+                >
+                  {showMath ? "Hide math" : "Show the math"}
+                </button>
+              </div>
+
+              {/* "Why this card" — shared natural-language explanation, lifted
+                  from the retired RecommendationCard into lib/optimizer-explain. */}
+              {showWinnerWhy && (
+                <div
+                  className="serif"
+                  style={{
+                    marginBottom: 12,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--rule)",
+                    background: "var(--card-fill)",
+                    color: "var(--ink-2)",
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {generateExplanation(best, 1, category?.name ?? categorySlug, hasAmount ? amountNum : undefined)}
+                </div>
+              )}
+
+              {/* "Show the math" — plain arithmetic over the already-computed
+                  fields. points = spend × multiplier; value = points × CPP.
+                  When a cap clipped the card we say so rather than implying the
+                  bare product holds end-to-end. */}
+              {showMath && (
+                <div
+                  className="mono"
+                  style={{
+                    marginBottom: 12,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--rule)",
+                    background: "var(--card-fill)",
+                    color: "var(--ink-2)",
+                    fontSize: 12,
+                    letterSpacing: "0.01em",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {hasAmount ? (
+                    <>
+                      ${amountNum.toFixed(2)} × {best.earn_rate.toFixed(1)}× = {Math.round(best.points_earned).toLocaleString()} pts
+                      {" → "}
+                      {Math.round(best.points_earned).toLocaleString()} pts × {best.program_cpp.toFixed(2)}¢ = ${best.dollar_value.toFixed(2)}
+                    </>
+                  ) : (
+                    <>{best.earn_rate.toFixed(1)}× at {best.program_cpp.toFixed(2)}¢/pt — enter an amount to see the dollar math.</>
+                  )}
+                  {best.is_cap_hit && (
+                    <div className="serif" style={{ fontStyle: "italic", color: "#b8860b", marginTop: 6, fontSize: 12, lineHeight: 1.4 }}>
+                      {best.note?.includes("fully spent")
+                        ? "Spending cap reached — the figure above earns at the fallback rate."
+                        : "A spending cap clips this — the figure blends bonus and fallback rates."}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* NU-11: explain *why* we're sending them to signup before the
                * redirect, so the hard gate doesn't read as an ambush. */}
               {signupPrompt && (
@@ -899,13 +1093,21 @@ export function OptimizerForm() {
               </div>
               {runners.map((rec, i) => {
                 const isLogged = loggedIds.has(rec.card_id);
+                const whyOpen = openWhy.has(rec.card_id);
+                const toggleWhy = () =>
+                  setOpenWhy((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(rec.card_id)) next.delete(rec.card_id);
+                    else next.add(rec.card_id);
+                    return next;
+                  });
                 return (
                   /* Staggered reveal: 60ms gap between rows + ease-out-expo
                    * easing matches the rest of the system. Framer Motion
                    * automatically respects prefers-reduced-motion when the
                    * user has it set. */
+                  <div key={rec.card_id}>
                   <motion.div
-                    key={rec.card_id}
                     className="optimizer-runner-row m-grid-1"
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -934,6 +1136,28 @@ export function OptimizerForm() {
                         {rec.program_name}
                         {rec.transfer_partner && <> · transfers via <span style={{ color: "var(--ink-2)" }}>{rec.transfer_partner}</span></>}
                       </div>
+                      <button
+                        type="button"
+                        onClick={toggleWhy}
+                        className="mono"
+                        aria-expanded={whyOpen}
+                        style={{
+                          marginTop: 5,
+                          padding: 0,
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.10em",
+                          textTransform: "uppercase",
+                          color: whyOpen ? t.hue : "var(--ink-3)",
+                          textDecoration: "underline",
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        {whyOpen ? "Hide why" : "Why?"}
+                      </button>
                       {/* Cap signal: the engine computes is_cap_hit + a note per
                           card, but runner rows previously showed only the bare CAD
                           figure — so a clipped card looked the same as an uncapped
@@ -979,6 +1203,27 @@ export function OptimizerForm() {
                       {isLogged ? "✓ Logged" : "Log →"}
                     </button>
                   </motion.div>
+                  {/* Per-runner "why this card" — same shared explanation as the
+                      winner, so the reasoning reaches users on every row. */}
+                  {whyOpen && (
+                    <div
+                      className="serif"
+                      style={{
+                        margin: "0 4px 4px",
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        border: "1px solid var(--rule)",
+                        background: "var(--card-fill)",
+                        color: "var(--ink-2)",
+                        fontSize: 12,
+                        fontStyle: "italic",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {generateExplanation(rec, i + 2, category?.name ?? categorySlug, hasAmount ? amountNum : undefined)}
+                    </div>
+                  )}
+                  </div>
                 );
               })}
             </div>
@@ -1013,7 +1258,7 @@ export function OptimizerForm() {
   );
 }
 
-function Stat({ label, value, accent, last = false }: { label: ReactNode; value: string; accent?: string; last?: boolean }) {
+function Stat({ label, value, accent, sub, last = false }: { label: ReactNode; value: string; accent?: string; sub?: ReactNode; last?: boolean }) {
   return (
     <div
       style={{
@@ -1031,6 +1276,14 @@ function Stat({ label, value, accent, last = false }: { label: ReactNode; value:
       >
         {value}
       </div>
+      {sub && (
+        <div
+          className="serif"
+          style={{ fontSize: 11, fontStyle: "italic", color: "var(--ink-3)", marginTop: 3, lineHeight: 1.3 }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

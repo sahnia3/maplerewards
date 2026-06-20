@@ -406,10 +406,11 @@ export interface ChatResponse {
   history: ChatMessage[];
 }
 
-export async function chat(req: ChatRequest): Promise<ChatResponse> {
+export async function chat(req: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
   return request<ChatResponse>("/chat", {
     method: "POST",
     body: JSON.stringify(req),
+    signal,
   });
 }
 
@@ -421,6 +422,12 @@ export type ChatStreamEvent =
   | { type: "tool_done"; id: string; name: string; summary: string }
   | { type: "round_end"; round: number; has_more: boolean }
   | { type: "result"; points: number; cash_cad: number; value_per_pt_cents: number; label: string }
+  // Real token-by-token prose streaming. `token` carries one Anthropic text
+  // delta as it's generated; append it to the in-flight assistant message.
+  // `replace` carries the full corrected reply when the backend's post-stream
+  // self-check rewrote what was already streamed — swap the in-flight text for it.
+  | { type: "token"; text: string }
+  | { type: "replace"; text: string }
   | { type: "done"; reply: string; history: ChatMessage[] }
   | { type: "error"; message: string };
 
@@ -469,7 +476,7 @@ export async function chatStream(
   // to the legacy non-streaming /chat. The user gets the answer (no live pills)
   // instead of a "Sorry, I couldn't process your request" dead end.
   if (res.status === 404) {
-    const resp = await chat(req);
+    const resp = await chat(req, signal);
     onEvent({ type: "done", reply: resp.reply, history: resp.history });
     return;
   }

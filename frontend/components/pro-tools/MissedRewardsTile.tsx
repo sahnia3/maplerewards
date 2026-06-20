@@ -7,6 +7,7 @@ import type { MissedRewardsReport } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { ProgressRing } from "@/components/editorial/dataviz";
+import { Term } from "@/components/ui/term";
 import { ExportButton, Stat, fmtCAD, fmtCAD2, sectionStyle } from "./_shared";
 
 interface Props {
@@ -49,8 +50,8 @@ export function MissedRewardsTile({ sessionId, isReady }: Props) {
           className="serif"
           style={{ marginTop: -4, marginBottom: 16, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.5 }}
         >
-          Maple re-ranks every spend against your current wallet. The gap is the
-          dollars an optimal card would have earned.
+          Maple re-ranks every spend against your current wallet. The gap is{" "}
+          <Term term="leakage">leakage</Term> — dollars an optimal card would have earned.
         </p>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>

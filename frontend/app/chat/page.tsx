@@ -105,6 +105,10 @@ export default function ChatPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
+  // Screen-reader announcement for the COMPLETED assistant reply. The
+  // ThinkingIndicator's live region only voices the rotating "thinking"
+  // phrases; this politely announces the real answer once, when it lands.
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
   // Server-side history (signed-in users only). conversationId rides along on
   // every send so the backend appends to the same thread across reloads.
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -121,6 +125,18 @@ export default function ChatPage() {
   // Guards the mount-time auto-restore against clobbering a thread the user
   // already started or picked before the history fetch resolved.
   const hasInteractedRef = useRef(false);
+  // In-flight request controller — lets the "Stop" button abort streaming.
+  const abortRef = useRef<AbortController | null>(null);
+  // Set true when the user hits Stop, so the catch block can swallow the
+  // resulting AbortError instead of surfacing it as a failure.
+  const abortedRef = useRef(false);
+  // True once the first `token` for the current turn has landed. While true, an
+  // in-flight assistant message holds the live-typing prose, so the rotating
+  // ThinkingIndicator is suppressed (the real text has taken its place).
+  const [streamingReply, setStreamingReply] = useState(false);
+  // Accumulates the streamed prose for the current turn. The in-flight assistant
+  // message is the LAST message in `messages` while streamingReply is true.
+  const streamedTextRef = useRef("");
 
   // Wallet-context chips: source from the live wallet summary. Each card →
   // issuer badge + short name + balance, plus an accent "total" pill.
@@ -130,6 +146,26 @@ export default function ChatPage() {
   // "+N" pill for the rest, so a large wallet doesn't wrap into several rows.
   const topCards = [...walletCards].sort((a, b) => (b.point_balance ?? 0) - (a.point_balance ?? 0)).slice(0, 3);
   const extraCards = Math.max(0, walletCards.length - topCards.length);
+
+  // Wallet-aware starter prompts for the empty state. When the page already
+  // holds the user's top card, one chip references it by name; otherwise the
+  // defaults are used. Tapping a chip submits it as the user's message.
+  const starterPrompts: string[] = (() => {
+    const defaults = [
+      "Best card for groceries?",
+      "Am I leaving points on the table?",
+      "How do I fly to Tokyo in business class with my points?",
+      "Which card should I cancel?",
+    ];
+    const lead = topCards[0];
+    if (!lead) return defaults;
+    const cardLabel = shortCardName(lead.card_name, lead.issuer);
+    // Swap the second default for one that names a real held card/program.
+    const personalised = lead.program_name
+      ? `What's the best way to redeem my ${lead.program_name} points?`
+      : `Am I getting the most out of my ${cardLabel}?`;
+    return [defaults[0], personalised, defaults[2], defaults[3]];
+  })();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -191,6 +227,12 @@ export default function ChatPage() {
     setPills([]);
   }
 
+  function handleStop() {
+    if (!loading) return;
+    abortedRef.current = true;
+    abortRef.current?.abort();
+  }
+
   async function handleSend(messageText?: string) {
     const text = (messageText ?? input).trim();
     if (!text || loading) return;
@@ -199,7 +241,13 @@ export default function ChatPage() {
     setError(null);
     setLoading(true);
     setPills([]);
+    setLiveAnnouncement("");
     pendingResultRef.current = null;
+    abortedRef.current = false;
+    setStreamingReply(false);
+    streamedTextRef.current = "";
+    const controller = new AbortController();
+    abortRef.current = controller;
     const userMsg: ChatMessage = { role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
     try {
@@ -232,6 +280,42 @@ export default function ChatPage() {
               value_per_pt_cents: e.value_per_pt_cents,
               label: e.label,
             };
+          } else if (e.type === "token") {
+            // Live prose delta. On the FIRST token, append a fresh assistant
+            // message (which makes the rotating ThinkingIndicator yield to real
+            // typing text); thereafter, append the delta to that in-flight
+            // message so it types out live.
+            streamedTextRef.current += e.text;
+            const full = streamedTextRef.current;
+            setStreamingReply((already) => {
+              if (already) {
+                // Update the existing in-flight assistant message (last one).
+                setMessages((prev) => {
+                  if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
+                    return [...prev, { role: "assistant", content: full }];
+                  }
+                  const next = prev.slice();
+                  next[next.length - 1] = { ...next[next.length - 1], content: full };
+                  return next;
+                });
+                return true;
+              }
+              // First token: create the streaming assistant message.
+              setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+              return true;
+            });
+          } else if (e.type === "replace") {
+            // Post-stream self-check rewrote the reply. Swap the in-flight
+            // assistant message's content for the corrected full text.
+            streamedTextRef.current = e.text;
+            setMessages((prev) => {
+              if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
+                return [...prev, { role: "assistant", content: e.text }];
+              }
+              const next = prev.slice();
+              next[next.length - 1] = { ...next[next.length - 1], content: e.text };
+              return next;
+            });
           } else if (e.type === "done") {
             // Rebuild from the canonical history, then attach any pending
             // structured result to the final assistant message.
@@ -246,6 +330,19 @@ export default function ChatPage() {
               }
             }
             setMessages(next);
+            // Streaming for this turn is finished; the canonical history above
+            // now holds the final assistant reply (reconciled against the
+            // streamed/replaced in-flight message).
+            setStreamingReply(false);
+            streamedTextRef.current = "";
+            // Politely announce the completed assistant reply to screen
+            // readers (the live region voices this content, not every token).
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].role === "assistant") {
+                setLiveAnnouncement(next[i].content);
+                break;
+              }
+            }
             pendingResultRef.current = null;
             // The done payload carries the conversation_id (new or existing)
             // for signed-in users — keep it so the next send continues the
@@ -263,14 +360,35 @@ export default function ChatPage() {
             setPills([]);
           } else if (e.type === "error") {
             setError(e.message);
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", content: "Sorry, I couldn't process your request. Please try again." },
-            ]);
+            setStreamingReply(false);
+            streamedTextRef.current = "";
+            // If prose had begun streaming, overwrite that in-flight assistant
+            // message with the error note instead of appending a second one.
+            setMessages((prev) => {
+              const note = "Sorry, I couldn't process your request. Please try again.";
+              if (prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+                const next = prev.slice();
+                next[next.length - 1] = { role: "assistant", content: note };
+                return next;
+              }
+              return [...prev, { role: "assistant", content: note }];
+            });
           }
         },
+        controller.signal,
       );
     } catch (err) {
+      // User pressed Stop — finalize the partial reply gracefully. The stream
+      // may have already appended assistant text to `messages`; if nothing
+      // landed, leave a short note so the turn doesn't read as a dead end.
+      if (abortedRef.current || (err instanceof DOMException && err.name === "AbortError")) {
+        setMessages((prev) =>
+          prev.length > 0 && prev[prev.length - 1].role === "assistant"
+            ? prev
+            : [...prev, { role: "assistant", content: "_Response stopped._" }]
+        );
+        return;
+      }
       const msg = err instanceof Error ? err.message : "Something went wrong";
       // Prefer the machine code (chatStream throws an ApiError carrying it) over
       // a brittle message-substring match. UPGRADE_REQUIRED = free monthly cap,
@@ -289,6 +407,10 @@ export default function ChatPage() {
       setLoading(false);
       setSearching(false);
       setPills([]);
+      setStreamingReply(false);
+      streamedTextRef.current = "";
+      abortRef.current = null;
+      abortedRef.current = false;
       inputRef.current?.focus();
     }
   }
@@ -538,6 +660,27 @@ export default function ChatPage() {
           </div>
         )}
 
+        {/* Screen-reader live region: politely announces the COMPLETED
+            assistant reply (set on the "done" event), not every token. Visually
+            hidden; the ThinkingIndicator's own live region covers the wait. */}
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            padding: 0,
+            margin: -1,
+            overflow: "hidden",
+            clip: "rect(0, 0, 0, 0)",
+            whiteSpace: "nowrap",
+            border: 0,
+          }}
+        >
+          {liveAnnouncement}
+        </div>
+
         {/* ── Conversation / empty state ── */}
         {messages.length === 0 ? (
           <div
@@ -560,6 +703,105 @@ export default function ChatPage() {
                 <> Add cards in the <Link href="/wallet" style={{ color: "var(--accent)" }}>Wallet</Link> tab for personalised advice.</>
               )}
             </p>
+
+            {/* Tappable starter prompts — tapping one submits it as the user's
+                message. Wallet-aware: one chip names a real held card/program. */}
+            <div
+              role="group"
+              aria-label="Suggested questions"
+              style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 20 }}
+            >
+              {starterPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => handleSend(prompt)}
+                  disabled={loading || (rateLimited && !isPro)}
+                  className="mono"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "9px 14px",
+                    borderRadius: 999,
+                    border: "1px solid var(--rule-strong)",
+                    background: "var(--surface)",
+                    color: "var(--ink-2)",
+                    fontSize: 12,
+                    letterSpacing: "0.02em",
+                    textAlign: "left",
+                    cursor: loading || (rateLimited && !isPro) ? "not-allowed" : "pointer",
+                    opacity: loading || (rateLimited && !isPro) ? 0.6 : 1,
+                    transition: "border-color 160ms, color 160ms, background 160ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && !(rateLimited && !isPro)) {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.color = "var(--ink)";
+                      e.currentTarget.style.background = "var(--accent-soft)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "var(--rule-strong)";
+                    e.currentTarget.style.color = "var(--ink-2)";
+                    e.currentTarget.style.background = "var(--surface)";
+                  }}
+                >
+                  <span aria-hidden style={{ color: "var(--accent)" }}>↗</span>
+                  {prompt}
+                </button>
+              ))}
+            </div>
+
+            {/* One concrete worked-example preview — shows newcomers exactly the
+               shape of answer Maple gives (question → card → math → cashback),
+               so the empty state demonstrates value instead of just listing
+               prompts. Static + editorial; tapping it runs the example query. */}
+            <button
+              type="button"
+              onClick={() => handleSend("Best card for $80 of groceries?")}
+              disabled={loading || (rateLimited && !isPro)}
+              aria-label="Try the worked example: Best card for $80 of groceries?"
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                marginTop: 22,
+                padding: "16px 18px",
+                borderRadius: 12,
+                border: "1px solid var(--rule)",
+                borderLeft: "3px solid var(--gain)",
+                background: "var(--surface)",
+                cursor: loading || (rateLimited && !isPro) ? "not-allowed" : "pointer",
+                opacity: loading || (rateLimited && !isPro) ? 0.6 : 1,
+                transition: "border-color 160ms, background 160ms",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && !(rateLimited && !isPro)) {
+                  e.currentTarget.style.borderColor = "var(--accent)";
+                  e.currentTarget.style.background = "var(--card-fill)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "var(--rule)";
+                e.currentTarget.style.background = "var(--surface)";
+              }}
+            >
+              <span
+                className="mono"
+                style={{ fontSize: 9, color: "var(--gain)", letterSpacing: "0.10em", textTransform: "uppercase" }}
+              >
+                A sample answer
+              </span>
+              <p
+                className="serif"
+                style={{ fontSize: 15, fontStyle: "italic", lineHeight: 1.55, color: "var(--ink-2)", margin: "8px 0 0" }}
+              >
+                Ask: <span style={{ color: "var(--ink)", fontStyle: "normal", fontWeight: 600 }}>“Best card for $80 of groceries?”</span>{" "}
+                → your <span style={{ color: "var(--accent)", fontStyle: "normal" }}>Cobalt at 5×</span> earns ~400 MR{" "}
+                ≈ <span style={{ color: "var(--gain)", fontStyle: "normal", fontWeight: 600 }}>$5.40 back</span> at 1.35¢/pt.
+              </p>
+            </button>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -608,7 +850,14 @@ export default function ChatPage() {
               )
             )}
 
-            {loading && (
+            {/* While loading, show the avatar + a status block. Once prose has
+               started streaming (streamingReply), the live assistant message is
+               already rendered above — so we suppress the rotating
+               ThinkingIndicator (the real text replaced it) and only keep the
+               tool pills, which can still resolve during tool rounds. The whole
+               block hides when streaming AND no pills remain, so the answer reads
+               cleanly without a trailing placeholder. */}
+            {loading && !(streamingReply && pills.length === 0) && (
               <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
                 <Image
                   src={LOGO}
@@ -618,9 +867,9 @@ export default function ChatPage() {
                   style={{ objectFit: "contain", flexShrink: 0, marginTop: 2 }}
                 />
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
-                  {/* Always-present, animated "thinking" line so the wait reads as
-                     alive motion rather than a static stack of pills. */}
-                  <ThinkingIndicator searching={searching} />
+                  {/* Animated "thinking" line — only until real prose streams in;
+                     once tokens land it would double up under the live text. */}
+                  {!streamingReply && <ThinkingIndicator searching={searching} />}
                   {/* Tool-call pills (when the model is using tools) fade in below. */}
                   {pills.length > 0 && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -734,32 +983,61 @@ export default function ChatPage() {
                   wordBreak: "break-word",
                 }}
               />
-              <button
-                type="button"
-                onClick={() => handleSend()}
-                disabled={!input.trim() || loading || (rateLimited && !isPro)}
-                style={{
-                  width: 42,
-                  height: 42,
-                  flexShrink: 0,
-                  borderRadius: 11,
-                  background: input.trim() && !loading ? "var(--accent)" : "var(--surface-2)",
-                  color: input.trim() && !loading ? "#fff" : "var(--ink-3)",
-                  border: "none",
-                  cursor: input.trim() && !loading ? "pointer" : "not-allowed",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: input.trim() && !loading ? "var(--shadow-accent-glow)" : "none",
-                  transition: "background 160ms, box-shadow 160ms",
-                }}
-                aria-label="Send"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              </button>
+              {loading ? (
+                // Stop / abort — aborts the in-flight stream and finalizes the
+                // partial reply gracefully (handled in handleSend's catch).
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    flexShrink: 0,
+                    borderRadius: 11,
+                    background: "var(--surface-2)",
+                    color: "var(--ink)",
+                    border: "1px solid var(--rule-strong)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "background 160ms, border-color 160ms",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--rule-strong)"; }}
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                >
+                  <span aria-hidden style={{ width: 12, height: 12, borderRadius: 2, background: "var(--ink)", display: "block" }} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() || (rateLimited && !isPro)}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    flexShrink: 0,
+                    borderRadius: 11,
+                    background: input.trim() ? "var(--accent)" : "var(--surface-2)",
+                    color: input.trim() ? "#fff" : "var(--ink-3)",
+                    border: "none",
+                    cursor: input.trim() ? "pointer" : "not-allowed",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: input.trim() ? "var(--shadow-accent-glow)" : "none",
+                    transition: "background 160ms, box-shadow 160ms",
+                  }}
+                  aria-label="Send"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             {/* Research-mode toggle (only pill) + quiet free-tier quota indicator. */}

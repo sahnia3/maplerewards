@@ -4,8 +4,27 @@ import { useEffect, useState } from "react";
 import { evaluateBuyPoints, listBuyPromos } from "@/lib/api";
 import type { BuyPointsVerdict, BuyPromo } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
-import { LineChart } from "@/components/editorial/dataviz";
 import { FieldLabel, Stat, VerdictPill, ctaStyle, fieldStyle, fmtCAD, progLabel, sectionStyle } from "./_shared";
+
+// Honest two-value comparison bar — both numbers come straight from the
+// break-even API verdict; nothing is synthesised.
+function Bar({ label, value, pct, color }: { label: string; value: number; pct: number; color: string }) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+        <span className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+          {label}
+        </span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink)", fontWeight: 600 }}>
+          {value.toFixed(2)}¢
+        </span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${Math.max(2, Math.min(100, pct))}%`, background: color, borderRadius: 999 }} />
+      </div>
+    </div>
+  );
+}
 
 export function BuyPointsTile() {
   const [promos, setPromos] = useState<BuyPromo[]>([]);
@@ -14,16 +33,24 @@ export function BuyPointsTile() {
   const [cash, setCash] = useState("1500");
   const [verdict, setVerdict] = useState<BuyPointsVerdict | null>(null);
   const [loading, setLoading] = useState(false);
+  // Surfaced (not swallowed) so a failed break-even evaluation tells the user
+  // instead of silently leaving the last verdict on screen — this is the math
+  // they decide a real cash purchase on.
+  const [err, setErr] = useState<string | null>(null);
+  const [promosErr, setPromosErr] = useState<string | null>(null);
 
   useEffect(() => {
     listBuyPromos().then((p) => {
       setPromos(p);
       if (p.length > 0) setProgram(p[0].program_slug);
-    }).catch(() => {});
+    }).catch((e) => {
+      setPromosErr(e instanceof Error ? e.message : "Couldn't load promo pricing.");
+    });
   }, []);
 
   async function evalIt() {
     setLoading(true);
+    setErr(null);
     try {
       const v = await evaluateBuyPoints({
         program_slug: program,
@@ -31,6 +58,8 @@ export function BuyPointsTile() {
         cash_alternative_cad: parseFloat(cash) || 0,
       });
       setVerdict(v);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't evaluate this buy. Try again.");
     } finally { setLoading(false); }
   }
 
@@ -68,6 +97,16 @@ export function BuyPointsTile() {
           </button>
         </div>
 
+        {(err || promosErr) && (
+          <p
+            role="alert"
+            className="mono"
+            style={{ marginTop: 12, fontSize: 12, color: "var(--loss)" }}
+          >
+            {err ?? promosErr}
+          </p>
+        )}
+
         {verdict && (
           <div
             style={{
@@ -99,48 +138,31 @@ export function BuyPointsTile() {
               <Stat label="Break-even" value={`${verdict.break_even_cents_per_point.toFixed(2)}¢`} last />
             </div>
 
-            {/* Break-even visual: promo cents-per-point you'd pay across rising
-                order sizes, with the redemption break-even marked as a threshold.
-                A line below the marker means buying beats the cash alternative. */}
+            {/* Break-even comparison — TWO real numbers only. We previously drew a
+                4-point "curve" across invented order sizes (promo × 1.18 / 1.05 /
+                0.96); buy-points pricing here doesn't vary with order size, so that
+                ramp was decorative, not data. This shows exactly what the API gives
+                us: the promo price per point vs the redemption break-even. Promo at
+                or below break-even (green) means buying beats the cash alternative. */}
             {(() => {
               const promo = verdict.current_promo_cents_per_point;
               const be = verdict.break_even_cents_per_point;
-              const series = [promo * 1.18, promo * 1.05, promo, promo * 0.96];
-              const lo = Math.min(be, ...series);
-              const hi = Math.max(be, ...series);
-              const span = hi - lo || 1;
-              // Threshold % within the chart's own min..max range (chart pads
-              // identically), so the marker lands where break-even sits.
-              const thresholdPct = ((be - lo) / span) * 100;
+              const max = Math.max(promo, be) || 1;
+              const promoPct = (promo / max) * 100;
+              const bePct = (be / max) * 100;
               const buying = promo <= be;
+              const barColor = buying ? "var(--gain)" : "var(--loss)";
               return (
                 <div style={{ marginTop: 16 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span className="eyebrow">Break-even curve (¢ / point)</span>
-                    <span className="mono" style={{ fontSize: 10, color: buying ? "var(--gain)" : "var(--loss)", letterSpacing: "0.04em" }}>
-                      break-even {be.toFixed(2)}¢
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span className="eyebrow">Promo price vs break-even (¢ / point)</span>
+                    <span className="mono" style={{ fontSize: 10, color: barColor, letterSpacing: "0.04em" }}>
+                      {buying ? "buying wins" : "earn instead"}
                     </span>
                   </div>
-                  <div style={{ position: "relative" }}>
-                    <span
-                      aria-hidden
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        top: `${100 - thresholdPct}%`,
-                        borderTop: "1px dashed var(--ink-3)",
-                        opacity: 0.6,
-                        pointerEvents: "none",
-                      }}
-                    />
-                    <LineChart
-                      points={series}
-                      color={buying ? "var(--gain)" : "var(--loss)"}
-                      height={120}
-                      gridlines={0}
-                      endDot
-                    />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <Bar label="You'd pay (promo)" value={promo} pct={promoPct} color={barColor} />
+                    <Bar label="Break-even ceiling" value={be} pct={bePct} color="var(--ink-3)" />
                   </div>
                 </div>
               );

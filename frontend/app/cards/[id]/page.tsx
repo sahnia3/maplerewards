@@ -6,7 +6,7 @@ import { ChevronLeft, ArrowLeftRight, AlertTriangle } from "lucide-react";
 import { CreditCardVisual } from "@/components/cards/credit-card-visual";
 import { getCardDetail } from "@/lib/api";
 import type { CardDetail, MultiplierRow, TransferPartner } from "@/lib/types";
-import { Term } from "@/components/term";
+import { Term } from "@/components/ui/term";
 import { WelcomeOfferBadge } from "@/components/welcome-offer-badge";
 import { ApplyButton } from "@/components/cards/ApplyButton";
 import { EligibilityChip } from "@/components/cards/EligibilityChip";
@@ -421,7 +421,7 @@ export default function CardDetailPage() {
               zIndex: 0,
             }}
           />
-          <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="m-card-fit" style={{ position: "relative", zIndex: 1 }}>
             <CreditCardVisual card={card} size="lg" />
           </div>
 

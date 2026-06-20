@@ -100,29 +100,33 @@ function LoginForm() {
             </p>
           </header>
 
-          {/* Google */}
-          <GoogleSignInButton
-            disabled={loading}
-            onSuccess={() => router.push(redirect)}
-            onError={(msg) => setError(msg)}
-          />
+          {/* Google — hidden entirely (button + divider) when OAuth isn't configured */}
+          {!!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && (
+            <>
+              <GoogleSignInButton
+                disabled={loading}
+                onSuccess={() => router.push(redirect)}
+                onError={(msg) => setError(msg)}
+              />
 
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                color: "var(--ink-3)",
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-              }}
-            >
-              or with email
-            </span>
-            <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
-          </div>
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "22px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--ink-3)",
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  or with email
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--rule)" }} />
+              </div>
+            </>
+          )}
 
           {/* Email + password */}
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>

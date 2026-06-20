@@ -6,6 +6,7 @@ import { getSQCProjection } from "@/lib/api";
 import type { SQCProjection } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { Term } from "@/components/ui/term";
 import { Stat, fmtCAD, fmtCAD2, FieldLabel, fieldStyle, ctaStyle, sectionStyle } from "./_shared";
 
 interface Props {
@@ -86,7 +87,7 @@ export function SQCTile({ sessionId, isReady }: Props) {
           className="serif"
           style={{ marginTop: -4, marginBottom: 16, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.5 }}
         >
-          The 2026 SQC framework collapsed three legacy metrics into one. Maple projects your year-end tier from current spend rate.
+          The 2026 <Term term="SQC">SQC</Term> framework collapsed three legacy metrics into one. Maple projects your year-end tier from current spend rate.
         </p>
 
         {/* Only blank the tile on the FIRST load. A tier-change / recalc refetch

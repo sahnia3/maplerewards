@@ -4,6 +4,7 @@ import Link from "next/link";
 import { OptimizerForm } from "@/components/optimizer-form";
 import { LeafDivider } from "@/components/editorial/leaf-divider";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { Term } from "@/components/ui/term";
 
 export default function OptimizerPage() {
   return (
@@ -53,8 +54,8 @@ export default function OptimizerPage() {
               }}
             >
               Tell us what you&rsquo;re buying. We rank every card in your wallet by
-              real CAD returned — points × CPP, net of caps and transfer
-              partners.
+              real CAD returned — points × <Term k="cpp">CPP</Term>, net of caps and{" "}
+              <Term k="transfer-partners">transfer partners</Term>.
             </p>
           </div>
           <Link
@@ -96,9 +97,9 @@ export default function OptimizerPage() {
           }}
         >
           {[
-            { value: "104", label: "Canadian cards" },
-            { value: "28", label: "Loyalty programs" },
-            { value: "10", label: "Spend categories" },
+            { value: "94", label: "Canadian cards" },
+            { value: "41", label: "Loyalty programs" },
+            { value: "14", label: "Spend categories" },
             { value: "CAD", label: "Dollar values" },
           ].map((s, i) => (
             <div

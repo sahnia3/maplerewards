@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, UserIcon } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { getSessionId } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { MapleWordmark } from "@/components/brand/maple-mark";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ function SignupForm() {
     try {
       const sessionId = getSessionId() || undefined;
       await register(email, password, displayName, sessionId);
+      track("signup_submitted");
       router.push(redirect);
     } catch (err: unknown) {
       // Map the backend's raw strings ("email already registered") and the

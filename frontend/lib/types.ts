@@ -299,6 +299,9 @@ export interface ProgramDetailResponse {
   program: LoyaltyProgram;
   transfer_out: TransferPartner[];
   transfer_in: TransferPartner[];
+  /** RFC3339 timestamp (point_valuations.recorded_at) of when this program's
+   *  base CPP was last refreshed. Omitted when no base valuation row exists. */
+  valuation_as_of?: string;
 }
 
 // ── Recommender ──────────────────────────────────────────────────────────────

@@ -6,7 +6,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeftRight, ChevronLeft } from "lucide-react";
 import { getProgramDetail, listCPPOverrides } from "@/lib/api";
 import type { ProgramDetailResponse, TransferPartner } from "@/lib/types";
-import { Term } from "@/components/term";
+import { CATALOG_VALUATION_AS_OF, formatAsOf } from "@/lib/valuation-meta";
+import { Term } from "@/components/ui/term";
 import { useAuth } from "@/contexts/auth-context";
 import { useSession } from "@/contexts/session-context";
 
@@ -345,21 +346,35 @@ export default function ProgramDetailPage() {
   const { program, transfer_out, transfer_in } = detail;
   const colors = typeColor(program.program_type);
 
-  // Redemption value tiers based on CPP. AU-5: when the signed-in user has set
-  // their own valuation for this program, every tier re-bases on it so the page
-  // shows the numbers THEY believe, not our defaults.
+  // Redemption value. AU-5: when the signed-in user has set their own valuation
+  // for this program, the base re-bases on it so the page shows the number THEY
+  // believe, not our default.
+  //
+  // HONESTY: base_cpp is the ONLY real CPP figure the API gives us per program.
+  // We do NOT have quoted award prices for premium-cabin or off-peak redemptions,
+  // so we no longer present any "business ~X¢/pt" or "first ~Y¢/pt" number as
+  // fact. Sweet-spot rows below describe REAL strategies in words; where a number
+  // is shown it is the real base CPP, and the one derived ceiling figure is
+  // labelled "Illustrative" so it can never be read as a quoted award price.
   const isUserValued = userCpp != null;
   const baseCpp = isUserValued ? userCpp : program.base_cpp;
-  const businessCpp = baseCpp * 2.2;
-  const firstCpp = baseCpp * 3.5;
+
+  // Provenance for the value tile: prefer this program's real recorded_at
+  // (point_valuations.recorded_at via the API), falling back to the catalog
+  // review date. A user's own valuation is dated by them, not us.
+  const valuationAsOf = isUserValued
+    ? null
+    : (formatAsOf(detail.valuation_as_of) ?? formatAsOf(CATALOG_VALUATION_AS_OF));
 
   // Per-type sweet-spot data, semantic tone codes (no more arbitrary hex).
+  // `value` is a qualitative label, NOT a fabricated CPP — the only number we
+  // quote is the real base CPP on the statement-credit row.
   const airlineSpots = [
     {
       title: "Partner Business Class",
-      desc: "Book partner airlines in business class for up to 3–5¢/pt. Search early for Saver space.",
-      value: `~${firstCpp.toFixed(1)}¢/pt`,
-      tag: "Best value",
+      desc: "Premium-cabin partner awards typically beat base value by a wide margin. Search early for Saver space; actual ¢/pt depends entirely on the route and fare you find.",
+      value: "Premium cabin",
+      tag: "Aim higher",
       tone: "best" as TagTone,
     },
     {
@@ -371,9 +386,9 @@ export default function ProgramDetailPage() {
     },
     {
       title: "Economy Award Space",
-      desc: "Domestic and short-haul economy redemptions offer solid value at lower point costs.",
-      value: `~${(baseCpp * 1.5).toFixed(1)}¢/pt`,
-      tag: "Easy to book",
+      desc: "Domestic and short-haul economy redemptions are the easiest to book at solid value for fewer points.",
+      value: "Easy to book",
+      tag: "Reliable",
       tone: "tip" as TagTone,
     },
   ];
@@ -388,9 +403,9 @@ export default function ProgramDetailPage() {
     },
     {
       title: "Off-Peak & Category Sweet Spots",
-      desc: "Category 1–3 properties and off-peak dates offer the best points-per-night value.",
-      value: `~${businessCpp.toFixed(1)}¢/pt`,
-      tag: "Best CPP",
+      desc: "Category 1–3 properties and off-peak dates offer the best points-per-night value. Exact ¢/pt varies by property and date.",
+      value: "Best value",
+      tag: "Off-peak",
       tone: "warn" as TagTone,
     },
     {
@@ -407,22 +422,22 @@ export default function ProgramDetailPage() {
       title: "Transfer to Airline Partners",
       desc:
         transfer_out.length > 0
-          ? `This program transfers to ${transfer_out.length} airline/hotel program${transfer_out.length !== 1 ? "s" : ""}. Use partner miles for highest CPP.`
+          ? `This program transfers to ${transfer_out.length} airline/hotel program${transfer_out.length !== 1 ? "s" : ""}. Partner miles usually unlock the highest value.`
           : "Flexible bank points can often be transferred to airline programs for maximum value.",
       value: transfer_out.length > 0 ? `${transfer_out.length} partners` : "Flexible",
-      tag: "Highest CPP",
+      tag: "Aim higher",
       tone: "best" as TagTone,
     },
     {
       title: "Statement Credits & Travel",
-      desc: "Redeem against travel charges on your statement — simple and reliable at base CPP.",
+      desc: "Redeem against travel charges on your statement — simple and reliable at the base rate.",
       value: `${baseCpp.toFixed(2)}¢/pt`,
-      tag: "Easy",
+      tag: "Base rate",
       tone: "info" as TagTone,
     },
     {
       title: "Gift Cards & Merchandise",
-      desc: "Lower CPP but no expiry risk. Best for points you can't use for travel.",
+      desc: "Lower value but no expiry risk. Best for points you can't use for travel.",
       value: "Sub-optimal",
       tag: "Last resort",
       tone: "warn" as TagTone,
@@ -436,10 +451,12 @@ export default function ProgramDetailPage() {
         ? hotelSpots
         : bankSpots;
 
+  // Only the base CPP is a real, sourced figure. We previously showed
+  // "Economy Flights" and "Business Class" tiles as base × 1.5 and base × 2.2 —
+  // those were invented multipliers, not quoted award prices, so they're gone.
+  // One headline tile, one honest number.
   const valueTiles = [
-    { label: "Base / Statement", cpp: baseCpp },
-    { label: "Economy Flights", cpp: baseCpp * 1.5 },
-    { label: "Business Class", cpp: businessCpp },
+    { label: isUserValued ? "Your valuation" : "Base value", cpp: baseCpp },
   ];
 
   return (
@@ -567,8 +584,9 @@ export default function ProgramDetailPage() {
           )
         )}
 
-        {/* Value tiles — display-typography, no emoji */}
-        <div className="grid grid-cols-2 min-[520px]:grid-cols-3 gap-3 mb-8 fade-up-1">
+        {/* Value tiles — display-typography, no emoji. One real, sourced number;
+            no fabricated per-cabin tiers. */}
+        <div className="grid grid-cols-1 gap-3 mb-8 fade-up-1">
           {valueTiles.map(({ label, cpp }, i) => (
             <div
               key={label}
@@ -603,6 +621,21 @@ export default function ProgramDetailPage() {
               >
                 {label}
               </div>
+              {i === 0 && valuationAsOf && (
+                <div
+                  className="mono"
+                  style={{
+                    marginTop: 8,
+                    fontSize: 9,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    color: "var(--ink-3)",
+                    fontWeight: 500,
+                  }}
+                >
+                  MapleRewards valuation · as of {valuationAsOf}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -636,22 +669,42 @@ export default function ProgramDetailPage() {
                 isLast={i === spots.length - 1}
               />
             ))}
-            {program.program_type === "airline" && (
-              <p
-                className="serif"
+            <p
+              className="serif"
+              style={{
+                fontSize: 11,
+                fontStyle: "italic",
+                color: "var(--ink-3)",
+                marginTop: 14,
+                paddingTop: 14,
+                borderTop: "1px solid var(--rule)",
+                lineHeight: 1.5,
+              }}
+            >
+              <span
+                className="mono"
                 style={{
-                  fontSize: 11,
-                  fontStyle: "italic",
-                  color: "var(--ink-3)",
-                  marginTop: 14,
-                  paddingTop: 14,
-                  borderTop: "1px solid var(--rule)",
-                  lineHeight: 1.5,
+                  display: "inline-block",
+                  fontSize: 9,
+                  fontWeight: 600,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                  color: "var(--gold)",
+                  background: "var(--gold-tint)",
+                  border: "1px solid var(--gold-soft)",
+                  borderRadius: 999,
+                  padding: "2px 8px",
+                  marginRight: 8,
+                  verticalAlign: "middle",
+                  fontStyle: "normal",
                 }}
               >
-                CPP estimates are based on typical redemptions — actual value depends on availability and routes.
-              </p>
-            )}
+                Illustrative
+              </span>
+              These are general redemption strategies, not quoted award prices. The only
+              sourced number on this page is the {program.base_cpp.toFixed(2)}¢/pt base value
+              above — actual redemption value depends on availability, routes, and dates.
+            </p>
           </div>
         </div>
 

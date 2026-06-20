@@ -22,17 +22,21 @@ import { ProgressBar } from "@/components/editorial/dataviz";
 // the top rung we step by 100k. Documented so the bar % is intentional.
 const TIER_LADDER = [10_000, 50_000, 100_000, 200_000];
 
-interface LoadedOffer {
+interface OfferExample {
   title: string;
   detail: string;
   tag: string;
   tone: string;
 }
 
-const LOADED_OFFERS: LoadedOffer[] = [
-  { title: "20× the points event", detail: "Shoppers Drug Mart weekend — spend $50+", tag: "Shoppers", tone: "var(--gain)" },
-  { title: "Get 15,000 points", detail: "Spend $250 at Loblaws-empire grocery this week", tag: "Grocery", tone: "var(--gold)" },
-  { title: "Stack with Cobalt 5×", detail: "Pay with Amex Cobalt at Shoppers for a double-dip", tag: "Stack", tone: "var(--accent)" },
+// ILLUSTRATIVE, not real. PC Optimum has no public offers API and we don't read a
+// user's personalised loaded offers — these are typical *kinds* of promo to watch
+// for, shown as examples so the section is honest. They are NOT live offers
+// loaded to anyone's account. The UI labels them "Illustrative" accordingly.
+const OFFER_EXAMPLES: OfferExample[] = [
+  { title: "Multiplier point events", detail: "e.g. 15–20× the points weekends at Shoppers Drug Mart on a minimum spend", tag: "Shoppers", tone: "var(--gain)" },
+  { title: "Bonus-point grocery offers", detail: "e.g. earn thousands of bonus points for hitting a weekly Loblaws-empire grocery spend", tag: "Grocery", tone: "var(--gold)" },
+  { title: "Card stacking", detail: "Pay with a card that also rewards drugstores/grocery to double-dip on top of the base earn", tag: "Stack", tone: "var(--accent)" },
 ];
 
 type ShoppersTier = 0 | 5 | 10;
@@ -52,6 +56,9 @@ export function PCOptimumModule() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // Surfaced (not swallowed) so a failed balance save tells the user instead of
+  // silently leaving the old saved balance behind the optimistic draft.
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -78,6 +85,7 @@ export function PCOptimumModule() {
   async function saveBalance() {
     const n = Math.max(0, Math.round(parseFloat(draft) || 0));
     setSaving(true);
+    setSaveErr(null);
     try {
       const sid = await ensureSession();
       const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -88,9 +96,10 @@ export function PCOptimumModule() {
         last_activity: today,
       });
       setBalance(Number(acct.balance));
-    } catch {
-      // Keep the optimistic draft; the headline still reflects the last saved
-      // balance, so a failed save just leaves the input as-is.
+    } catch (e) {
+      // Surface it: the headline still reflects the last saved balance, so
+      // without this the user thinks the new balance saved when it didn't.
+      setSaveErr(e instanceof Error ? `Couldn't save balance: ${e.message}` : "Couldn't save balance. Try again.");
     } finally {
       setSaving(false);
     }
@@ -246,6 +255,15 @@ export function PCOptimumModule() {
                 </button>
               </div>
             </div>
+            {saveErr && (
+              <p
+                role="alert"
+                className="mono"
+                style={{ marginTop: 10, fontSize: 12, color: "var(--loss)" }}
+              >
+                {saveErr}
+              </p>
+            )}
             <ProgressBar
               pct={tier.pct}
               color="var(--gold)"
@@ -254,9 +272,30 @@ export function PCOptimumModule() {
               label={`${Math.round(tier.pct)}% to the next ${tier.next.toLocaleString()}-pt milestone ($${(tier.next / 1000).toFixed(0)} redemption tier)`}
             />
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--rule)" }}>
-              <div className="eyebrow" style={{ marginBottom: 8 }}>Loaded offers</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div className="eyebrow">Offers to watch for</div>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 8,
+                    fontWeight: 600,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    color: "var(--gold)",
+                    background: "var(--gold-tint)",
+                    border: "1px solid var(--gold-soft)",
+                    borderRadius: 999,
+                    padding: "1px 7px",
+                  }}
+                >
+                  Illustrative
+                </span>
+              </div>
+              <p className="serif" style={{ fontSize: 11, fontStyle: "italic", color: "var(--ink-3)", margin: "0 0 10px", lineHeight: 1.5 }}>
+                Examples of the kinds of promo to look out for — not live offers loaded to your account. Check the PC Optimum app for your real personalised offers.
+              </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {LOADED_OFFERS.map((o) => (
+                {OFFER_EXAMPLES.map((o) => (
                   <div key={o.title} style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
                     <span style={{ color: o.tone, lineHeight: 1.5 }}>●</span>
                     <div style={{ minWidth: 0 }}>
@@ -367,8 +406,8 @@ export function PCOptimumModule() {
                 className="mono"
                 style={{ marginTop: 12, fontSize: 10, letterSpacing: "0.06em", color: "var(--ink-3)" }}
               >
-                Redemption sweet spot: 20× weekend events at Shoppers (~30% return on top of the
-                PC MC base earn). Avoid base-rate redemption if a 20× event is approaching.
+                Tip: multiplier point events at Shoppers (e.g. 15–20×) earn far more than the
+                base rate — worth timing a planned purchase around one when you can.
               </p>
             </div>
           </div>

@@ -1183,3 +1183,13 @@ html[data-reduce-motion="true"] *::after {
 .chat-message pre,
 .chat-message pre code,
 .chat-message :not(pre) > code { font-family: var(--font-code); }
+
+/* ── Mobile: fixed-width card visual must not overflow its column ───────────
+ * Card detail hero renders CreditCardVisual at a fixed 380px width. On phones
+ * the hero grid collapses to one column (m-grid-1) but the fixed-width card is
+ * wider than the content box, so the page scrolls sideways. Cap the visual to
+ * its column on narrow screens while leaving the desktop fixed width intact. */
+@media (max-width: 768px) {
+  .m-card-fit { max-width: 100%; }
+  .m-card-fit > * { width: 100% !important; max-width: 380px; height: auto !important; aspect-ratio: 1.586 / 1; }
+}

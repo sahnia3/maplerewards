@@ -12,6 +12,7 @@ import type { DevaluationProjection } from "@/lib/types";
 import { PaperTile } from "@/components/editorial/PaperTile";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { LineChart } from "@/components/editorial/dataviz";
+import { Term } from "@/components/ui/term";
 import { progLabel, sectionStyle } from "./_shared";
 
 interface Props {
@@ -106,7 +107,7 @@ export function DevaluationTrackerTile({ sessionId, isReady }: Props) {
           className="serif"
           style={{ marginTop: -4, marginBottom: 16, fontSize: 14, fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.5 }}
         >
-          Programs devalue quietly. For every announced change touching a balance you hold, Maple projects the new award cost and the trend — set an alert to be warned before it lands.
+          Programs run a <Term term="devaluation">devaluation</Term> quietly. For every announced change touching a balance you hold, Maple projects the new award cost and the trend — set an alert to be warned before it lands.
         </p>
 
         {loading && <p className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>Reading the desk…</p>}
