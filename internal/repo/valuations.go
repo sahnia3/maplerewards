@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,6 +29,36 @@ func (r *ValuationRepo) GetCPP(ctx context.Context, programSlug, segment string)
 		LIMIT 1
 	`, programSlug, segment).Scan(&cpp)
 	return cpp, err
+}
+
+// GetValuationAsOf returns when the program's base-segment CPP was last
+// refreshed (point_valuations.recorded_at, added in migration 000033). This is
+// the real provenance timestamp the frontend renders as "valuations as of
+// <Mon YYYY>". Returns the zero time + pgx.ErrNoRows if the program has no
+// base valuation row.
+func (r *ValuationRepo) GetValuationAsOf(ctx context.Context, programSlug string) (time.Time, error) {
+	var asOf time.Time
+	err := r.db.QueryRow(ctx, `
+		SELECT pv.recorded_at
+		FROM point_valuations pv
+		JOIN loyalty_programs lp ON lp.id = pv.loyalty_program_id
+		WHERE lp.slug = $1 AND pv.segment = 'base'
+		ORDER BY pv.recorded_at DESC
+		LIMIT 1
+	`, programSlug).Scan(&asOf)
+	return asOf, err
+}
+
+// GetCatalogValuationAsOf returns the most recent recorded_at across all
+// point_valuations rows — a single catalog-level "valuations last updated"
+// date. Used by surfaces that don't fetch a specific program (wallet gauge,
+// optimizer) so they can show provenance without per-program plumbing.
+func (r *ValuationRepo) GetCatalogValuationAsOf(ctx context.Context) (time.Time, error) {
+	var asOf time.Time
+	err := r.db.QueryRow(ctx, `
+		SELECT MAX(recorded_at) FROM point_valuations
+	`).Scan(&asOf)
+	return asOf, err
 }
 
 // UpsertValuation writes (or refreshes) the active CPP for a (program, segment).

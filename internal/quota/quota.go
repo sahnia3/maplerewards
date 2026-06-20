@@ -1,5 +1,6 @@
 // Package quota tracks monthly consumption for the paid external HTTP
-// providers (SerpAPI, Apify, Tavily) using Redis INCR counters, and enforces
+// providers (SerpAPI, Apify, Tavily, Seats.aero, Anthropic) using Redis INCR
+// counters, and enforces
 // FINITE per-tier monthly caps on every subscription tier (free, pro,
 // pro_plus, lifetime). It is a denial-of-wallet control: these providers cost
 // real cash per call, so an exhausted cap short-circuits the call instead of
@@ -103,10 +104,11 @@ func TierForPlan(plan string, isPro bool) Tier {
 //
 //	provider  │ free                       │ pro                       │ pro_plus                       │ lifetime
 //	──────────┼────────────────────────────┼───────────────────────────┼────────────────────────────────┼─────────────────────────────────
-//	serpapi   │ 25  SERPAPI_CAP_FREE        │ 250  SERPAPI_CAP_PRO      │ 600  SERPAPI_CAP_PROPLUS       │ 600  SERPAPI_CAP_LIFETIME
-//	apify     │ 0   APIFY_CAP_FREE          │ 1500 APIFY_CAP_PRO        │ 3000 APIFY_CAP_PROPLUS         │ 3000 APIFY_CAP_LIFETIME
-//	tavily    │ 50  TAVILY_CAP_FREE         │ 1000 TAVILY_CAP_PRO       │ 2500 TAVILY_CAP_PROPLUS        │ 2500 TAVILY_CAP_LIFETIME
-//	seatsaero │ 50  SEATSAERO_CAP_FREE      │ 1000 SEATSAERO_CAP_PRO    │ 2500 SEATSAERO_CAP_PROPLUS     │ 2500 SEATSAERO_CAP_LIFETIME
+//	serpapi   │ 25    SERPAPI_CAP_FREE      │ 250   SERPAPI_CAP_PRO     │ 600    SERPAPI_CAP_PROPLUS     │ 600    SERPAPI_CAP_LIFETIME
+//	apify     │ 0     APIFY_CAP_FREE        │ 1500  APIFY_CAP_PRO       │ 3000   APIFY_CAP_PROPLUS       │ 3000   APIFY_CAP_LIFETIME
+//	tavily    │ 50    TAVILY_CAP_FREE       │ 1000  TAVILY_CAP_PRO      │ 2500   TAVILY_CAP_PROPLUS      │ 2500   TAVILY_CAP_LIFETIME
+//	seatsaero │ 50    SEATSAERO_CAP_FREE    │ 1000  SEATSAERO_CAP_PRO   │ 2500   SEATSAERO_CAP_PROPLUS   │ 2500   SEATSAERO_CAP_LIFETIME
+//	anthropic │ 2000  ANTHROPIC_CAP_FREE    │ 50000 ANTHROPIC_CAP_PRO   │ 100000 ANTHROPIC_CAP_PROPLUS   │ 75000  ANTHROPIC_CAP_LIFETIME
 //
 // Seats.aero free is a small non-zero cap (50): unlike Apify, the live
 // Seats.aero call in award_search.go is NOT Pro-gated — it runs for free
@@ -148,6 +150,21 @@ var tierCaps = map[string]map[Tier]int{
 		TierProPlus:  envInt("SEATSAERO_CAP_PROPLUS", 2500),
 		TierLifetime: envInt("SEATSAERO_CAP_LIFETIME", 2500),
 	},
+	// anthropic is the LLM provider (Claude) behind chat. Unlike the scrapers,
+	// it is high-volume (every chat turn = one or more requests) AND already has
+	// a per-user DAILY token budget (service/ai_budget.go). This entry is the
+	// GLOBAL MONTHLY backstop — a shared per-tier kill-switch counting REQUESTS
+	// (not tokens; the daily budget already meters tokens). Caps are generous so
+	// they never trip in normal operation, sized as a denial-of-wallet ceiling
+	// on the only paid provider that previously had no monthly cap. Free is a
+	// real, non-zero cap (chat is available to free users), so a 0 here would
+	// silently disable chat for the whole free tier.
+	"anthropic": {
+		TierFree:     envInt("ANTHROPIC_CAP_FREE", 2000),
+		TierPro:      envInt("ANTHROPIC_CAP_PRO", 50000),
+		TierProPlus:  envInt("ANTHROPIC_CAP_PROPLUS", 100000),
+		TierLifetime: envInt("ANTHROPIC_CAP_LIFETIME", 75000),
+	},
 }
 
 // FreeTierLimits maps each provider to the LARGEST per-tier monthly cap. It is
@@ -160,6 +177,7 @@ var FreeTierLimits = map[string]int{
 	"apify":     maxTierCap("apify"),
 	"tavily":    maxTierCap("tavily"),
 	"seatsaero": maxTierCap("seatsaero"),
+	"anthropic": maxTierCap("anthropic"),
 }
 
 // processHardCaps is the absolute number of paid calls a SINGLE process will
@@ -173,6 +191,10 @@ var processHardCaps = map[string]int64{
 	"apify":     int64(envInt("APIFY_PROCESS_HARD_CAP", 4000)),
 	"tavily":    int64(envInt("TAVILY_PROCESS_HARD_CAP", 4000)),
 	"seatsaero": int64(envInt("SEATSAERO_PROCESS_HARD_CAP", 4000)),
+	// Anthropic is high-volume, so the per-process ceiling is well above the
+	// largest monthly tier cap — it only bounds a runaway loop during a Redis
+	// outage, not legitimate traffic.
+	"anthropic": int64(envInt("ANTHROPIC_PROCESS_HARD_CAP", 200000)),
 }
 
 // processUsed holds the live per-process authorized-call counters that back the
@@ -184,6 +206,7 @@ var processUsed = map[string]*atomic.Int64{
 	"apify":     {},
 	"tavily":    {},
 	"seatsaero": {},
+	"anthropic": {},
 }
 
 // TierCap returns the configured monthly cap for a provider+tier (0 if the

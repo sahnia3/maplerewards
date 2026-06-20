@@ -411,7 +411,7 @@ func TestTierForPlan(t *testing.T) {
 // Every provider has a FINITE, positive cap for every PAID tier, and the table
 // honors free ≤ pro ≤ pro_plus and lifetime ≤ pro_plus (no unlimited anywhere).
 func TestCaps_AllTiersFiniteAndOrdered(t *testing.T) {
-	for _, prov := range []string{"serpapi", "apify", "tavily"} {
+	for _, prov := range []string{"serpapi", "apify", "tavily", "seatsaero", "anthropic"} {
 		caps := tierCaps[prov]
 		f, pro, pp, life := caps[TierFree], caps[TierPro], caps[TierProPlus], caps[TierLifetime]
 		// No negatives, nothing "unlimited" (we removed the -1/0-as-unlimited sentinel).
@@ -567,5 +567,75 @@ func TestSpendTier_SeatsAeroProvider(t *testing.T) {
 		if exhausted {
 			t.Fatalf("seatsaero %s: first call exhausted=true, want false (cap must be > 0)", tier)
 		}
+	}
+}
+
+// TestSpendTier_AnthropicProvider guards the "anthropic" provider registration:
+// it must be recognized by SpendTier (no unknown-provider error) across every
+// tier and carry positive caps — including a NON-ZERO free cap, because chat is
+// available to free users, so a 0 free cap would silently kill the whole free
+// tier's chat. This is the global monthly backstop on the LLM provider.
+func TestSpendTier_AnthropicProvider(t *testing.T) {
+	resetProcessUsed()
+	defer withTempHardCap(t, "anthropic", 1_000_000)() // keep backstop out of the way
+
+	f := newFakeRedis()
+	c := newWithDoer(f)
+	ctx := context.Background()
+
+	for _, tier := range []Tier{TierFree, TierPro, TierProPlus, TierLifetime} {
+		if cap := TierCap("anthropic", tier); cap <= 0 {
+			t.Fatalf("anthropic %s cap = %d, want > 0 (provider must be registered with a usable cap)", tier, cap)
+		}
+		_, exhausted, err := c.SpendTier(ctx, "anthropic", tier)
+		if err != nil {
+			t.Fatalf("anthropic %s: unexpected err %v (provider not registered?)", tier, err)
+		}
+		if exhausted {
+			t.Fatalf("anthropic %s: first call exhausted=true, want false (cap must be > 0)", tier)
+		}
+	}
+}
+
+// TestSpendTier_AnthropicCapEnforced verifies the per-tier monthly cap actually
+// short-circuits: calls at/below the cap are allowed, the next is denied. This
+// is the denial-of-wallet guarantee for the LLM provider.
+func TestSpendTier_AnthropicCapEnforced(t *testing.T) {
+	resetProcessUsed()
+	const cap = 3
+	defer withTempCap(t, "anthropic", TierPro, cap)()
+	defer withTempHardCap(t, "anthropic", 1_000_000)() // keep backstop out of the way
+
+	f := newFakeRedis()
+	c := newWithDoer(f)
+	ctx := context.Background()
+
+	for i := 1; i <= cap; i++ {
+		_, exhausted, err := c.SpendTier(ctx, "anthropic", TierPro)
+		if err != nil {
+			t.Fatalf("call %d: unexpected err %v", i, err)
+		}
+		if exhausted {
+			t.Fatalf("call %d of %d: exhausted too early", i, cap)
+		}
+	}
+	if _, exhausted, err := c.SpendTier(ctx, "anthropic", TierPro); err != nil || !exhausted {
+		t.Fatalf("over-cap call: want exhausted=true err=nil, got exhausted=%v err=%v", exhausted, err)
+	}
+}
+
+// TestSpendTier_AnthropicFailsClosed verifies a Redis error denies the call
+// (exhausted=true + err) — a quota outage must degrade chat, never uncap LLM
+// spend.
+func TestSpendTier_AnthropicFailsClosed(t *testing.T) {
+	resetProcessUsed()
+	f := newFakeRedis()
+	f.incrFn = func(ctx context.Context, key string) (int64, error) {
+		return 0, errors.New("redis down")
+	}
+	c := newWithDoer(f)
+	_, exhausted, err := c.SpendTier(context.Background(), "anthropic", TierPro)
+	if err == nil || !exhausted {
+		t.Fatalf("redis error: want err + exhausted=true (fail-closed), got exhausted=%v err=%v", exhausted, err)
 	}
 }
