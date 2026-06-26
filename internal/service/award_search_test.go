@@ -206,6 +206,113 @@ func TestBestInboundPartner_RemapsIssuerKeyToDBSlug(t *testing.T) {
 	}
 }
 
+// ── Wallet slug → issuer-key aggregation ─────────────────────────────────────
+
+// slugToIssuer maps a DB loyalty_programs.slug to the scraper issuer key award
+// rows carry. The two seeded airline programs whose slug differs from the key
+// MUST remap ("ba-avios"→"avios", "flying-blue"→"flyingblue"); everything else —
+// seeded airline programs with no award issuer (asia-miles, westjet-rewards), a
+// non-airline transferable program, and unknown slugs — falls through unchanged.
+// Slugs verified against migrations/*.up.sql loyalty_programs seeds.
+func TestSlugToIssuer(t *testing.T) {
+	cases := map[string]string{
+		"ba-avios":        "avios",      // DB slug ≠ scraper key — the wallet-aggregation bug
+		"flying-blue":     "flyingblue", // DB slug ≠ scraper key
+		"aeroplan":        "aeroplan",   // seeded slug == scraper key
+		"asia-miles":      "asia-miles", // seeded airline, no award issuer key → pass through
+		"westjet-rewards": "westjet-rewards",
+		"amex-mr-ca":      "amex-mr-ca",    // non-airline transferable program → pass through
+		"not-a-program":   "not-a-program", // unmapped → returned verbatim
+	}
+	for slug, want := range cases {
+		if got := slugToIssuer(slug); got != want {
+			t.Errorf("slugToIssuer(%q) = %q, want %q", slug, got, want)
+		}
+	}
+}
+
+// loadWalletBalances must key the wallet by the scraper ISSUER KEY, not the raw
+// DB slug: a British Airways card carries loyalty_programs.slug "ba-avios", but
+// award rows are keyed "avios". Before the slug→issuer remap the balance landed
+// under "ba-avios" and never matched the award row, so PointsAvailable/CanAfford
+// and CardBreakdowns for every Avios result were empty. Two cards prove the
+// per-issuer aggregation as well as the remap.
+func TestLoadWalletBalances_AviosCardAggregatesUnderIssuerKey(t *testing.T) {
+	avios := &model.LoyaltyProgram{Slug: "ba-avios", Name: "British Airways Avios"}
+	repo := &walletTestRepo{
+		getUserBySession: func(context.Context, string) (*model.User, error) {
+			return &model.User{ID: "u-1"}, nil
+		},
+		getUserCards: func(context.Context, string) ([]model.UserCard, error) {
+			return []model.UserCard{
+				{CardID: "c-1", PointBalance: 30_000, Card: &model.Card{Name: "Amex Cobalt", LoyaltyProgram: avios}},
+				{CardID: "c-2", PointBalance: 20_000, Card: &model.Card{Name: "RBC Avion", LoyaltyProgram: avios}},
+			}, nil
+		},
+	}
+	svc := &AwardSearchService{walletRepo: repo}
+
+	balances, err := svc.loadWalletBalances(context.Background(), "sess-1")
+	if err != nil {
+		t.Fatalf("loadWalletBalances: %v", err)
+	}
+
+	// The raw DB slug must NOT be a key — it has to be remapped to the issuer key.
+	if _, ok := balances["ba-avios"]; ok {
+		t.Errorf("wallet keyed by raw DB slug %q; expected remap to issuer key %q", "ba-avios", "avios")
+	}
+	wb, ok := balances["avios"]
+	if !ok {
+		t.Fatalf("no wallet entry under issuer key %q; balances=%v", "avios", balances)
+	}
+	if wb.balance != 50_000 {
+		t.Errorf("aggregated balance = %d, want 50000 (30000+20000)", wb.balance)
+	}
+	if len(wb.breakdowns) != 2 {
+		t.Fatalf("want 2 card breakdowns, got %d", len(wb.breakdowns))
+	}
+	// Breakdowns carry the per-card detail the UI renders.
+	if wb.breakdowns[0].CardName == "" || wb.breakdowns[0].PointsHeld == 0 {
+		t.Errorf("breakdown missing card detail: %+v", wb.breakdowns[0])
+	}
+}
+
+// loadWalletBalances must skip cards with no linked card or loyalty program
+// rather than panic, and must short-circuit an empty session (the worker probe
+// path) before touching the repo.
+func TestLoadWalletBalances_SkipsNilAndEmptySession(t *testing.T) {
+	queried := false
+	repo := &walletTestRepo{
+		getUserBySession: func(context.Context, string) (*model.User, error) {
+			queried = true
+			return &model.User{ID: "u-1"}, nil
+		},
+		getUserCards: func(context.Context, string) ([]model.UserCard, error) {
+			return []model.UserCard{
+				{CardID: "c-nil-card"},                                  // Card == nil → skipped
+				{CardID: "c-no-prog", Card: &model.Card{Name: "Plain"}}, // LoyaltyProgram == nil → skipped
+			}, nil
+		},
+	}
+	svc := &AwardSearchService{walletRepo: repo}
+
+	// Empty session short-circuits before any repo call.
+	if got, err := svc.loadWalletBalances(context.Background(), ""); err != nil || len(got) != 0 {
+		t.Fatalf("empty session: got (%v, %v), want (empty map, nil)", got, err)
+	}
+	if queried {
+		t.Error("empty session must not query the wallet repo")
+	}
+
+	balances, err := svc.loadWalletBalances(context.Background(), "sess-1")
+	if err != nil {
+		t.Fatalf("loadWalletBalances: %v", err)
+	}
+	if len(balances) != 0 {
+		t.Errorf("cards with nil Card/LoyaltyProgram must be skipped, got %v", balances)
+	}
+}
+
 // ── Round-trip combine ───────────────────────────────────────────────────────
 
 func ratedRow(prog string, points int, cash float64, taxes *float64) model.AwardSearchResult {
